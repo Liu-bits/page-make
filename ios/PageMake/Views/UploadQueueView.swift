@@ -1,0 +1,112 @@
+import SwiftUI
+
+/// 上传队列页：进度条 + 可取消 + 完成后轮询状态
+struct UploadQueueView: View {
+    let files: [PickedFile]
+    let provider: HostProvider
+
+    @StateObject private var uploadService = UploadService.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var didStart = false
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if uploadService.items.isEmpty {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text(L10n.string("uploading"))
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    List {
+                        ForEach(uploadService.items) { item in
+                            itemRow(item)
+                        }
+                    }
+                    .listStyle(.insetGrouped)
+                }
+            }
+            .navigationTitle(L10n.string("upload_queue"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.string("done")) { dismiss() }
+                }
+            }
+            .onAppear {
+                guard !didStart else { return }
+                didStart = true
+                uploadService.upload(files: files, provider: provider)
+            }
+        }
+    }
+
+    private func itemRow(_ item: UploadService.Item) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(item.name)
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer()
+                statusLabel(item)
+            }
+
+            switch item.status {
+            case .uploading:
+                ProgressView(value: item.progress)
+                Text(L10n.string("uploading"))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            case .processing:
+                ProgressView()
+                Text(L10n.string("processing"))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            case .failed:
+                if let message = item.errorMessage {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
+            case .ready:
+                if let project = item.project {
+                    NavigationLink {
+                        PreviewView(project: project)
+                    } label: {
+                        Text(L10n.string("open_preview"))
+                    }
+                    .buttonStyle(.bordered)
+                }
+            case .expired:
+                Text(L10n.string("error_expired"))
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
+
+            if item.status == .uploading || item.status == .processing {
+                Button(L10n.string("cancel"), role: .destructive) {
+                    uploadService.cancel(item)
+                }
+                .font(.footnote)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func statusLabel(_ item: UploadService.Item) -> some View {
+        switch item.status {
+        case .uploading:
+            Text(L10n.string("uploading")).font(.footnote).foregroundStyle(.secondary)
+        case .processing:
+            Text(L10n.string("processing")).font(.footnote).foregroundStyle(.secondary)
+        case .ready:
+            Text(L10n.string("status_ready")).font(.footnote).foregroundStyle(.green)
+        case .failed:
+            Text(L10n.string("upload_failed")).font(.footnote).foregroundStyle(.red)
+        case .expired:
+            Text(L10n.string("status_expired")).font(.footnote).foregroundStyle(.orange)
+        }
+    }
+}

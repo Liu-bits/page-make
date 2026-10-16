@@ -1,0 +1,53 @@
+# =============================================================================
+# Page-make iOS 工程（XcodeGen 描述文件）
+# 生成工程：  cd ios && xcodegen generate
+# CI 编译：   GitHub Actions · macos-27 runner · Xcode 27.0.1 · iOS 27.0.1
+# 第一版约束：不签名、不打包 IPA、不上传 App Store（CI 用 CODE_SIGNING_ALLOWED=NO）
+# =============================================================================
+name: PageMake
+
+options:
+  bundleIdPrefix: com.pagemake
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "27.0"
+  groupSortPosition: bottom
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  PageMake:
+    type: application
+    platform: iOS
+    deploymentTarget: "27.0"
+    sources:
+      - path: PageMake
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pagemake.app
+        INFOPLIST_FILE: PageMake/Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SDKROOT: iphoneos
+        IPHONEOS_DEPLOYMENT_TARGET: "27.0"
+    scheme:
+      testTargets:
+        - PageMakeTests
+
+  PageMakeTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "27.0"
+    sources:
+      - path: PageMakeTests
+    dependencies:
+      - target: PageMake
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pagemake.app.tests
+        GENERATE_INFOPLIST_FILE: YES
+        IPHONEOS_DEPLOYMENT_TARGET: "27.0"

@@ -1,0 +1,23 @@
+# ===== Xcode / XcodeGen 生成物 =====
+ios/PageMake.xcodeproj/
+ios/build/
+xcuserdata/
+*.xcuserstate
+DerivedData/
+*.xcscmblueprint
+
+# ===== macOS =====
+.DS_Store
+
+# ===== Node / 本地开发 =====
+node_modules/
+*.log
+
+# ===== 密钥（绝不提交，全部走 GitHub Secrets / EdgeOne 控制台）=====
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ===== 本地日志导出 =====
+pagemake-logs-*.txt

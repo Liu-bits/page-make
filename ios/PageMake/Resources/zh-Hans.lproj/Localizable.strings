@@ -1,0 +1,140 @@
+/* Localizable.strings — 简体中文（跟随 iOS 系统语言，不提供手动切换） */
+
+// MARK: - 通用
+"app_projects" = "我的项目";
+"cancel" = "取消";
+"done" = "完成";
+"send" = "发送";
+"alert_error" = "出错了";
+"error_generic" = "服务出错了，稍后重试";
+"error_network" = "网络出错，请检查网络后重试";
+"login_canceled" = "已取消登录";
+
+// MARK: - 登录
+"welcome_title" = "Page-make";
+"welcome_subtitle" = "上传 zip 或单个 HTML/CSS/JS 文件，生成可公开访问的静态网页链接";
+"login_apple" = "通过 Apple 登录";
+"public_links_note" = "公开链接无需登录即可访问";
+"sign_out" = "退出登录";
+"account_section" = "账号";
+"account_label" = "账号";
+"tools_section" = "工具";
+"about_section" = "关于";
+
+// MARK: - 项目列表
+"empty_projects_title" = "还没有项目";
+"empty_projects_subtitle" = "上传你的第一个静态网页，生成公开链接";
+"add_project" = "新建项目";
+"file_count" = "%d 个文件";
+"file_count_unit" = "个文件";
+"created_at" = "创建于 %@";
+"expires_at" = "过期时间 %@";
+"created_at_label" = "创建时间";
+"expires_at_label" = "过期时间";
+"delete_project" = "删除项目";
+"delete_confirm_title" = "删除项目？";
+"delete_confirm_button" = "删除";
+"delete_confirm_message" = "删除后无法恢复，公开链接将失效。";
+"status_uploading" = "上传中";
+"status_processing" = "处理中";
+"status_ready" = "已就绪";
+"status_failed" = "失败";
+"status_expired" = "已过期";
+
+// MARK: - 选文件
+"pick_files_title" = "选择文件";
+"pick_files_action" = "选择文件";
+"pick_files_hint" = "支持 .zip、.html、.css、.js，可多选，总大小不超过 5MB";
+"validation_empty" = "请先选择文件";
+"validation_extension" = "不支持的文件类型：.%@（仅支持 .zip、.html、.css、.js）";
+"validation_too_large" = "文件总大小 %.1f MB，超过 5MB 上限";
+
+// MARK: - 线路选择
+"choose_provider" = "选择托管线路";
+"provider_intro" = "每次创建都必须选择线路（不设默认值，不记住上次选择）";
+"provider_edgeone_name" = "EdgeOne";
+"provider_edgeone_detail" = "中国用户更快：国内访问快、海外一般，适合主要给国内用户看";
+"provider_cloudflare_name" = "Cloudflare";
+"provider_cloudflare_detail" = "国际首选：海外访问快、国内不稳定，适合主要给海外用户看";
+"provider_no_default" = "不设默认值，不记住上次选择";
+"next_step" = "下一步";
+
+// MARK: - 上传队列
+"upload_queue" = "上传队列";
+"uploading" = "正在上传…";
+"processing" = "正在生成链接…";
+"upload_failed" = "上传失败";
+"open_preview" = "查看";
+
+// MARK: - 预览页
+"link_copied" = "链接已复制";
+"copy_link" = "复制链接";
+"share" = "分享";
+"open_in_safari" = "在 Safari 打开";
+"link_expired" = "链接已过期，点击刷新";
+"refresh_link" = "刷新链接";
+"diagnostics_panel" = "诊断面板";
+"file_list" = "文件列表";
+"runtime_js_error" = "JS 报错（第 %d 行）：%@";
+
+// MARK: - 诊断
+"code_has_errors" = "您的代码有错误";
+"diagnostics_login_required" = "登录后可查看诊断详情";
+"no_issues" = "未发现问题";
+"diagnostics_list" = "问题列表";
+"found_issues" = "⚠️ 发现 %d 个问题";
+"diagnostic_line" = "第 %d 行";
+"copy_report" = "复制报告";
+"report_copied" = "报告已复制";
+"report_project" = "项目：%@";
+"report_provider" = "线路：%@";
+"report_error_code" = "错误码：%@";
+
+// MARK: - 文件管理
+"manage_files" = "管理文件";
+"project_info" = "项目信息";
+"project_name" = "名称";
+"provider_label" = "线路";
+"status_label" = "状态";
+"file_count_label" = "文件数";
+"total_size" = "总大小";
+"add_file" = "添加文件";
+"add_file_hint" = "支持 .html、.css、.js 单个文件";
+"pick_file" = "选择文件";
+"delete_file_confirm" = "删除这个文件？";
+
+// MARK: - 设置
+"settings" = "设置";
+"export_logs" = "导出日志";
+"feedback" = "反馈";
+"feedback_type" = "类型";
+"feedback_type_feedback" = "反馈";
+"feedback_type_report" = "举报";
+"feedback_message" = "留言";
+"privacy_policy" = "隐私政策";
+"user_agreement" = "用户协议";
+
+// MARK: - 封号
+"banned_title" = "账号已被封禁";
+"ban_level" = "封禁等级";
+"ban_reason" = "原因";
+"ban_until" = "解封时间";
+"ban_permanent" = "永久封禁";
+"ban_note" = "如有疑问，可通过反馈渠道联系我们。违规项目链接将显示「已下架」。";
+
+// MARK: - 错误码（小白话）
+"error_no_entry" = "你的压缩包里没有 HTML 文件";
+"error_too_large" = "文件太大了";
+"error_bad_zip" = "压缩包损坏了，重新打包试试";
+"error_storage_error" = "存储出错了，稍后重试";
+"error_db_error" = "服务出错了，稍后重试";
+"error_invalid_provider" = "请先选择托管线路";
+"error_expired" = "链接已过期，点击刷新";
+
+// MARK: - 技术报错（小白话映射）
+"tech_not_found" = "找不到这个文件";
+"tech_undefined_variable" = "用了一个没定义的变量";
+"tech_cors" = "这个文件不能从外部加载";
+"tech_mime" = "文件类型不对";
+"tech_syntax" = "代码里有个符号写错了";
+"tech_resource" = "有个资源没加载成功，检查文件是否打包进压缩包";

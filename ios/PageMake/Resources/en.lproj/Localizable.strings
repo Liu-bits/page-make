@@ -1,0 +1,140 @@
+/* Localizable.strings — English (fallback for non-Chinese system languages) */
+
+// MARK: - Common
+"app_projects" = "My Projects";
+"cancel" = "Cancel";
+"done" = "Done";
+"send" = "Send";
+"alert_error" = "Something went wrong";
+"error_generic" = "Service error, please try again later";
+"error_network" = "Network error, please check your connection";
+"login_canceled" = "Sign-in cancelled";
+
+// MARK: - Sign in
+"welcome_title" = "Page-make";
+"welcome_subtitle" = "Upload a zip or single HTML/CSS/JS files to get a public link for your static page";
+"login_apple" = "Sign in with Apple";
+"public_links_note" = "Public links work without signing in";
+"sign_out" = "Sign Out";
+"account_section" = "Account";
+"account_label" = "Account";
+"tools_section" = "Tools";
+"about_section" = "About";
+
+// MARK: - Project list
+"empty_projects_title" = "No projects yet";
+"empty_projects_subtitle" = "Upload your first static page to get a public link";
+"add_project" = "New Project";
+"file_count" = "%d files";
+"file_count_unit" = "files";
+"created_at" = "Created %@";
+"expires_at" = "Expires %@";
+"created_at_label" = "Created";
+"expires_at_label" = "Expires";
+"delete_project" = "Delete Project";
+"delete_confirm_title" = "Delete project?";
+"delete_confirm_button" = "Delete";
+"delete_confirm_message" = "This cannot be undone. The public link will stop working.";
+"status_uploading" = "Uploading";
+"status_processing" = "Processing";
+"status_ready" = "Ready";
+"status_failed" = "Failed";
+"status_expired" = "Expired";
+
+// MARK: - File picker
+"pick_files_title" = "Select Files";
+"pick_files_action" = "Select Files";
+"pick_files_hint" = "Supports .zip, .html, .css, .js. Multiple selection, 5MB total max";
+"validation_empty" = "Please select at least one file";
+"validation_extension" = "Unsupported file type: .%@ (only .zip, .html, .css, .js)";
+"validation_too_large" = "Total size %.1f MB exceeds the 5MB limit";
+
+// MARK: - Provider selection
+"choose_provider" = "Choose Hosting Provider";
+"provider_intro" = "You must choose a provider for every deployment (no default, no memory of last choice)";
+"provider_edgeone_name" = "EdgeOne";
+"provider_edgeone_detail" = "Faster in China: fast domestically, average overseas — for mainly Chinese audiences";
+"provider_cloudflare_name" = "Cloudflare";
+"provider_cloudflare_detail" = "Global first choice: fast overseas, unstable in China — for mainly international audiences";
+"provider_no_default" = "No default, no memory of last choice";
+"next_step" = "Next";
+
+// MARK: - Upload queue
+"upload_queue" = "Upload Queue";
+"uploading" = "Uploading…";
+"processing" = "Generating link…";
+"upload_failed" = "Upload failed";
+"open_preview" = "Open";
+
+// MARK: - Preview
+"link_copied" = "Link copied";
+"copy_link" = "Copy Link";
+"share" = "Share";
+"open_in_safari" = "Open in Safari";
+"link_expired" = "Link expired — tap to refresh";
+"refresh_link" = "Refresh Link";
+"diagnostics_panel" = "Diagnostics";
+"file_list" = "Files";
+"runtime_js_error" = "JS error (line %d): %@";
+
+// MARK: - Diagnostics
+"code_has_errors" = "Your code has errors";
+"diagnostics_login_required" = "Sign in to see diagnostics details";
+"no_issues" = "No issues found";
+"diagnostics_list" = "Issues";
+"found_issues" = "⚠️ Found %d issues";
+"diagnostic_line" = "Line %d";
+"copy_report" = "Copy Report";
+"report_copied" = "Report copied";
+"report_project" = "Project: %@";
+"report_provider" = "Provider: %@";
+"report_error_code" = "Error code: %@";
+
+// MARK: - File management
+"manage_files" = "Manage Files";
+"project_info" = "Project Info";
+"project_name" = "Name";
+"provider_label" = "Provider";
+"status_label" = "Status";
+"file_count_label" = "Files";
+"total_size" = "Total size";
+"add_file" = "Add File";
+"add_file_hint" = "Single .html / .css / .js file";
+"pick_file" = "Select File";
+"delete_file_confirm" = "Delete this file?";
+
+// MARK: - Settings
+"settings" = "Settings";
+"export_logs" = "Export Logs";
+"feedback" = "Feedback";
+"feedback_type" = "Type";
+"feedback_type_feedback" = "Feedback";
+"feedback_type_report" = "Report";
+"feedback_message" = "Message";
+"privacy_policy" = "Privacy Policy";
+"user_agreement" = "User Agreement";
+
+// MARK: - Ban
+"banned_title" = "Account banned";
+"ban_level" = "Ban level";
+"ban_reason" = "Reason";
+"ban_until" = "Unban at";
+"ban_permanent" = "Permanent ban";
+"ban_note" = "If you have questions, contact us via Feedback. Banned project links will show \"Taken down\".";
+
+// MARK: - Error codes (plain language)
+"error_no_entry" = "There is no HTML file in your zip";
+"error_too_large" = "The files are too large";
+"error_bad_zip" = "The zip file is corrupted, try repacking it";
+"error_storage_error" = "Storage error, please try again later";
+"error_db_error" = "Service error, please try again later";
+"error_invalid_provider" = "Please choose a hosting provider first";
+"error_expired" = "Link expired — tap to refresh";
+
+// MARK: - Technical errors (plain language)
+"tech_not_found" = "This file could not be found";
+"tech_undefined_variable" = "A variable is used but never defined";
+"tech_cors" = "This file cannot be loaded from outside";
+"tech_mime" = "Wrong file type";
+"tech_syntax" = "There is a wrong symbol in the code";
+"tech_resource" = "A resource failed to load — check whether it was packed into the zip";
