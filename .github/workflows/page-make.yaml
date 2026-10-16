@@ -77,10 +77,10 @@ jobs:
         with:
           xcode-version: "27.0.0"
 
-      - name: 校验 Xcode 版本必须为 27.0.0
+      - name: 校验 Xcode 版本必须为 27.0
         run: |
           echo "当前 Xcode：$(xcodebuild -version | head -1)"
-          xcodebuild -version | head -1 | grep -q "^Xcode 27\.0\.0$" || { echo "::error::Xcode 版本不是 27.0.0"; exit 1; }
+          xcodebuild -version | head -1 | grep -qE "^Xcode 27\.0(\.0)?$" || { echo "::error::Xcode 版本不是 27.0.x"; exit 1; }
 
       - name: 安装 XcodeGen
         run: brew install xcodegen || brew upgrade xcodegen
