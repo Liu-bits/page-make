@@ -112,6 +112,7 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 | --- | --- | --- |
 | backend-test | ubuntu-latest | Node 22 后端单测 + 容器冒烟测试（HTTP 全流程）+ Docker 镜像构建校验 |
 | ios-build | xcode-27（macOS 27.0.1） | Xcode 27.0.0 校验 → xcodegen → 编译（不签名）→ iOS 27.0 模拟器测试 |
+| ipa | xcode-27（macOS 27.0.1） | 仅 main / tag：真机归档（不签名）→ 打包 **未签名 IPA** 产物（Actions 页面 Artifacts 下载） |
 | deploy | ubuntu-latest | 仅 main 分支，推送构建子集到 ModelScope 创空间（需配置 `MODELSCOPE_SPACE` / `MODELSCOPE_TOKEN`） |
 
 ## API 一览

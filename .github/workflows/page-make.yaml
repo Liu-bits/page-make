@@ -145,3 +145,54 @@ jobs:
           MODELSCOPE_SPACE: ${{ vars.MODELSCOPE_SPACE }}
           MODELSCOPE_TOKEN: ${{ secrets.MODELSCOPE_TOKEN }}
         run: bash scripts/deploy-modelscope.sh
+
+  # ---------------------------------------------------------------------------
+  # 4. 构建未签名 IPA（仅 main / tag v* / 手动触发）
+  #    产物：Actions run 底部 Artifacts → PageMake-unsigned-ipa.zip
+  #    注意：未签名，正常 iPhone 无法直接安装（供自签/ TrollStore 类工具使用）
+  # ---------------------------------------------------------------------------
+  ipa:
+    name: "构建 IPA（未签名 · 可下载）"
+    runs-on: xcode-27
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 生成 Xcode 工程
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: 编译归档（真机 · 不签名）
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project PageMake.xcodeproj \
+            -scheme PageMake \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/PageMake.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: 打包 IPA（Payload/ 结构）
+        run: |
+          mkdir -p Payload
+          cp -R "$RUNNER_TEMP/PageMake.xcarchive/Products/Applications/PageMake.app" Payload/
+          zip -qr PageMake-unsigned.ipa Payload
+          rm -rf Payload
+          echo "IPA 大小：$(du -h PageMake-unsigned.ipa | cut -f1)"
+
+      - name: 上传 IPA 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: PageMake-unsigned-ipa
+          path: PageMake-unsigned.ipa
+          retention-days: 14
