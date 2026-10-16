@@ -22,7 +22,7 @@ final class KeychainStore {
         SecItemAdd(query as CFDictionary, nil)
     }
 
-    func get(_ key: String) -> String? {
+    func string(forKey key: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -48,19 +48,19 @@ final class KeychainStore {
     // MARK: - 会话快捷方式
 
     var sessionToken: String? {
-        get("session_token")
+        string(forKey: "session_token")
     }
 
     var sessionExpiresAt: Date? {
-        get("session_expires_at").flatMap(DateParsing.parse)
+        string(forKey: "session_expires_at").flatMap(DateParsing.parse)
     }
 
     var userId: String? {
-        get("user_id")
+        string(forKey: "user_id")
     }
 
     var userEmail: String? {
-        get("user_email")
+        string(forKey: "user_email")
     }
 
     func saveSession(_ response: AuthResponse) {
