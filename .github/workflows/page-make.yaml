@@ -126,7 +126,7 @@ jobs:
   deploy:
     name: "部署（仅 main 分支）"
     needs: [backend-test, ios-build]
-    if: github.event_name == "push" && github.ref == "refs/heads/main"
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
