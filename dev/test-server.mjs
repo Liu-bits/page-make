@@ -110,6 +110,19 @@ await test('未选线路时 init 返回 INVALID_PROVIDER', async () => {
   assert(res.status === 400 && json.error === 'INVALID_PROVIDER', '应返回 400 INVALID_PROVIDER');
 });
 
+await test('反向代理头兼容（x-forwarded-proto 多值逗号分隔）', async () => {
+  // ModelScope 网关会传 "https, https" 这种多值代理头，取第一个值
+  const res = await fetch(`${BASE}/api/config`, {
+    headers: {
+      'x-forwarded-proto': 'https, https',
+      'x-forwarded-host': 'a.example.com, b.example.com',
+    },
+  });
+  assert(res.ok, '多值代理头不应导致 500');
+  const json = await res.json();
+  assert(json.ok, '应正常返回配置');
+});
+
 await test('完整上传流程：init → chunk → finish → 轮询 → ready', async () => {
   const zip = buildZip([
     ['index.html', '<!DOCTYPE html><html><head><link rel="stylesheet" href="style.css"></head><body><img src="img/logo.png" alt="logo"></body></html>'],

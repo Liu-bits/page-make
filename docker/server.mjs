@@ -130,10 +130,19 @@ async function loadHandler(file) {
 // ---------------------------------------------------------------------------
 // 请求 / 响应转换（Node → Web 标准 Request / Response）
 // ---------------------------------------------------------------------------
+// 反向代理头取第一个值：ModelScope 等平台经过多层代理时，
+// x-forwarded-proto / x-forwarded-host 是逗号分隔的多值列表（如 "https, https"）
+function firstHeaderValue(value) {
+  if (Array.isArray(value)) value = value[0];
+  return String(value || '').split(',')[0].trim();
+}
+
 function toWebRequest(req, body) {
   // 反向代理头：ModelScope 等平台通过 x-forwarded-proto/host 暴露公网地址
-  const proto = req.headers['x-forwarded-proto'] || 'http';
-  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+  const proto = firstHeaderValue(req.headers['x-forwarded-proto']) || 'http';
+  const host = firstHeaderValue(req.headers['x-forwarded-host'])
+    || firstHeaderValue(req.headers.host)
+    || 'localhost';
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {
     if (value === undefined) continue;
