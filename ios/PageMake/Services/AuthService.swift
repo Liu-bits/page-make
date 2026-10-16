@@ -29,8 +29,13 @@ final class AuthService: NSObject {
     }
 
     /// 检查 Apple 凭证状态（静默刷新前判断用户是否仍授权本 App）
-    func checkCredentialState(userID: String, completion: @escaping (ASAuthorizationAppleIDProvider.CredentialState) -> Void) {
-        ASAuthorizationAppleIDProvider().getCredentialState(forUserID: userID, completion: completion)
+    func checkCredentialState(
+        userID: String,
+        completion: @escaping (ASAuthorizationAppleIDProvider.CredentialState, Error?) -> Void
+    ) {
+        ASAuthorizationAppleIDProvider().getCredentialState(forUserID: userID) { state, error in
+            completion(state, error)
+        }
     }
 
     private func randomNonce(length: Int = 32) -> String {

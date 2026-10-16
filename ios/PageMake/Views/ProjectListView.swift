@@ -35,9 +35,11 @@ struct ProjectListView: View {
                 await appState.loadProjects()
             }
             .alert(item: $alertItem) { item in
-                Button(L10n.string("done"), role: .cancel) {}
-            } message: {
-                Text(item.message)
+                Alert(
+                    title: Text("alert_error"),
+                    message: Text(item.message),
+                    dismissButton: .default(Text("done"))
+                )
             }
     }
 

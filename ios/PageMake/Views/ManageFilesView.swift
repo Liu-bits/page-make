@@ -97,9 +97,11 @@ struct ManageFilesView: View {
                 Button(L10n.string("cancel"), role: .cancel) {}
             }
             .alert(item: $alertItem) { item in
-                Button(L10n.string("done"), role: .cancel) {}
-            } message: {
-                Text(item.message)
+                Alert(
+                    title: Text("alert_error"),
+                    message: Text(item.message),
+                    dismissButton: .default(Text("done"))
+                )
             }
         }
     }
@@ -171,9 +173,11 @@ struct AddFileSheet: View {
                 }
             }
             .alert(item: $alertItem) { item in
-                Button(L10n.string("done"), role: .cancel) {}
-            } message: {
-                Text(item.message)
+                Alert(
+                    title: Text("alert_error"),
+                    message: Text(item.message),
+                    dismissButton: .default(Text("done"))
+                )
             }
             .overlay {
                 if isUploading { ProgressView() }

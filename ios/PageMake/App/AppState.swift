@@ -47,7 +47,7 @@ final class AppState: ObservableObject {
     /// 到期前 1 天静默刷新（用户无感知）
     private func maybeSilentRefresh() {
         guard let session, session.isExpiringSoon else { return }
-        auth.checkCredentialState(userID: session.userId) { [weak self] state in
+        auth.checkCredentialState(userID: session.userId) { [weak self] state, _ in
             guard state == .authorized else { return }
             Task { await self?.silentReauthenticate() }
         }
