@@ -5,7 +5,6 @@ struct ProjectListView: View {
     @EnvironmentObject private var appState: AppState
     @Binding var showFilePicker: Bool
     @Binding var showSettings: Bool
-    @State private var alertItem: AlertItem?
 
     var body: some View {
         content
@@ -33,13 +32,6 @@ struct ProjectListView: View {
             }
             .refreshable {
                 await appState.loadProjects()
-            }
-            .alert(item: $alertItem) { item in
-                Alert(
-                    title: Text("alert_error"),
-                    message: Text(item.message),
-                    dismissButton: .default(Text("done"))
-                )
             }
     }
 

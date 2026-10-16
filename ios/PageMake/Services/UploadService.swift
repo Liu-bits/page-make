@@ -21,6 +21,7 @@ final class UploadService: ObservableObject {
         var status: ItemStatus = .uploading
         var errorMessage: String?
         var projectId: String?
+        var uploadId: String?
         var project: Project?
     }
 
@@ -47,6 +48,10 @@ final class UploadService: ObservableObject {
         tasks[item.id]?.cancel()
         tasks[item.id] = nil
         items.removeAll { $0.id == item.id }
+        // 通知后端清理已上传的临时分片（fire-and-forget，失败无感）
+        if let uploadId = item.uploadId {
+            Task { try? await api.cancelUpload(uploadId: uploadId) }
+        }
     }
 
     func remove(_ item: Item) {
@@ -63,6 +68,7 @@ final class UploadService: ObservableObject {
 
         do {
             let initResponse = try await api.initUpload(provider: provider, files: files)
+            update { $0.uploadId = initResponse.uploadId }
 
             let totalChunks = files.reduce(0) { count, file in
                 count + max(1, Int((Double(file.size) / Double(Config.chunkSize)).rounded(.up)))
@@ -102,31 +108,51 @@ final class UploadService: ObservableObject {
     }
 
     private func pollStatus(itemId: UUID, projectId: String) async {
-        while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: UInt64(Config.pollIntervalSeconds * 1_000_000_000))
-            guard let response = try? await api.projectStatus(projectId) else { continue }
+        // 最大轮询 150 次（约 5 分钟，2 秒间隔），超时判失败；404（项目已删）立即退出
+        let maxAttempts = 150
+        var attempts = 0
 
-            guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
-            switch response.status {
-            case .ready:
-                if let project = response.project {
-                    items[index].status = .ready
-                    items[index].project = project
-                } else {
-                    items[index].status = .ready
-                    items[index].errorMessage = nil
+        while !Task.isCancelled && attempts < maxAttempts {
+            attempts += 1
+            try? await Task.sleep(nanoseconds: UInt64(Config.pollIntervalSeconds * 1_000_000_000))
+
+            do {
+                let response = try await api.projectStatus(projectId)
+                guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
+                switch response.status {
+                case .ready:
+                    if let project = response.project {
+                        items[index].status = .ready
+                        items[index].project = project
+                    } else {
+                        items[index].status = .ready
+                        items[index].errorMessage = nil
+                    }
+                    return
+                case .failed:
+                    items[index].status = .failed
+                    items[index].errorMessage = PlainLanguage.message(forErrorCode: response.errorCode ?? "")
+                    return
+                case .expired:
+                    items[index].status = .expired
+                    return
+                default:
+                    continue
                 }
-                return
-            case .failed:
-                items[index].status = .failed
-                items[index].errorMessage = PlainLanguage.message(forErrorCode: response.errorCode ?? "")
-                return
-            case .expired:
-                items[index].status = .expired
-                return
-            default:
+            } catch let error as APIError {
+                // 项目不存在（已删除）→ 立即退出，不再重试
+                if case .http(let status, _) = error, status == 404 {
+                    update { $0.status = .failed; $0.errorMessage = L10n.string("error_project_gone") }
+                    return
+                }
+                continue // 网络 / 服务错误继续重试
+            } catch {
                 continue
             }
+        }
+
+        if !Task.isCancelled {
+            update { $0.status = .failed; $0.errorMessage = L10n.string("error_upload_timeout") }
         }
     }
 }

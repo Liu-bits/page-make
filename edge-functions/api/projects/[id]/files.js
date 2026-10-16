@@ -1,7 +1,7 @@
 // POST /api/projects/:id/files — 添加文件（body: { path, content(base64) }）
 // DELETE /api/projects/:id/files — 删除文件（body: { path }）
 import { getOwnedProject, syncProjectFiles } from '../../../lib/project.js';
-import { keys, kvDel, nowSeconds } from '../../../lib/kv.js';
+import { keys, kvDel } from '../../../lib/kv.js';
 import { base64ToBytes } from '../../../lib/base64.js';
 import { ok, fail } from '../../../lib/responses.js';
 import { STATUS } from '../../../lib/state.js';

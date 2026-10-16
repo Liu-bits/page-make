@@ -1,7 +1,7 @@
 // GET /p/:projectId — 公开访问（任何人可访问，无需登录）
 // 项目被 ban → 「该内容已被下架」；链接过期 → 过期提示页
 import { getKV, kvGet, keys, nowSeconds } from '../lib/kv.js';
-import { contentTypeFor, htmlPage, fail } from '../lib/responses.js';
+import { contentTypeFor, htmlPage } from '../lib/responses.js';
 import { STATUS } from '../lib/state.js';
 
 const ID_RE = /^[a-f0-9]{32}$/;

@@ -126,15 +126,18 @@ final class AppState: ObservableObject {
         }
     }
 
-    func deleteProject(_ id: String) async {
+    @discardableResult
+    func deleteProject(_ id: String) async -> Bool {
         do {
             try await api.deleteProject(id)
             projects.removeAll { $0.id == id }
+            return true
         } catch let error as APIError {
             authError = error.errorDescription
         } catch {
             authError = L10n.string("error_generic")
         }
+        return false
     }
 
     func upsertProject(_ project: Project) {
@@ -146,8 +149,4 @@ final class AppState: ObservableObject {
     }
 }
 
-extension AuthError: Equatable {
-    static func == (lhs: AuthError, rhs: AuthError) -> Bool {
-        lhs.errorDescription == rhs.errorDescription
-    }
-}
+// AuthError 声明处已标记 Equatable（enum 无关联值，Swift 自动合成），无需手写扩展

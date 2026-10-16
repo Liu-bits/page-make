@@ -130,6 +130,11 @@
 "error_db_error" = "服务出错了，稍后重试";
 "error_invalid_provider" = "请先选择托管线路";
 "error_expired" = "链接已过期，点击刷新";
+"error_upload_timeout" = "处理超时（超过 5 分钟），请重试";
+"error_project_gone" = "项目不存在或已删除";
+
+// MARK: - 文件管理
+"file_too_large_single" = "文件大小超过 900KB，请压缩后打包成 zip 上传";
 
 // MARK: - 技术报错（小白话映射）
 "tech_not_found" = "找不到这个文件";

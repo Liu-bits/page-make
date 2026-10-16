@@ -9,6 +9,7 @@ struct PreviewView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var current: Project
+    @State private var reloadToken = UUID()
     @State private var runtimeErrors: [String] = []
     @State private var showDiagnostics = false
     @State private var showManage = false
@@ -58,9 +59,9 @@ struct PreviewView: View {
         }
         .alert(item: $alertItem) { item in
             Alert(
-                title: Text("alert_error"),
+                title: Text(L10n.string("alert_error")),
                 message: Text(item.message),
-                dismissButton: .default(Text("done"))
+                dismissButton: .default(Text(L10n.string("done")))
             )
         }
         .overlay {
@@ -114,7 +115,7 @@ struct PreviewView: View {
             if isExpired {
                 expiredPlaceholder
             } else if let url = current.publicURL {
-                WebView(url: url, onRuntimeError: handleRuntimeError)
+                WebView(url: url, reloadToken: reloadToken, onRuntimeError: handleRuntimeError)
             } else {
                 ProgressView()
             }
@@ -190,6 +191,8 @@ struct PreviewView: View {
     }
 
     private func handleRuntimeError(_ message: String) {
+        // 去重 + 限量，防止错误轰炸撑爆内存和面板
+        guard !runtimeErrors.contains(message), runtimeErrors.count < 50 else { return }
         runtimeErrors.append(message)
         LogStore.shared.append("runtime_error", result: "captured", errorCode: nil)
     }
@@ -201,6 +204,7 @@ struct PreviewView: View {
             let updated = try await APIClient.shared.refreshLink(current.id)
             current = updated
             runtimeErrors = []
+            reloadToken = UUID() // 强制 WebView 重新加载（URL 可能不变）
             appState.upsertProject(updated)
         } catch let error as APIError {
             alertItem = AlertItem(message: error.errorDescription ?? L10n.string("error_generic"))
@@ -210,7 +214,10 @@ struct PreviewView: View {
     }
 
     private func deleteProject() async {
-        await appState.deleteProject(current.id)
-        dismiss()
+        // 删除失败时留在原页并提示（RootView 的 authError 弹窗），不 dismiss
+        let success = await appState.deleteProject(current.id)
+        if success {
+            dismiss()
+        }
     }
 }

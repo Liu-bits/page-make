@@ -138,6 +138,7 @@ DEV_NO_AUTH=1 DATA_DIR=./data node docker/server.mjs
 | `GET /api/projects/:id/status` | 状态轮询（每 2 秒） |
 | `POST /api/projects/:id/refresh` | 刷新链接（EdgeOne 3 小时限制） |
 | `POST/DELETE /api/projects/:id/files` | 增删文件 |
+| `DELETE /api/upload/:uploadId` | 取消上传（清理临时分片） |
 | `POST /api/feedback` | 反馈 / 举报 |
 | `GET /p/:projectId` | 公开访问（无需登录；已下架 / 已过期有专门页面） |
 
@@ -148,6 +149,14 @@ DEV_NO_AUTH=1 DATA_DIR=./data node docker/server.mjs
 - 每次创建都必须选线路，不设默认、不记住上次
 - 语言：跟随 iOS 系统语言（中文/英文，其他默认英文），不提供手动切换
 - 诊断详情是登录特权，未登录只显示「您的代码有错误」
+
+## 上线前检查清单
+
+- [ ] 替换 `ios/PageMake/Utilities/Config.swift` 中隐私政策 / 用户协议为**真实地址**（Apple 审核必查，占位地址会被拒）
+- [ ] App Store Connect 同步填写隐私政策链接
+- [ ] 部署后端后配置 `APPLE_CLIENT_ID`（EdgeOne 控制台或容器环境变量）与 KV 绑定 `PAGEMAKE`
+- [ ] iOS 端 `Config.baseURL` 改为真实后端域名
+- [ ] 自托管模式：配置仓库变量 `PAGEMAKE_URL` 启用保活探测
 
 ## 已知限制（第一版）
 

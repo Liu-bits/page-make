@@ -1,9 +1,25 @@
 // POST /api/upload/init — 初始化分片上传
 // body: { provider, files: [{ name, size }] }
 import { requireAuth } from '../../lib/session.js';
-import { getKV, kvPut, keys, nowSeconds, appendLog } from '../../lib/kv.js';
+import { getKV, kvPut, kvGet, kvDel, kvListAll, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
-import { PROVIDERS, MAX_TOTAL_BYTES, CHUNK_BYTES } from '../../lib/state.js';
+import { PROVIDERS, MAX_TOTAL_BYTES, CHUNK_BYTES, UPLOAD_TTL_SECONDS } from '../../lib/state.js';
+
+// 顺带清理过期上传任务（用户取消/中断后的残留，防止 KV/磁盘无限增长）
+async function cleanupStaleUploads(kv) {
+  try {
+    const uploadKeys = await kvListAll(kv, 'upload_');
+    for (const key of uploadKeys) {
+      const upload = await kvGet(kv, key);
+      if (!upload || nowSeconds() - (upload.createdAt || 0) <= UPLOAD_TTL_SECONDS) continue;
+      const tmpKeys = await kvListAll(kv, keys.uploadChunkPrefix(upload.uploadId));
+      for (const tmpKey of tmpKeys) await kvDel(kv, tmpKey);
+      await kvDel(kv, key);
+    }
+  } catch {
+    // 清理失败不影响主流程
+  }
+}
 
 export async function onRequest(context) {
   const { request } = context;
@@ -33,6 +49,9 @@ export async function onRequest(context) {
     total += file.size;
   }
   if (total > MAX_TOTAL_BYTES) return fail('TOO_LARGE', 413);
+
+  // 清理过期上传（轻量扫描，小规模下开销可忽略）
+  await cleanupStaleUploads(auth.kv);
 
   const uploadId = crypto.randomUUID().replace(/-/g, '');
   const kv = auth.kv;

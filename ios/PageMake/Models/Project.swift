@@ -130,8 +130,8 @@ struct Project: Identifiable, Codable, Equatable {
         runtimeErrors = try c.decodeIfPresent([String].self, forKey: .runtimeErrors) ?? []
         createdAt = Self.decodeDate(c, .createdAt) ?? Date()
         expiresAt = Self.decodeDate(c, .expiresAt)
-        let urlString = try c.decodeIfPresent(String.self, forKey: .publicURL)
-            ?? c.decodeIfPresent(String.self, forKey: .url)
+        let urlString = try c.decodeIfPresent(String.self, forKey: .url)
+            ?? c.decodeIfPresent(String.self, forKey: .publicURL)
         publicURL = urlString.flatMap(URL.init(string:))
         files = try c.decodeIfPresent([ProjectFile].self, forKey: .files) ?? []
     }
@@ -152,7 +152,8 @@ struct Project: Identifiable, Codable, Equatable {
         try c.encode(runtimeErrors, forKey: .runtimeErrors)
         try c.encode(DateParsing.string(createdAt), forKey: .createdAt)
         try c.encodeIfPresent(expiresAt.map(DateParsing.string), forKey: .expiresAt)
-        try c.encodeIfPresent(publicURL?.absoluteString, forKey: .publicURL)
+        // 后端统一使用 url 字段（publicURL 仅保留解码兼容）
+        try c.encodeIfPresent(publicURL?.absoluteString, forKey: .url)
         try c.encode(files, forKey: .files)
     }
 

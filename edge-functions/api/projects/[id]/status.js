@@ -1,7 +1,6 @@
 // GET /api/projects/:id/status — 状态查询（iOS 每 2 秒轮询）
 // 返回 status、errorCode、diagnostics（EdgeOne 3 小时过期 → expired）
 import { getOwnedProject, projectStatusView } from '../../../lib/project.js';
-import { kvGet, keys } from '../../../lib/kv.js';
 import { ok, fail } from '../../../lib/responses.js';
 
 export async function onRequest(context) {

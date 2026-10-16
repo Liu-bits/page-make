@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { buildZip } from './make-zip.mjs';
+import { keys as kvKeys } from '../edge-functions/lib/kv.js';
 
 const PORT = 18786;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -19,6 +20,12 @@ let projectId = null;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message || '断言失败');
+}
+
+function assertEqual(actual, expected, message) {
+  if (actual !== expected) {
+    throw new Error(`${message || '断言失败'}：期望 ${JSON.stringify(expected)}，实际 ${JSON.stringify(actual)}`);
+  }
 }
 
 function sleep(ms) {
@@ -209,6 +216,36 @@ await test('文件管理：添加 + 删除', async () => {
 
   const gone = await fetch(`${BASE}/p/${projectId}/style.css`);
   assert(gone.status === 404, '删除后资源应 404');
+});
+
+await test('取消上传：清理后端临时分片', async () => {
+  const zip = buildZip([['index.html', '<html><body>cancel me</body></html>']]);
+  const initRes = await fetch(`${BASE}/api/upload/init`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: 'edgeone', files: [{ name: 'site.zip', size: zip.length }] }),
+  });
+  const init = await initRes.json();
+  await fetch(`${BASE}/api/upload/chunk`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uploadId: init.uploadId, fileIndex: 0, chunkIndex: 0, data: zip.toString('base64') }),
+  });
+
+  // 取消前磁盘上应有临时分片（key 经 encodeKey 编码）
+  const chunkPrefix = kvKeys.uploadChunkPrefix(init.uploadId);
+  const before = fs.readdirSync(dataDir).filter((f) => f.startsWith(chunkPrefix));
+  assert(before.length > 0, '取消前应有临时分片文件');
+
+  const cancelRes = await fetch(`${BASE}/api/upload/${init.uploadId}`, { method: 'DELETE', headers: AUTH });
+  assert((await cancelRes.json()).ok, '取消应成功');
+
+  const after = fs.readdirSync(dataDir).filter((f) => f.startsWith(chunkPrefix));
+  assertEqual(after.length, 0, `取消后该上传的临时分片应清理（残留：${after.join(',')}）`);
+
+  // 重复取消应 404
+  const again = await fetch(`${BASE}/api/upload/${init.uploadId}`, { method: 'DELETE', headers: AUTH });
+  assert(again.status === 404, '重复取消应 404');
 });
 
 await test('删除项目后公开链接失效', async () => {

@@ -18,6 +18,7 @@
 | `api/projects/[id]/status.js` | `/api/projects/:id/status` | GET：状态轮询 |
 | `api/projects/[id]/refresh.js` | `/api/projects/:id/refresh` | POST：刷新链接（EdgeOne 3 小时限制） |
 | `api/projects/[id]/files.js` | `/api/projects/:id/files` | POST 添加 / DELETE 删除文件 |
+| `api/upload/[uploadId].js` | `/api/upload/:uploadId` | DELETE：取消上传，清理临时分片 |
 | `api/feedback.js` | `/api/feedback` | POST：反馈 / 举报 |
 | `p/[projectId].js` | `/p/:projectId` | 公开访问（无需登录）：入口文件 |
 | `p/[projectId]/[[default]].js` | `/p/:projectId/*` | 公开访问：静态资源 |

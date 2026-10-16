@@ -108,6 +108,7 @@ const ROUTES = [
   { file: 'edge-functions/api/upload/init.js', pattern: /^\/api\/upload\/init$/ },
   { file: 'edge-functions/api/upload/chunk.js', pattern: /^\/api\/upload\/chunk$/ },
   { file: 'edge-functions/api/upload/finish.js', pattern: /^\/api\/upload\/finish$/ },
+  { file: 'edge-functions/api/upload/[uploadId].js', pattern: /^\/api\/upload\/([a-f0-9]{32})$/, params: ['uploadId'] },
   { file: 'edge-functions/api/projects.js', pattern: /^\/api\/projects$/ },
   { file: 'edge-functions/api/projects/[id].js', pattern: /^\/api\/projects\/([^/]+)$/, params: ['id'] },
   { file: 'edge-functions/api/projects/[id]/status.js', pattern: /^\/api\/projects\/([^/]+)\/status$/, params: ['id'] },

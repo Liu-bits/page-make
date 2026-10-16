@@ -2,7 +2,7 @@
 // 重新部署 → 更新 expiresAt → 返回新链接
 import { getOwnedProject, readSiteFiles, syncProjectFiles } from '../../../lib/project.js';
 import { deploySite } from '../../../lib/deploy/index.js';
-import { nowSeconds, appendLog } from '../../../lib/kv.js';
+import { appendLog } from '../../../lib/kv.js';
 import { ok, fail } from '../../../lib/responses.js';
 import { STATUS } from '../../../lib/state.js';
 

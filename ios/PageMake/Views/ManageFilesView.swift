@@ -98,9 +98,9 @@ struct ManageFilesView: View {
             }
             .alert(item: $alertItem) { item in
                 Alert(
-                    title: Text("alert_error"),
+                    title: Text(L10n.string("alert_error")),
                     message: Text(item.message),
-                    dismissButton: .default(Text("done"))
+                    dismissButton: .default(Text(L10n.string("done")))
                 )
             }
         }
@@ -174,9 +174,9 @@ struct AddFileSheet: View {
             }
             .alert(item: $alertItem) { item in
                 Alert(
-                    title: Text("alert_error"),
+                    title: Text(L10n.string("alert_error")),
                     message: Text(item.message),
-                    dismissButton: .default(Text("done"))
+                    dismissButton: .default(Text(L10n.string("done")))
                 )
             }
             .overlay {
@@ -194,6 +194,11 @@ struct AddFileSheet: View {
 
         guard let data = try? Data(contentsOf: url) else {
             alertItem = AlertItem(message: L10n.string("error_generic"))
+            return
+        }
+        // 单文件直传（base64 JSON）：限制 900KB，大文件请打包成 zip 走分片上传
+        guard data.count <= 900 * 1024 else {
+            alertItem = AlertItem(message: L10n.string("file_too_large_single"))
             return
         }
         let path = url.lastPathComponent

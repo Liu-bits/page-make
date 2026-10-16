@@ -87,7 +87,7 @@ extension AuthService: ASAuthorizationControllerPresentationContextProviding {
     }
 }
 
-enum AuthError: LocalizedError {
+enum AuthError: LocalizedError, Equatable {
     case missingIdentityToken
     case canceled
 

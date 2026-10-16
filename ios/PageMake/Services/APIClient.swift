@@ -26,6 +26,8 @@ final class APIClient {
 
     private let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
+        // 后端字段为 camelCase；配置 snake_case 兼容对未来改动免疫（无下划线的 key 不受影响）
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
         return decoder
     }()
     private let encoder = JSONEncoder()
@@ -107,6 +109,11 @@ final class APIClient {
 
     func deleteProject(_ id: String) async throws {
         _ = try await request("/api/projects/\(id)", method: "DELETE")
+    }
+
+    /// 取消上传：清理后端已上传的临时分片
+    func cancelUpload(uploadId: String) async throws {
+        _ = try await request("/api/upload/\(uploadId)", method: "DELETE")
     }
 
     func refreshLink(_ id: String) async throws -> Project {

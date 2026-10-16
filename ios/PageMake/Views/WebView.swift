@@ -4,6 +4,8 @@ import WebKit
 /// WKWebView 封装：注入 JS 捕获运行时错误（window.onerror / console.error / 资源加载失败）
 struct WebView: UIViewRepresentable {
     let url: URL
+    /// 刷新令牌：值变化时强制 webView.reload()（用于链接刷新后 URL 不变的场景）
+    let reloadToken: UUID?
     let onRuntimeError: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -26,7 +28,11 @@ struct WebView: UIViewRepresentable {
     func updateUIView(_ webView: WKWebView, context: Context) {
         if webView.url != url {
             webView.load(URLRequest(url: url))
+        } else if let token = reloadToken, token != context.coordinator.lastReloadToken {
+            // URL 未变但刷新令牌变了（如链接续期）：强制重新加载
+            webView.reload()
         }
+        context.coordinator.lastReloadToken = reloadToken
     }
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
@@ -69,6 +75,7 @@ struct WebView: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         var onRuntimeError: (String) -> Void
+        var lastReloadToken: UUID?
 
         init(onRuntimeError: @escaping (String) -> Void) {
             self.onRuntimeError = onRuntimeError

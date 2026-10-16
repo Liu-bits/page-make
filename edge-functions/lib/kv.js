@@ -26,6 +26,7 @@ export const keys = {
   userProject: (userId, id) => `uproject_${encodeKey(userId)}_${encodeKey(id)}`,
   upload: (id) => `upload_${encodeKey(id)}`,
   uploadChunk: (uploadId, fileIndex, chunkIndex) => `tmp_${encodeKey(uploadId)}_${fileIndex}_${chunkIndex}`,
+  uploadChunkPrefix: (uploadId) => `tmp_${encodeKey(uploadId)}_`,
   siteFile: (projectId, path) => `site_${encodeKey(projectId)}_${encodeKey(path)}`,
   sitePrefix: (projectId) => `site_${encodeKey(projectId)}_`,
   siteMeta: (projectId) => `meta_${encodeKey(projectId)}`,

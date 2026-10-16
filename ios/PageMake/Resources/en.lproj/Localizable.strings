@@ -130,6 +130,11 @@
 "error_db_error" = "Service error, please try again later";
 "error_invalid_provider" = "Please choose a hosting provider first";
 "error_expired" = "Link expired — tap to refresh";
+"error_upload_timeout" = "Processing timed out (over 5 minutes), please retry";
+"error_project_gone" = "Project no longer exists or was deleted";
+
+// MARK: - File management
+"file_too_large_single" = "File exceeds 900KB — pack it into a zip first";
 
 // MARK: - Technical errors (plain language)
 "tech_not_found" = "This file could not be found";

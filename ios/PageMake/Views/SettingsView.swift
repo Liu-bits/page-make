@@ -67,9 +67,9 @@ struct SettingsView: View {
             }
             .alert(item: $alertItem) { item in
                 Alert(
-                    title: Text("alert_error"),
+                    title: Text(L10n.string("alert_error")),
                     message: Text(item.message),
-                    dismissButton: .default(Text("done"))
+                    dismissButton: .default(Text(L10n.string("done")))
                 )
             }
         }
