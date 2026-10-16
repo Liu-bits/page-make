@@ -33,7 +33,8 @@ jobs:
             echo "::notice::PAGEMAKE_URL 未配置，跳过保活（在仓库 Variables 中配置后生效）"
             exit 0
           fi
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "${PAGEMAKE_URL%/}/healthz")
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            -A "PageMake-Keepalive/1.0" "${PAGEMAKE_URL%/}/healthz")
           echo "healthz → HTTP $code"
           if [ "$code" != "200" ]; then
             echo "::error::保活失败：healthz 返回 HTTP $code"
