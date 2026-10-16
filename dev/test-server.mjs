@@ -95,6 +95,36 @@ await test('公开配置 /api/config', async () => {
   assert(json.providers.includes('edgeone'), '应包含线路列表');
 });
 
+await test('容器布局兼容（server.mjs 与 backend/ 同级，模拟镜像内布局）', async () => {
+  // 容器内 server.mjs 在 /app/server.mjs、backend/ 同级；本地在 docker/ 子目录
+  const flatDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pagemake-flat-'));
+  fs.copyFileSync(path.resolve('docker/server.mjs'), path.join(flatDir, 'server.mjs'));
+  fs.cpSync(path.resolve('backend'), path.join(flatDir, 'backend'), { recursive: true });
+
+  const PORT2 = PORT + 2;
+  const server2 = spawn(process.execPath, [path.join(flatDir, 'server.mjs')], {
+    env: { ...spawnEnv, PORT: String(PORT2), DATA_DIR: path.join(flatDir, 'data'), DEV_NO_AUTH: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  try {
+    for (let i = 0; i < 50; i++) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${PORT2}/api/config`);
+        const json = await res.json();
+        assert(json.ok, '扁平布局下 /api/config 应正常（ROOT 探测生效）');
+        return;
+      } catch {
+        // 尚未启动
+      }
+      await sleep(200);
+    }
+    throw new Error('扁平布局服务启动失败');
+  } finally {
+    server2.kill();
+    fs.rmSync(flatDir, { recursive: true, force: true });
+  }
+});
+
 await test('未知路由返回 404', async () => {
   const res = await fetch(`${BASE}/no-such-route`);
   assert(res.status === 404, '应 404');

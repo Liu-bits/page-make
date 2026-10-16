@@ -21,7 +21,11 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..');
+// 根目录探测：本地开发时 server.mjs 位于 docker/ 子目录（父目录即仓库根）；
+// 容器内 Dockerfile 把它 COPY 到 /app/server.mjs（自身所在目录即根）。
+// 两种情况都靠「backend/ 在哪」自动判定，避免写死。
+const ROOT_CANDIDATES = [path.resolve(__dirname, '..'), __dirname];
+const ROOT = ROOT_CANDIDATES.find((dir) => fs.existsSync(path.join(dir, 'backend'))) || ROOT_CANDIDATES[0];
 const PORT = Number(process.env.PORT || 7860);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 
