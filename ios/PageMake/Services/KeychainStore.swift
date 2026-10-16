@@ -47,10 +47,21 @@ final class KeychainStore {
 
     // MARK: - 会话快捷方式
 
-    var sessionToken: String? { get("session_token") }
-    var sessionExpiresAt: Date? { get("session_expires_at").flatMap(DateParsing.parse) }
-    var userId: String? { get("user_id") }
-    var userEmail: String? { get("user_email") }
+    var sessionToken: String? {
+        get("session_token")
+    }
+
+    var sessionExpiresAt: Date? {
+        get("session_expires_at").flatMap(DateParsing.parse)
+    }
+
+    var userId: String? {
+        get("user_id")
+    }
+
+    var userEmail: String? {
+        get("user_email")
+    }
 
     func saveSession(_ response: AuthResponse) {
         set(response.token, for: "session_token")
