@@ -113,6 +113,7 @@
 "feedback_message" = "Message";
 "privacy_policy" = "Privacy Policy";
 "user_agreement" = "User Agreement";
+"document_unavailable" = "Failed to load the document, please try again later";
 
 // MARK: - Ban
 "banned_title" = "Account banned";

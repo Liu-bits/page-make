@@ -152,8 +152,8 @@ DEV_NO_AUTH=1 DATA_DIR=./data node docker/server.mjs
 
 ## 上线前检查清单
 
-- [ ] 替换 `ios/PageMake/Utilities/Config.swift` 中隐私政策 / 用户协议为**真实地址**（Apple 审核必查，占位地址会被拒）
-- [ ] App Store Connect 同步填写隐私政策链接
+- [x] 隐私政策 / 用户协议：已改为 **App 内直接展示**（`ios/PageMake/Resources/Documents/`，中英双语随系统语言切换），无需外部链接；文案与功能一致（Sign in with Apple、L1-L4 封禁、7 天留证、反馈渠道、GPL-3.0）
+- [ ] App Store Connect 仍需填写「App 隐私」标签（数据收集类型声明）
 - [ ] 部署后端后配置 `APPLE_CLIENT_ID`（EdgeOne 控制台或容器环境变量）与 KV 绑定 `PAGEMAKE`
 - [ ] iOS 端 `Config.baseURL` 改为真实后端域名
 - [ ] 自托管模式：配置仓库变量 `PAGEMAKE_URL` 启用保活探测

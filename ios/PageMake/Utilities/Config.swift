@@ -14,10 +14,4 @@ enum Config {
 
     /// 登录态剩余不足 1 天时静默刷新
     static let silentRefreshWindowSeconds: TimeInterval = 24 * 3600
-
-    /// 隐私政策 / 用户协议
-    /// TODO(上架前必须替换)：Apple 审核必查隐私政策，example.com 占位地址会被拒。
-    /// 替换为真实可访问地址，并同步在 App Store Connect 填写。
-    static let privacyPolicyURL = URL(string: "https://example.com/pagemake/privacy")!
-    static let userAgreementURL = URL(string: "https://example.com/pagemake/terms")!
 }

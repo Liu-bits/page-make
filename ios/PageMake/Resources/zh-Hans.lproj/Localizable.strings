@@ -113,6 +113,7 @@
 "feedback_message" = "留言";
 "privacy_policy" = "隐私政策";
 "user_agreement" = "用户协议";
+"document_unavailable" = "文档加载失败，请稍后重试";
 
 // MARK: - 封号
 "banned_title" = "账号已被封禁";

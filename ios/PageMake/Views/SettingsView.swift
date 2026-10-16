@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var alertItem: AlertItem?
     @State private var showFeedback = false
+    @State private var showDocument: AppDocument?
 
     var body: some View {
         NavigationStack {
@@ -46,11 +47,17 @@ struct SettingsView: View {
                 }
 
                 Section(L10n.string("about_section")) {
-                    Link(destination: Config.privacyPolicyURL) {
+                    Button {
+                        showDocument = .privacyPolicy
+                    } label: {
                         Label(L10n.string("privacy_policy"), systemImage: "hand.raised")
+                            .foregroundStyle(.primary)
                     }
-                    Link(destination: Config.userAgreementURL) {
+                    Button {
+                        showDocument = .userAgreement
+                    } label: {
                         Label(L10n.string("user_agreement"), systemImage: "doc.text")
+                            .foregroundStyle(.primary)
                     }
                 }
             }
@@ -64,6 +71,9 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showFeedback) {
                 FeedbackView()
+            }
+            .sheet(item: $showDocument) { document in
+                DocumentView(document: document)
             }
             .alert(item: $alertItem) { item in
                 Alert(
