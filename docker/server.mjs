@@ -2,8 +2,8 @@
 // =============================================================================
 // Page-make 自托管服务（容器版）
 // -----------------------------------------------------------------------------
-// 把 edge-functions/（EdgeOne Pages Functions 处理器）以普通 Node HTTP 服务运行：
-//   - 路由与 edge-functions/ 目录结构一一对应，业务逻辑零改动
+// 把 backend/（EdgeOne Pages Functions 处理器）以普通 Node HTTP 服务运行：
+//   - 路由与 backend/ 目录结构一一对应，业务逻辑零改动
 //   - 磁盘 KV 适配器替代 EdgeOne KV 绑定（同样暴露 get/put/delete/list）
 //   - 静态文件落盘，由 /p/ 路由直接对外提供（不再依赖第三方部署 API）
 //
@@ -98,24 +98,24 @@ class DiskKV {
 }
 
 // ---------------------------------------------------------------------------
-// 路由表（与 edge-functions/ 目录结构一一对应；精确匹配在前、通配在后）
+// 路由表（与 backend/ 目录结构一一对应；精确匹配在前、通配在后）
 // ---------------------------------------------------------------------------
 const ROUTES = [
-  { file: 'edge-functions/index.js', pattern: /^\/$/ },
-  { file: 'edge-functions/api/config.js', pattern: /^\/api\/config$/ },
-  { file: 'edge-functions/api/auth.js', pattern: /^\/api\/auth$/ },
-  { file: 'edge-functions/api/feedback.js', pattern: /^\/api\/feedback$/ },
-  { file: 'edge-functions/api/upload/init.js', pattern: /^\/api\/upload\/init$/ },
-  { file: 'edge-functions/api/upload/chunk.js', pattern: /^\/api\/upload\/chunk$/ },
-  { file: 'edge-functions/api/upload/finish.js', pattern: /^\/api\/upload\/finish$/ },
-  { file: 'edge-functions/api/upload/[uploadId].js', pattern: /^\/api\/upload\/([a-f0-9]{32})$/, params: ['uploadId'] },
-  { file: 'edge-functions/api/projects.js', pattern: /^\/api\/projects$/ },
-  { file: 'edge-functions/api/projects/[id].js', pattern: /^\/api\/projects\/([^/]+)$/, params: ['id'] },
-  { file: 'edge-functions/api/projects/[id]/status.js', pattern: /^\/api\/projects\/([^/]+)\/status$/, params: ['id'] },
-  { file: 'edge-functions/api/projects/[id]/refresh.js', pattern: /^\/api\/projects\/([^/]+)\/refresh$/, params: ['id'] },
-  { file: 'edge-functions/api/projects/[id]/files.js', pattern: /^\/api\/projects\/([^/]+)\/files$/, params: ['id'] },
-  { file: 'edge-functions/p/[projectId].js', pattern: /^\/p\/([^/]+)$/, params: ['projectId'] },
-  { file: 'edge-functions/p/[projectId]/[[default]].js', pattern: /^\/p\/([^/]+)\/(.+)$/, params: ['projectId', 'default'] },
+  { file: 'backend/index.js', pattern: /^\/$/ },
+  { file: 'backend/api/config.js', pattern: /^\/api\/config$/ },
+  { file: 'backend/api/auth.js', pattern: /^\/api\/auth$/ },
+  { file: 'backend/api/feedback.js', pattern: /^\/api\/feedback$/ },
+  { file: 'backend/api/upload/init.js', pattern: /^\/api\/upload\/init$/ },
+  { file: 'backend/api/upload/chunk.js', pattern: /^\/api\/upload\/chunk$/ },
+  { file: 'backend/api/upload/finish.js', pattern: /^\/api\/upload\/finish$/ },
+  { file: 'backend/api/upload/[uploadId].js', pattern: /^\/api\/upload\/([a-f0-9]{32})$/, params: ['uploadId'] },
+  { file: 'backend/api/projects.js', pattern: /^\/api\/projects$/ },
+  { file: 'backend/api/projects/[id].js', pattern: /^\/api\/projects\/([^/]+)$/, params: ['id'] },
+  { file: 'backend/api/projects/[id]/status.js', pattern: /^\/api\/projects\/([^/]+)\/status$/, params: ['id'] },
+  { file: 'backend/api/projects/[id]/refresh.js', pattern: /^\/api\/projects\/([^/]+)\/refresh$/, params: ['id'] },
+  { file: 'backend/api/projects/[id]/files.js', pattern: /^\/api\/projects\/([^/]+)\/files$/, params: ['id'] },
+  { file: 'backend/p/[projectId].js', pattern: /^\/p\/([^/]+)$/, params: ['projectId'] },
+  { file: 'backend/p/[projectId]/[[default]].js', pattern: /^\/p\/([^/]+)\/(.+)$/, params: ['projectId', 'default'] },
 ];
 
 const handlerCache = new Map();

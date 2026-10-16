@@ -1,5 +1,5 @@
 // GET /api/projects/:id/status — 状态查询（iOS 每 2 秒轮询）
-// 返回 status、errorCode、diagnostics（EdgeOne 3 小时过期 → expired）
+// 返回 status、errorCode、diagnostics（自托管模式无过期，expired 仅作兼容分支）
 import { getOwnedProject, projectStatusView } from '../../../lib/project.js';
 import { ok, fail } from '../../../lib/responses.js';
 

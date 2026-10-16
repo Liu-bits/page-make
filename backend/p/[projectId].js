@@ -24,7 +24,7 @@ export async function onRequest(context) {
     return Response.redirect(project.deploymentUrl, 302);
   }
 
-  // EdgeOne 线路：默认域名 3 小时限制 → 过期提示
+  // 过期检查（自托管 expiresAt 为 null 不会触发；保留兼容边缘部署）
   if (project.provider === 'edgeone' && project.expiresAt && nowSeconds() > project.expiresAt) {
     return htmlPage(410, 'expired', request);
   }

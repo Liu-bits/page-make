@@ -24,11 +24,7 @@ export const PROVIDERS = new Set(['edgeone', 'cloudflare']);
 export const SESSION_TTL_SECONDS = 7 * 24 * 3600;
 export const REFRESH_BEFORE_SECONDS = 24 * 3600;
 
-// EdgeOne 默认域名 3 小时预览限制 → 提前 10 分钟续期
-export const EDGEONE_PREVIEW_TTL_SECONDS = 3 * 3600;
-export const EDGEONE_REFRESH_MARGIN_SECONDS = 10 * 60;
-
-// EdgeOne Functions 单请求 body 上限 1MB → 分片上传，单片 600KB（base64 后约 800KB）
+// 分片上传：单片 600KB（base64 后约 800KB）；容器模式无 body 限制，协议保留兼容（iOS 端已实现）
 export const MAX_TOTAL_BYTES = 5 * 1024 * 1024;
 export const CHUNK_BYTES = 600 * 1024;
 export const UPLOAD_TTL_SECONDS = 30 * 60;

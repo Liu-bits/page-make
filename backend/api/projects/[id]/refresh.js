@@ -1,4 +1,4 @@
-// POST /api/projects/:id/refresh — 刷新链接（EdgeOne 3 小时限制处理）
+// POST /api/projects/:id/refresh — 刷新链接（从存储取回文件重新部署）
 // 重新部署 → 更新 expiresAt → 返回新链接
 import { getOwnedProject, readSiteFiles, syncProjectFiles } from '../../../lib/project.js';
 import { deploySite } from '../../../lib/deploy/index.js';

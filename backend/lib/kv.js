@@ -1,7 +1,7 @@
 // KV 访问层
-// 绑定方式：EdgeOne Pages 控制台 → 存储 → KV 存储 → 创建命名空间 → 绑定到项目，
-//           变量名固定为 PAGEMAKE（本项目所有数据一个命名空间，靠 key 前缀隔离）
-// KV key 规则：仅数字、字母、下划线；值 ≤ 25MB；最终一致性（边缘缓存最长 60s）
+// 存储：容器版由 docker/server.mjs 的 DiskKV 提供（目录 = DATA_DIR）；
+//       如需部署到 EdgeOne Pages，控制台创建 KV 命名空间并绑定变量名 PAGEMAKE 即可（同一 API）。
+// KV key 规则：仅数字、字母、下划线；值 ≤ 25MB
 import { encodeKey, decodeKey } from './base64.js';
 
 const KV_BINDING = 'PAGEMAKE';
@@ -48,7 +48,7 @@ export async function kvGet(kv, key, type = 'json') {
 }
 
 export async function kvPut(kv, key, value) {
-  // KV 只接受字符串 / 二进制：普通对象自动序列化为 JSON（EdgeOne KV 与磁盘 KV 一致）
+  // KV 只接受字符串 / 二进制：普通对象自动序列化为 JSON（磁盘 KV 与 EdgeOne KV 一致）
   if (value !== null
       && typeof value === 'object'
       && !(value instanceof ArrayBuffer)

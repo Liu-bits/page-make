@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { buildZip } from './make-zip.mjs';
-import { keys as kvKeys } from '../edge-functions/lib/kv.js';
+import { keys as kvKeys } from '../backend/lib/kv.js';
 
 const PORT = 18786;
 const BASE = `http://127.0.0.1:${PORT}`;

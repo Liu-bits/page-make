@@ -3,12 +3,10 @@
 # -----------------------------------------------------------------------------
 # 触发条件：push（main / tag v*）、pull_request、手动触发
 #
-# 需要的 GitHub Secrets（Settings → Secrets and variables → Actions）：
-#   EDGEONE_API_TOKEN      EdgeOne Makers API Token（第一版实际使用，主线路部署）
-#   CLOUDFLARE_API_TOKEN   Cloudflare API Token（备选线路，第一版占位不启用）
-#   APPLE_TEAM_ID          第一版占位，不启用
-#   APPLE_KEY_ID           第一版占位，不启用
-#   APPLE_PRIVATE_KEY      第一版占位，不启用
+# 需要的 GitHub 配置（Settings → Secrets and variables → Actions）：
+#   Variables: MODELSCOPE_SPACE   创空间标识（如 liu20/pagemake，格式 用户名/空间名）
+#   Secrets:   MODELSCOPE_TOKEN   ModelScope API Token（控制台 → 个人中心 → 访问令牌）
+#   （未配置时部署 job 自动跳过，不影响测试 CI）
 #
 # 环境要求（用户指定）：
 #   - iOS 编译：xcode-27 runner（= macOS 27.0.1 镜像，arm64；macos-27 标签 GitHub 尚未提供）
@@ -41,7 +39,7 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # 1. 后端逻辑测试（EdgeOne Pages Functions 的纯逻辑，Node 直接跑）
+  # 1. 后端逻辑测试（backend/ 纯逻辑，Node 直接跑）
   # ---------------------------------------------------------------------------
   backend-test:
     name: "后端逻辑测试（Node 22）"
@@ -129,9 +127,12 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # 3. 部署（仅 main 分支，依赖 backend-test + ios-build 全部通过）
+  #    唯一部署目标：ModelScope 创空间（Docker 类型，免费 CPU 空间）
+  #    推送构建子集到创空间 Git → 平台自动构建上线
+  #    配置：Variables MODELSCOPE_SPACE + Secrets MODELSCOPE_TOKEN
   # ---------------------------------------------------------------------------
   deploy:
-    name: "部署（仅 main 分支）"
+    name: "部署到 ModelScope 创空间（仅 main 分支）"
     needs: [backend-test, ios-build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -139,12 +140,8 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 部署到 EdgeOne Pages（主线路）
+      - name: 部署到 ModelScope 创空间（Docker）
         env:
-          EDGEONE_API_TOKEN: ${{ secrets.EDGEONE_API_TOKEN }}
-        run: bash scripts/deploy-edgeone.sh
-
-      - name: 部署到 Cloudflare Pages（备选线路 · 第一版占位）
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: bash scripts/deploy-cloudflare.sh
+          MODELSCOPE_SPACE: ${{ vars.MODELSCOPE_SPACE }}
+          MODELSCOPE_TOKEN: ${{ secrets.MODELSCOPE_TOKEN }}
+        run: bash scripts/deploy-modelscope.sh

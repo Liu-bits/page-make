@@ -1,6 +1,6 @@
 // POST /api/upload/chunk — 上传单个分片
 // body: { uploadId, fileIndex, chunkIndex, data(base64) }
-// 注：EdgeOne Functions 单请求 body 上限 1MB，单片 600KB（base64 后约 800KB）
+// 注：600KB/片（base64 后约 800KB）；边缘函数时代的 1MB body 限制已不适用，协议保留兼容
 import { requireAuth } from '../../lib/session.js';
 import { kvGet, kvPut, keys } from '../../lib/kv.js';
 import { base64ToBytes } from '../../lib/base64.js';
