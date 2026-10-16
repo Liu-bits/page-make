@@ -15,25 +15,26 @@ enum AppDocument: String, Identifiable, CaseIterable {
     }
 }
 
-/// 文档加载：跟随 iOS 系统语言（中文 → zh-Hans，其他 → en），加载失败回退英文
+/// 文档加载：跟随 iOS 系统语言（中文 → -zh，其他 → -en），加载失败回退英文
+/// 文件布局：Resources/Documents/<文档名>-<zh|en>.txt（语言放文件名，避开 XcodeGen 本地化目录歧义）
 enum DocumentStore {
     static func text(for document: AppDocument) -> String {
-        if let text = load(language: preferredLanguage(), document: document) {
+        if let text = load(document: document, suffix: preferredSuffix()) {
             return text
         }
-        if let text = load(language: "en", document: document) {
+        if let text = load(document: document, suffix: "en") {
             return text
         }
         return NSLocalizedString("document_unavailable", comment: "")
     }
 
-    private static func preferredLanguage() -> String {
+    private static func preferredSuffix() -> String {
         let preferred = Locale.preferredLanguages.first ?? "en"
-        return preferred.hasPrefix("zh") ? "zh-Hans" : "en"
+        return preferred.hasPrefix("zh") ? "zh" : "en"
     }
 
-    private static func load(language: String, document: AppDocument) -> String? {
-        let name = "Documents/\(language)/\(document.rawValue)"
+    private static func load(document: AppDocument, suffix: String) -> String? {
+        let name = "Documents/\(document.rawValue)-\(suffix)"
         guard let url = Bundle.main.url(forResource: name, withExtension: "txt"),
               let text = try? String(contentsOf: url, encoding: .utf8) else {
             return nil
