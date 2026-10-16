@@ -30,7 +30,7 @@
 
 | 项 | 版本 |
 | --- | --- |
-| iOS 编译 | macOS 27 runner + Xcode 27.0.1 |
+| iOS 编译 | `xcode-27` runner（= macOS 27.0.1 镜像）+ Xcode 27.0.1（CI 精确锁定并校验） |
 | 运行目标 | iOS 27.0.1 模拟器（未安装时回退已安装的最新 iOS 运行时） |
 | 后端测试 | Node 22 |
 | 本地开发 | Windows 11（iOS 无法本地编译，由 GitHub Actions 的 macOS runner 完成） |
@@ -70,7 +70,7 @@ edgeone makers deploy -n <项目名> -t <EDGEONE_API_TOKEN>
 | Job | runner | 内容 |
 | --- | --- | --- |
 | backend-test | ubuntu-latest | Node 22 跑后端单元测试 |
-| ios-build | macos-27 | Xcode 27.0.1 校验 → xcodegen → 编译（不签名）→ 模拟器测试 |
+| ios-build | xcode-27（macOS 27.0.1） | Xcode 27.0.1 校验 → xcodegen → 编译（不签名）→ 模拟器测试 |
 | deploy | ubuntu-latest | 仅 main 分支，依赖前两者全部通过 |
 
 需要的 Secrets（Settings → Secrets and variables → Actions）：

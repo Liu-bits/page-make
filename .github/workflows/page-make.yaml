@@ -11,7 +11,9 @@
 #   APPLE_PRIVATE_KEY      第一版占位，不启用
 #
 # 环境要求（用户指定）：
-#   - iOS 编译：macOS 27 runner + Xcode 27.0.1，运行目标 iOS 27.0.1 模拟器
+#   - iOS 编译：xcode-27 runner（= macOS 27.0.1 镜像，arm64；macos-27 标签 GitHub 尚未提供，
+#     Xcode 27.0.1 由 maxim-lobanov/setup-xcode 精确锁定并校验）
+#   - 运行目标：iOS 27.0.1 模拟器
 #   - 后端测试：ubuntu-latest + Node 22
 #
 # 第一版约束：
@@ -59,8 +61,9 @@ jobs:
   # 2. iOS 编译与单元测试（macOS 27 / Xcode 27.0.1 / iOS 27.0.1）
   # ---------------------------------------------------------------------------
   ios-build:
-    name: "iOS 编译与测试（macOS 27 · Xcode 27.0.1 · iOS 27.0.1）"
-    runs-on: macos-27
+    name: "iOS 编译与测试（xcode-27 · macOS 27.0.1 · Xcode 27.0.1 · iOS 27.0.1）"
+    # xcode-27 标签 = macOS 27.0.1 镜像（预装 Xcode 27，arm64 公共预览）
+    runs-on: xcode-27
     env:
       XCODE_VERSION: "27.0.1"
       SIM_OS_VERSION: "27.0.1"
