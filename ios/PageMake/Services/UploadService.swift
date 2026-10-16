@@ -142,7 +142,10 @@ final class UploadService: ObservableObject {
             } catch let error as APIError {
                 // 项目不存在（已删除）→ 立即退出，不再重试
                 if case .http(let status, _) = error, status == 404 {
-                    update { $0.status = .failed; $0.errorMessage = L10n.string("error_project_gone") }
+                    if let index = items.firstIndex(where: { $0.id == itemId }) {
+                        items[index].status = .failed
+                        items[index].errorMessage = L10n.string("error_project_gone")
+                    }
                     return
                 }
                 continue // 网络 / 服务错误继续重试
@@ -152,7 +155,10 @@ final class UploadService: ObservableObject {
         }
 
         if !Task.isCancelled {
-            update { $0.status = .failed; $0.errorMessage = L10n.string("error_upload_timeout") }
+            if let index = items.firstIndex(where: { $0.id == itemId }) {
+                items[index].status = .failed
+                items[index].errorMessage = L10n.string("error_upload_timeout")
+            }
         }
     }
 }
