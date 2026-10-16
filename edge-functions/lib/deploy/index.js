@@ -44,10 +44,8 @@ export async function deploySite(args) {
     const accountId = env.CLOUDFLARE_ACCOUNT_ID;
     const cfProject = env.CLOUDFLARE_PAGES_PROJECT;
     if (!apiToken || !accountId || !cfProject) {
-      throw Object.assign(
-        new Error('CLOUDFLARE_NOT_CONFIGURED'),
-        { code: 'STORAGE_ERROR', message: 'Cloudflare 线路未配置：缺少 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_PAGES_PROJECT' }
-      );
+      // 未配置 Cloudflare 凭证（自托管容器模式）：降级为本地 KV 服务，链接长期有效
+      return { expiresAt: null, deploymentUrl: null };
     }
     const result = await deployToCloudflare({ apiToken, accountId, projectName: cfProject, files });
     return { expiresAt: null, deploymentUrl: result.url };

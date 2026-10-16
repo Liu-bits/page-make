@@ -1,10 +1,10 @@
 // POST /api/upload/finish — 完成上传，触发后台处理
 // 立即返回 { projectId, status: 'processing' }，iOS 每 2 秒轮询 /api/projects/:id/status
-import { requireAuth } from '../lib/session.js';
-import { kvGet, keys } from '../lib/kv.js';
-import { processUpload } from '../lib/process.js';
-import { ok, fail } from '../lib/responses.js';
-import { STATUS } from '../lib/state.js';
+import { requireAuth } from '../../lib/session.js';
+import { kvGet, kvPut, keys, nowSeconds } from '../../lib/kv.js';
+import { processUpload } from '../../lib/process.js';
+import { ok, fail } from '../../lib/responses.js';
+import { STATUS } from '../../lib/state.js';
 
 const UPLOAD_ID_RE = /^[a-f0-9]{32}$/;
 
@@ -28,6 +28,18 @@ export async function onRequest(context) {
 
   const projectId = crypto.randomUUID().replace(/-/g, '');
   const origin = new URL(request.url).origin;
+
+  // 先落一条 processing 记录：状态轮询立即可用（边缘版与容器版都受益）
+  await kvPut(auth.kv, keys.project(projectId), {
+    id: projectId,
+    userId: auth.user.userId,
+    provider: upload.provider,
+    status: STATUS.PROCESSING,
+    createdAt: nowSeconds(),
+    diagnostics: [],
+    runtimeErrors: [],
+    files: [],
+  });
 
   const task = processUpload({ kv: auth.kv, upload, projectId, origin, env: context.env })
     .catch(() => {

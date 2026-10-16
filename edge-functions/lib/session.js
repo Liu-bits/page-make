@@ -1,5 +1,6 @@
 // 会话 / 鉴权中间件
-import { getKV, kvGet, kvPut, keys, nowSeconds, SESSION_TTL_SECONDS } from './kv.js';
+import { getKV, kvGet, kvPut, keys, nowSeconds } from './kv.js';
+import { SESSION_TTL_SECONDS } from './state.js';
 import { fail } from './responses.js';
 
 export function bearerToken(request) {
@@ -27,6 +28,15 @@ export async function requireAuth(context) {
     kv = getKV(context.env);
   } catch (error) {
     return { error: fail('STORAGE_ERROR', 500, { message: error.message }) };
+  }
+
+  // 开发/自托管调试：DEV_NO_AUTH=1 时跳过鉴权（仅本地测试，生产环境必须不设置）
+  if (context.env?.DEV_NO_AUTH === '1') {
+    return {
+      user: { userId: 'dev-user', email: 'dev@local', status: 'active', banLevel: 0, banUntil: null, banReason: null },
+      session: { userId: 'dev-user', expiresAt: Number.MAX_SAFE_INTEGER },
+      kv,
+    };
   }
 
   const token = bearerToken(context.request);

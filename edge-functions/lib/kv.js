@@ -47,6 +47,13 @@ export async function kvGet(kv, key, type = 'json') {
 }
 
 export async function kvPut(kv, key, value) {
+  // KV 只接受字符串 / 二进制：普通对象自动序列化为 JSON（EdgeOne KV 与磁盘 KV 一致）
+  if (value !== null
+      && typeof value === 'object'
+      && !(value instanceof ArrayBuffer)
+      && !ArrayBuffer.isView(value)) {
+    value = JSON.stringify(value);
+  }
   await kv.put(key, value);
 }
 

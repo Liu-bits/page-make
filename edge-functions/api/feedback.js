@@ -31,7 +31,7 @@ export async function onRequest(context) {
 
   const kv = getKV(context.env);
   const id = crypto.randomUUID().replace(/-/g, '');
-  await kv.put(keys.feedback(id), {
+  await kv.put(keys.feedback(id), JSON.stringify({
     id,
     userId,
     projectId: body?.projectId ?? null,
@@ -39,6 +39,6 @@ export async function onRequest(context) {
     type,
     message,
     createdAt: nowSeconds(),
-  });
+  }));
   return ok({ received: true });
 }

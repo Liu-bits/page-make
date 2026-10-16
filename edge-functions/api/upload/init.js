@@ -1,9 +1,9 @@
 // POST /api/upload/init — 初始化分片上传
 // body: { provider, files: [{ name, size }] }
-import { requireAuth } from '../lib/session.js';
-import { getKV, kvPut, keys, nowSeconds, appendLog } from '../lib/kv.js';
-import { ok, fail } from '../lib/responses.js';
-import { PROVIDERS, MAX_TOTAL_BYTES, CHUNK_BYTES } from '../lib/state.js';
+import { requireAuth } from '../../lib/session.js';
+import { getKV, kvPut, keys, nowSeconds, appendLog } from '../../lib/kv.js';
+import { ok, fail } from '../../lib/responses.js';
+import { PROVIDERS, MAX_TOTAL_BYTES, CHUNK_BYTES } from '../../lib/state.js';
 
 export async function onRequest(context) {
   const { request } = context;

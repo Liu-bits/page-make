@@ -58,6 +58,12 @@ jobs:
       - name: 运行后端单元测试（解压 / 诊断 / 状态机 / KV key / JWT 解码）
         run: node dev/run-tests.mjs
 
+      - name: 运行自托管容器冒烟测试（HTTP 全流程）
+        run: node dev/test-server.mjs
+
+      - name: 校验 Docker 镜像可构建
+        run: docker build -t pagemake-test .
+
   # ---------------------------------------------------------------------------
   # 2. iOS 编译与单元测试（macOS 27 / Xcode 27.0.1 / iOS 27.0.1）
   # ---------------------------------------------------------------------------

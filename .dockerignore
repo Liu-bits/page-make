@@ -1,0 +1,9 @@
+# 容器构建上下文裁剪（ModelScope 创空间从仓库根构建）
+.git
+.github
+ios
+LICENSE
+README.md
+edge-functions/README.md
+*.md
+data/

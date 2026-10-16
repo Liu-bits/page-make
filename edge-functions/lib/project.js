@@ -1,5 +1,6 @@
 // 项目辅助：归属校验 / 文件清单维护 / 项目删除
 import { kvGet, kvPut, kvDel, kvListAll, keys, pathFromSiteKey, nowSeconds } from './kv.js';
+import { requireAuth } from './session.js';
 import { fail } from './responses.js';
 import { ERR } from './state.js';
 

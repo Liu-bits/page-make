@@ -1,10 +1,10 @@
 // POST /api/projects/:id/refresh — 刷新链接（EdgeOne 3 小时限制处理）
 // 重新部署 → 更新 expiresAt → 返回新链接
-import { getOwnedProject, readSiteFiles, syncProjectFiles } from '../lib/project.js';
-import { deploySite } from '../lib/deploy/index.js';
-import { nowSeconds, appendLog } from '../lib/kv.js';
-import { ok, fail } from '../lib/responses.js';
-import { STATUS } from '../lib/state.js';
+import { getOwnedProject, readSiteFiles, syncProjectFiles } from '../../../lib/project.js';
+import { deploySite } from '../../../lib/deploy/index.js';
+import { nowSeconds, appendLog } from '../../../lib/kv.js';
+import { ok, fail } from '../../../lib/responses.js';
+import { STATUS } from '../../../lib/state.js';
 
 export async function onRequest(context) {
   const { request, params } = context;

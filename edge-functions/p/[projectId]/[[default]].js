@@ -1,7 +1,7 @@
 // GET /p/:projectId/... — 公开访问项目内静态资源（catch-all 动态路由）
-import { getKV, kvGet, keys, nowSeconds } from '../lib/kv.js';
-import { contentTypeFor, htmlPage } from '../lib/responses.js';
-import { STATUS } from '../lib/state.js';
+import { getKV, kvGet, keys, nowSeconds } from '../../lib/kv.js';
+import { contentTypeFor, htmlPage } from '../../lib/responses.js';
+import { STATUS } from '../../lib/state.js';
 
 const ID_RE = /^[a-f0-9]{32}$/;
 

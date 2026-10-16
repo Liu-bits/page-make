@@ -1,8 +1,8 @@
 // GET /api/projects/:id — 项目详情
 // DELETE /api/projects/:id — 删除项目（文件 + 记录）
-import { getOwnedProject, deleteProjectRecords } from '../lib/project.js';
-import { ok, fail } from '../lib/responses.js';
-import { appendLog } from '../lib/kv.js';
+import { getOwnedProject, deleteProjectRecords } from '../../lib/project.js';
+import { ok, fail } from '../../lib/responses.js';
+import { appendLog } from '../../lib/kv.js';
 
 export async function onRequest(context) {
   const { request, params } = context;

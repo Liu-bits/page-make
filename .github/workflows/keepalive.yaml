@@ -1,0 +1,42 @@
+# =============================================================================
+# 保活（自托管容器模式）
+# -----------------------------------------------------------------------------
+# ModelScope 创空间免费 CPU 空间为常驻运行态，本 workflow 是保险 + 健康监控：
+# 每 10 分钟访问一次 /healthz，挂了会在 Actions 页面报错（可配合邮件通知）。
+#
+# 配置方式（不配置则自动跳过，不影响其他 CI）：
+#   Settings → Secrets and variables → Actions → Variables → New repository variable
+#   名称：PAGEMAKE_URL
+#   值：  https://<你的空间域名>   （自托管服务根地址，无需结尾斜杠）
+# =============================================================================
+
+name: Keep-alive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keepalive:
+    name: "保活探测（每 10 分钟）"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 访问 /healthz
+        env:
+          PAGEMAKE_URL: ${{ vars.PAGEMAKE_URL }}
+        run: |
+          if [ -z "${PAGEMAKE_URL:-}" ]; then
+            echo "::notice::PAGEMAKE_URL 未配置，跳过保活（在仓库 Variables 中配置后生效）"
+            exit 0
+          fi
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "${PAGEMAKE_URL%/}/healthz")
+          echo "healthz → HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::保活失败：healthz 返回 HTTP $code"
+            exit 1
+          fi
+          echo "保活成功"

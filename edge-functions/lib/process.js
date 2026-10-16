@@ -96,11 +96,13 @@ export async function processUpload(args) {
       name: upload.files[0]?.name || 'untitled',
     });
 
-    // 6. 写库
+    // 6. 写库（先写索引，最后才让 ready 状态可见，避免列表查询竞态）
     const manifest = [...files.entries()].map(([path, bytes]) => ({ path, size: bytes.length }));
     const sourceType = upload.files.some((f) => f.name.toLowerCase().endsWith('.zip'))
       ? 'zip'
       : (upload.files.length === 1 ? 'single' : 'multi');
+
+    await kvPut(kv, keys.userProject(upload.userId, projectId), { createdAt: nowSeconds() });
 
     const project = await finish(STATUS.READY, {
       entryPath,
@@ -115,7 +117,6 @@ export async function processUpload(args) {
       deploymentUrl: deploy.deploymentUrl,
       files: manifest,
     });
-    await kvPut(kv, keys.userProject(upload.userId, projectId), { createdAt: nowSeconds() });
 
     // 7. 清理临时分片
     for (let fi = 0; fi < upload.files.length; fi++) {
