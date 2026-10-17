@@ -114,7 +114,11 @@ final class AppState: ObservableObject {
         } catch let error as APIError {
             return error.errorDescription
         } catch {
-            return L10n.string("error_generic")
+            // 透出底层错误（ASWebAuthenticationSession / 网络），便于定位
+            let ns = error as NSError
+            LogStore.shared.append("google_login", result: "failed", errorCode: "\(ns.domain)/\(ns.code)")
+            let detail = ns.localizedDescription
+            return detail.isEmpty ? "\(ns.domain) \(ns.code)" : "\(ns.domain) \(ns.code)：\(detail)"
         }
     }
 

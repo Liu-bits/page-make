@@ -25,7 +25,8 @@ enum PlainLanguage {
     static func message(forErrorCode code: String) -> String {
         let key = messageKey(forErrorCode: code)
         // 未知错误码：直接显示码本身（便于用户反馈时定位，如 GOOGLE_JWKS_FETCH_FAILED）
-        return key.isEmpty ? code : L10n.string(key)
+        let text = key.isEmpty ? code : L10n.string(key)
+        return text.isEmpty ? L10n.string("error_generic") : text
     }
 
     /// 技术报错 → 小白话 key（纯逻辑，可单测）

@@ -6,6 +6,13 @@ struct AlertItem: Identifiable {
     let message: String
     /// 弹窗标题的本地化 key；默认"出错了"，成功提示类消息应传 "alert_tip"
     var titleKey: String = "alert_error"
+
+    init(message: String, titleKey: String = "alert_error") {
+        // 消息为空时回退到通用文案，避免出现只有标题的空弹窗
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.message = trimmed.isEmpty ? L10n.string("error_generic") : message
+        self.titleKey = titleKey
+    }
 }
 
 /// 项目状态徽章

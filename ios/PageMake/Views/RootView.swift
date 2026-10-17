@@ -43,8 +43,10 @@ struct RootView: View {
         ) {
             Button(L10n.string("done"), role: .cancel) {}
         } message: {
-            if let message = appState.authError {
+            if let message = appState.authError, !message.isEmpty {
                 Text(message)
+            } else {
+                Text(L10n.string("error_generic"))
             }
         }
     }
