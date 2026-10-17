@@ -70,7 +70,9 @@ extension AuthService: ASAuthorizationControllerDelegate {
         if let authError = error as? ASAuthorizationError, authError.code == .canceled {
             continuation?.resume(throwing: AuthError.canceled)
         } else {
-            continuation?.resume(throwing: error)
+            // 其他失败（含 entitlement 缺失、设备不支持等）：统一友好提示，
+            // 不把原始 ASAuthorizationError 文本（含 com.apple.AuthenticationServices）暴露给用户
+            continuation?.resume(throwing: AuthError.authorizationFailed)
         }
         continuation = nil
     }
@@ -90,11 +92,13 @@ extension AuthService: ASAuthorizationControllerPresentationContextProviding {
 enum AuthError: LocalizedError, Equatable {
     case missingIdentityToken
     case canceled
+    case authorizationFailed
 
     var errorDescription: String? {
         switch self {
         case .missingIdentityToken: return L10n.string("error_generic")
         case .canceled: return L10n.string("login_canceled")
+        case .authorizationFailed: return L10n.string("error_apple_authorization_failed")
         }
     }
 }
