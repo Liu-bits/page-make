@@ -17,12 +17,14 @@ enum PlainLanguage {
         case "EMAIL_TAKEN": return "error_email_taken"
         case "INVALID_CREDENTIALS": return "error_invalid_credentials"
         case "INVALID_GOOGLE_TOKEN": return "error_invalid_google_token"
-        default: return "error_generic"
+        default: return ""
         }
     }
 
     static func message(forErrorCode code: String) -> String {
-        L10n.string(messageKey(forErrorCode: code))
+        let key = messageKey(forErrorCode: code)
+        // 未知错误码：直接显示码本身（便于用户反馈时定位，如 GOOGLE_JWKS_FETCH_FAILED）
+        return key.isEmpty ? code : L10n.string(key)
     }
 
     /// 技术报错 → 小白话 key（纯逻辑，可单测）

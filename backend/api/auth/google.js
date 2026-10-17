@@ -31,9 +31,11 @@ export async function onRequest(context) {
     google = await verifyGoogleIdentityToken(idToken, {
       clientId: context.env?.GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID,
     });
-  } catch {
-    await appendLog(kv, { step: 'auth_google', result: 'failed', errorCode: 'INVALID_GOOGLE_TOKEN' });
-    return fail('INVALID_GOOGLE_TOKEN', 401);
+  } catch (error) {
+    // 返回具体原因（JWKS 网络 / 签名 / aud / 过期），便于定位配置问题
+    const reason = error?.message || 'INVALID_GOOGLE_TOKEN';
+    await appendLog(kv, { step: 'auth_google', result: 'failed', errorCode: reason });
+    return fail(reason, 401);
   }
 
   if (!google.sub) return fail('INVALID_GOOGLE_TOKEN', 401);
