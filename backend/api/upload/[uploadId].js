@@ -10,7 +10,17 @@ export async function onRequest(context) {
   const { request, params } = context;
   const auth = await requireAuth(context);
   if (auth.error) return auth.error;
-  if (request.method !== 'DELETE') return fail('METHOD_NOT_ALLOWED', 405);
+  // ModelScope 网关拦截 DELETE 方法 → 同时支持 POST + { action: 'cancel' }
+  let cancelIntent = request.method === 'DELETE';
+  if (request.method === 'POST') {
+    try {
+      const body = await request.json();
+      cancelIntent = body?.action === 'cancel';
+    } catch {
+      cancelIntent = false;
+    }
+  }
+  if (!cancelIntent) return fail('METHOD_NOT_ALLOWED', 405);
 
   const uploadId = params?.uploadId;
   if (!UPLOAD_ID_RE.test(uploadId)) return fail('NOT_FOUND', 404);

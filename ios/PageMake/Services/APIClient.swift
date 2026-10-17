@@ -149,8 +149,10 @@ final class APIClient {
         return payload.projects
     }
 
+    /// 删除项目（ModelScope 网关拦截 DELETE 方法，改用 POST + action）
     func deleteProject(_ id: String) async throws {
-        _ = try await request("/api/projects/\(id)", method: "DELETE")
+        let body = try encoder.encode(ActionRequest(action: "delete"))
+        _ = try await request("/api/projects/\(id)", method: "POST", body: body)
     }
 
     /// 粘贴代码直接创建网页（同步返回 ready 项目，无需轮询）
@@ -184,9 +186,10 @@ final class APIClient {
         let project: Project
     }
 
-    /// 取消上传：清理后端已上传的临时分片
+    /// 取消上传：清理后端已上传的临时分片（POST + action，网关拦截 DELETE）
     func cancelUpload(uploadId: String) async throws {
-        _ = try await request("/api/upload/\(uploadId)", method: "DELETE")
+        let body = try encoder.encode(ActionRequest(action: "cancel"))
+        _ = try await request("/api/upload/\(uploadId)", method: "POST", body: body)
     }
 
     func refreshLink(_ id: String) async throws -> Project {
@@ -265,8 +268,13 @@ final class APIClient {
         let content: String
     }
 
-    struct DeleteFileRequest: Encodable {
+    struct RemoveFileRequest: Encodable {
+        let action: String
         let path: String
+    }
+
+    struct ActionRequest: Encodable {
+        let action: String
     }
 
     func addFile(projectId: String, path: String, content: Data) async throws -> Project {
@@ -276,9 +284,10 @@ final class APIClient {
         return payload.project
     }
 
+    /// 删除文件（POST + action=remove，网关拦截 DELETE）
     func deleteFile(projectId: String, path: String) async throws -> Project {
-        let body = try encoder.encode(DeleteFileRequest(path: path))
-        let data = try await request("/api/projects/\(projectId)/files", method: "DELETE", body: body)
+        let body = try encoder.encode(RemoveFileRequest(action: "remove", path: path))
+        let data = try await request("/api/projects/\(projectId)/files", method: "POST", body: body)
         let payload = try decoder.decode(ProjectPayload.self, from: data)
         return payload.project
     }

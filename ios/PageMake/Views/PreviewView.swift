@@ -59,7 +59,7 @@ struct PreviewView: View {
         }
         .alert(item: $alertItem) { item in
             Alert(
-                title: Text(L10n.string("alert_error")),
+                title: Text(L10n.string(item.titleKey)),
                 message: Text(item.message),
                 dismissButton: .default(Text(L10n.string("done")))
             )
@@ -87,7 +87,7 @@ struct PreviewView: View {
             if let url = current.publicURL {
                 Button {
                     UIPasteboard.general.string = url.absoluteString
-                    alertItem = AlertItem(message: L10n.string("link_copied"))
+                    alertItem = AlertItem(message: L10n.string("link_copied"), titleKey: "alert_tip")
                 } label: {
                     Image(systemName: "doc.on.doc")
                 }

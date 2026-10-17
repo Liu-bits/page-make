@@ -454,6 +454,29 @@ await test('游客登录：设备 ID 换会话（免费 Apple ID 兜底）', asy
   assertEqual((await bad.json()).error, 'BAD_REQUEST', '非法 deviceId 应 400');
 });
 
+await test('POST 删除项目（网关拦截 DELETE 的替代方案）', async () => {
+  // 创建
+  const created = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: 'edgeone', html: '<p>post delete</p>' }),
+  })).json();
+  assert(created.ok, '创建应成功');
+  const id = created.project.id;
+
+  // POST + action=delete
+  const del = await (await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete' }),
+  })).json();
+  assert(del.ok && del.deleted === true, `POST 删除应成功：${JSON.stringify(del)}`);
+
+  // 公开链接应失效
+  const page = await fetch(`${BASE}/p/${id}`);
+  assertEqual(page.status, 404, '删除后公开链接应 404');
+});
+
 await test('删除项目后公开链接失效', async () => {
   const res = await fetch(`${BASE}/api/projects/${projectId}`, { method: 'DELETE', headers: AUTH });
   assert((await res.json()).ok, '删除应成功');

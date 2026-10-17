@@ -106,6 +106,8 @@ enum AuthError: LocalizedError, Equatable {
     case missingIdentityToken
     case canceled
     case authorizationFailed(code: Int)
+    /// OAuth 失败时透传第三方错误信息（如 Google 返回的 error 字段）
+    case oauthFailed(message: String)
 
     var errorDescription: String? {
         switch self {
@@ -116,6 +118,8 @@ enum AuthError: LocalizedError, Equatable {
         case .authorizationFailed(let code):
             // 显示错误码，便于用户反馈时精确定位（1000 多为签名/entitlement 问题）
             return L10n.format("error_apple_authorization_failed", "\(code)")
+        case .oauthFailed(let message):
+            return message
         }
     }
 }

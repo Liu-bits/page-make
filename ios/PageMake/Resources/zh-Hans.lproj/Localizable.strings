@@ -182,3 +182,4 @@
 "login_google" = "使用 Google 登录";
 "google_not_configured" = "Google 登录未配置（缺少 Client ID），请先配置";
 "error_invalid_google_token" = "Google 登录校验失败，请重试";
+"alert_tip" = "提示";

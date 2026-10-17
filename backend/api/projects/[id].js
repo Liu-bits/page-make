@@ -14,7 +14,18 @@ export async function onRequest(context) {
     return ok({ project });
   }
 
-  if (request.method === 'DELETE') {
+  // ModelScope 网关拦截 DELETE 方法（403）→ 同时支持 POST + { action: 'delete' }
+  let deleteIntent = request.method === 'DELETE';
+  if (request.method === 'POST') {
+    try {
+      const body = await request.json();
+      deleteIntent = body?.action === 'delete';
+    } catch {
+      deleteIntent = false;
+    }
+  }
+
+  if (deleteIntent) {
     await deleteProjectRecords(kv, user.userId, project.id);
     await appendLog(kv, { projectId: project.id, step: 'delete_project', result: 'ok' });
     return ok({ deleted: true });

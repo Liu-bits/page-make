@@ -38,12 +38,16 @@ export async function onRequest(context) {
     return ok({ project });
   }
 
-  if (request.method === 'DELETE') {
+  const removeFile = async () => {
     await kvDel(kv, keys.siteFile(project.id, path));
     if (project.entryPath === path) project.entryPath = null;
     await syncProjectFiles(kv, project);
     return ok({ project });
-  }
+  };
+
+  // ModelScope 网关拦截 DELETE 方法 → 同时支持 POST + { action: 'remove' }
+  if (request.method === 'POST' && body?.action === 'remove') return removeFile();
+  if (request.method === 'DELETE') return removeFile();
 
   return fail('METHOD_NOT_ALLOWED', 405);
 }

@@ -99,8 +99,11 @@ final class GoogleAuthService: NSObject {
         guard let http = response as? HTTPURLResponse, http.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let idToken = json["id_token"] as? String else {
-            LogStore.shared.append("google_token", result: "failed", errorCode: "exchange")
-            throw AuthError.authorizationFailed(code: -6)
+            // 透传 Google 的错误（如 invalid_client / redirect_uri_mismatch），便于定位配置问题
+            let body = String(data: data, encoding: .utf8) ?? ""
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            LogStore.shared.append("google_token", result: "failed", errorCode: "http_\(status)")
+            throw AuthError.oauthFailed(message: "Google \(status): \(body.isEmpty ? "token exchange failed" : body)")
         }
         return idToken
     }

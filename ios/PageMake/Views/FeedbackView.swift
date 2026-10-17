@@ -57,7 +57,7 @@ struct FeedbackView: View {
             }
             .alert(item: $alertItem) { item in
                 Alert(
-                    title: Text(L10n.string("alert_error")),
+                    title: Text(L10n.string(item.titleKey)),
                     message: Text(item.message),
                     dismissButton: .default(Text(L10n.string("done")))
                 )

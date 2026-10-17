@@ -4,6 +4,8 @@ import SwiftUI
 struct AlertItem: Identifiable {
     let id = UUID()
     let message: String
+    /// 弹窗标题的本地化 key；默认"出错了"，成功提示类消息应传 "alert_tip"
+    var titleKey: String = "alert_error"
 }
 
 /// 项目状态徽章
