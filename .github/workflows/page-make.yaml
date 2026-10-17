@@ -166,34 +166,34 @@ jobs:
         working-directory: ios
         run: xcodegen generate
 
-      - name: 编译归档（真机 · ad-hoc 签名以保留 entitlements）
+      - name: 编译归档（真机 · 不签名）
         working-directory: ios
         run: |
           set -o pipefail
-          # CODE_SIGN_IDENTITY="-" = ad-hoc 签名：不依赖证书/描述文件，
-          # 但会把 entitlements（如 Sign in with Apple）嵌入代码签名，
-          # 供 iLoader / Sideloadly 等重签工具读取后重新签名。
           xcodebuild archive \
             -project PageMake.xcodeproj \
             -scheme PageMake \
             -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/PageMake.xcarchive" \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
             DEVELOPMENT_TEAM=""
 
-      - name: 打包 IPA（Payload/ 结构）
+      - name: ad-hoc 签名并打包 IPA
         run: |
           mkdir -p Payload
           cp -R "$RUNNER_TEMP/PageMake.xcarchive/Products/Applications/PageMake.app" Payload/
-          # 兜底：确保 archived-expanded-entitlements.xcent 存在（部分重签工具直接读它）
+          # ad-hoc 签名（无证书）：entitlements 嵌入代码签名，
+          # iLoader / Sideloadly 等重签工具可读取后重新签名
+          codesign --force --sign - --entitlements ios/PageMake/PageMake.entitlements "Payload/PageMake.app"
+          echo "已 ad-hoc 签名（含 Sign in with Apple entitlement）"
+          # 兜底：确保 archived-expanded-entitlements.xcent 存在（部分工具直接读它）
           if [ ! -f "Payload/PageMake.app/archived-expanded-entitlements.xcent" ]; then
             cp ios/PageMake/PageMake.entitlements "Payload/PageMake.app/archived-expanded-entitlements.xcent"
             echo "已手动注入 archived-expanded-entitlements.xcent"
-          else
-            echo "archived-expanded-entitlements.xcent 已由归档生成"
           fi
           zip -qr PageMake-unsigned.ipa Payload
           rm -rf Payload
