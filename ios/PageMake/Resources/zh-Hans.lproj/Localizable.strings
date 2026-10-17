@@ -164,3 +164,21 @@
 "paste_too_large" = "代码超过 300KB 上限，请精简后再试";
 "paste_project_name" = "粘贴的网页";
 "paste_size" = "已输入 %@ KB / 上限 300 KB";
+
+// MARK: - 邮箱密码登录
+"password_login" = "邮箱密码登录";
+"login" = "登录";
+"register" = "注册";
+"email_label" = "邮箱";
+"password_label" = "密码";
+"password_placeholder" = "至少 8 位";
+"password_rule" = "密码仅用于本 App，与邮箱密码无关；v1 不发送验证邮件";
+"error_invalid_email" = "邮箱格式不正确";
+"error_weak_password" = "密码至少 8 位";
+"error_email_taken" = "该邮箱已注册，请直接登录";
+"error_invalid_credentials" = "邮箱或密码错误";
+
+// MARK: - Google 登录
+"login_google" = "使用 Google 登录";
+"google_not_configured" = "Google 登录未配置（缺少 Client ID），请先配置";
+"error_invalid_google_token" = "Google 登录校验失败，请重试";

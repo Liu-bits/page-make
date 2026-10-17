@@ -349,6 +349,82 @@ await test('粘贴代码创建：参数校验', async () => {
   assertEqual((await noHtml.json()).error, 'BAD_REQUEST', '空 HTML 应报 BAD_REQUEST');
 });
 
+await test('Google 登录：非法 token 拒绝 + 参数校验', async () => {
+  const bad = await (await fetch(`${BASE}/api/auth/google`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idToken: 'fake.google.token' }),
+  })).json();
+  assertEqual(bad.error, 'INVALID_GOOGLE_TOKEN', '非法 Google token 应被拒绝');
+
+  const missing = await (await fetch(`${BASE}/api/auth/google`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  })).json();
+  assertEqual(missing.error, 'BAD_REQUEST', '缺 idToken 应报 BAD_REQUEST');
+});
+
+await test('邮箱密码：注册 → 登录 → 错误密码', async () => {
+  const email = `user${Date.now()}@example.com`;
+  const password = 'secret-pass-123';
+
+  // 注册
+  const reg = await (await fetch(`${BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })).json();
+  assert(reg.ok, `注册应成功：${JSON.stringify(reg)}`);
+  assert(reg.token, '注册应返回 token');
+  assert(reg.userId.startsWith('email_'), 'userId 应为 email_ 前缀');
+
+  // 重复注册 → EMAIL_TAKEN
+  const dup = await (await fetch(`${BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })).json();
+  assertEqual(dup.error, 'EMAIL_TAKEN', '重复注册应报 EMAIL_TAKEN');
+
+  // 登录成功
+  const login = await (await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })).json();
+  assert(login.ok, '登录应成功');
+  assert(login.token, '登录应返回 token');
+  assertEqual(login.userId, reg.userId, '同一邮箱 userId 应一致');
+
+  // 密码错误 → INVALID_CREDENTIALS
+  const wrong = await (await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'wrong-password-1' }),
+  })).json();
+  assertEqual(wrong.error, 'INVALID_CREDENTIALS', '密码错误应报 INVALID_CREDENTIALS');
+
+  // 参数校验
+  const badEmail = await (await fetch(`${BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'not-an-email', password: 'secret-pass-123' }),
+  })).json();
+  assertEqual(badEmail.error, 'INVALID_EMAIL', '非法邮箱应报 INVALID_EMAIL');
+
+  const weak = await (await fetch(`${BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: `x${Date.now()}@example.com`, password: '1234567' }),
+  })).json();
+  assertEqual(weak.error, 'WEAK_PASSWORD', '短密码应报 WEAK_PASSWORD');
+
+  // 登录态可用：用注册 token 访问项目列表
+  const list = await fetch(`${BASE}/api/projects`, { headers: { Authorization: `Bearer ${reg.token}` } });
+  assert(list.status === 200, '注册 token 应可访问受保护接口');
+});
+
 await test('游客登录：设备 ID 换会话（免费 Apple ID 兜底）', async () => {
   const deviceId = 'test-device-0123456789abcdef';
   const res = await fetch(`${BASE}/api/auth/guest`, {

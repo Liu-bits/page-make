@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var alertItem: AlertItem?
     @State private var showFeedback = false
     @State private var showDocument: AppDocument?
+    @State private var showPasswordAuth = false
 
     var body: some View {
         NavigationStack {
@@ -29,6 +30,16 @@ struct SettingsView: View {
                     } else {
                         Button(L10n.string("login_apple")) {
                             Task { await appState.signIn() }
+                        }
+                        Button(L10n.string("login_google")) {
+                            Task {
+                                if let error = await appState.signInWithGoogle() {
+                                    alertItem = AlertItem(message: error)
+                                }
+                            }
+                        }
+                        Button(L10n.string("password_login")) {
+                            showPasswordAuth = true
                         }
                         Button(L10n.string("login_guest")) {
                             Task { await appState.signInAsGuest() }
@@ -77,6 +88,10 @@ struct SettingsView: View {
             }
             .sheet(item: $showDocument) { document in
                 DocumentView(document: document)
+            }
+            .sheet(isPresented: $showPasswordAuth) {
+                PasswordAuthView()
+                    .environmentObject(appState)
             }
             .alert(item: $alertItem) { item in
                 Alert(

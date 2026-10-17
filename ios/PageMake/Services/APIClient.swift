@@ -95,6 +95,36 @@ final class APIClient {
         return try decoder.decode(AuthResponse.self, from: data)
     }
 
+    /// Google 登录（id_token 由 App 端 OAuth 换取，后端验签）
+    func googleAuthenticate(idToken: String) async throws -> AuthResponse {
+        let body = try encoder.encode(GoogleAuthRequest(idToken: idToken))
+        let data = try await request("/api/auth/google", method: "POST", body: body, requiresAuth: false)
+        return try decoder.decode(AuthResponse.self, from: data)
+    }
+
+    struct GoogleAuthRequest: Encodable {
+        let idToken: String
+    }
+
+    /// 邮箱 + 密码注册（注册成功即登录）
+    func register(email: String, password: String) async throws -> AuthResponse {
+        let body = try encoder.encode(PasswordAuthRequest(email: email, password: password))
+        let data = try await request("/api/auth/register", method: "POST", body: body, requiresAuth: false)
+        return try decoder.decode(AuthResponse.self, from: data)
+    }
+
+    /// 邮箱 + 密码登录
+    func login(email: String, password: String) async throws -> AuthResponse {
+        let body = try encoder.encode(PasswordAuthRequest(email: email, password: password))
+        let data = try await request("/api/auth/login", method: "POST", body: body, requiresAuth: false)
+        return try decoder.decode(AuthResponse.self, from: data)
+    }
+
+    struct PasswordAuthRequest: Encodable {
+        let email: String
+        let password: String
+    }
+
     /// 游客登录（设备 ID 免密，免费 Apple ID 环境的兜底）
     func guestAuthenticate(deviceId: String) async throws -> AuthResponse {
         let body = try encoder.encode(GuestAuthRequest(deviceId: deviceId))

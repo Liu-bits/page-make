@@ -164,3 +164,21 @@
 "paste_too_large" = "Code exceeds the 300KB limit";
 "paste_project_name" = "Pasted page";
 "paste_size" = "Entered %@ KB / 300 KB limit";
+
+// MARK: - Email & password
+"password_login" = "Email & Password";
+"login" = "Log in";
+"register" = "Sign up";
+"email_label" = "Email";
+"password_label" = "Password";
+"password_placeholder" = "At least 8 characters";
+"password_rule" = "Only used by Page-make — not your email password. No verification email in v1.";
+"error_invalid_email" = "Invalid email address";
+"error_weak_password" = "Password must be at least 8 characters";
+"error_email_taken" = "Email already registered — log in instead";
+"error_invalid_credentials" = "Wrong email or password";
+
+// MARK: - Google sign-in
+"login_google" = "Sign in with Google";
+"google_not_configured" = "Google sign-in not configured (missing Client ID)";
+"error_invalid_google_token" = "Google sign-in verification failed, please retry";

@@ -5,6 +5,8 @@ struct ProjectListView: View {
     @EnvironmentObject private var appState: AppState
     @Binding var showFilePicker: Bool
     @Binding var showSettings: Bool
+    @State private var showPasswordAuth = false
+    @State private var alertItem: AlertItem?
 
     var body: some View {
         content
@@ -33,6 +35,23 @@ struct ProjectListView: View {
             .refreshable {
                 await appState.loadProjects()
             }
+            .sheet(isPresented: $showPasswordAuth) {
+                PasswordAuthView()
+                    .environmentObject(appState)
+            }
+            .alert(item: $alertItem) { item in
+                Alert(
+                    title: Text(L10n.string("alert_error")),
+                    message: Text(item.message),
+                    dismissButton: .default(Text(L10n.string("done")))
+                )
+            }
+    }
+
+    private func signInWithGoogle() async {
+        if let error = await appState.signInWithGoogle() {
+            alertItem = AlertItem(message: error)
+        }
     }
 
     @ViewBuilder
@@ -68,6 +87,22 @@ struct ProjectListView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(PrimaryButtonStyle())
+            .padding(.horizontal, 32)
+            Button {
+                Task { await signInWithGoogle() }
+            } label: {
+                Text(L10n.string("login_google"))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .padding(.horizontal, 32)
+            Button {
+                showPasswordAuth = true
+            } label: {
+                Text(L10n.string("password_login"))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
             .padding(.horizontal, 32)
             Button {
                 Task { await appState.signInAsGuest() }

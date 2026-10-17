@@ -10,6 +10,7 @@ final class AppState: ObservableObject {
     @Published var banInfo: BanInfo?
 
     private let auth = AuthService()
+    private let googleAuth = GoogleAuthService()
     private let api = APIClient.shared
 
     var isLoggedIn: Bool {
@@ -92,6 +93,65 @@ final class AppState: ObservableObject {
         session = nil
         projects = []
         banInfo = nil
+    }
+
+    /// Google 登录；返回错误文案（nil = 成功 / 用户取消）
+    func signInWithGoogle() async -> String? {
+        do {
+            let idToken = try await googleAuth.signIn()
+            let response = try await api.googleAuthenticate(idToken: idToken)
+            applySession(response)
+            await loadProjects()
+            return nil
+        } catch let error as AuthError where error == .canceled {
+            return nil
+        } catch let error as AuthError {
+            // 未配置 Client ID 时给出明确提示
+            if case .authorizationFailed(let code) = error, code == -3 {
+                return L10n.string("google_not_configured")
+            }
+            return error.errorDescription
+        } catch let error as APIError {
+            return error.errorDescription
+        } catch {
+            return L10n.string("error_generic")
+        }
+    }
+
+    /// 邮箱密码登录；返回错误文案（nil = 成功）
+    func signInWithPassword(email: String, password: String) async -> String? {
+        do {
+            let response = try await api.login(email: email, password: password)
+            applySession(response)
+            await loadProjects()
+            return nil
+        } catch let error as APIError {
+            if case .banned(let ban) = error {
+                banInfo = ban
+                return nil
+            }
+            return error.errorDescription
+        } catch {
+            return L10n.string("error_generic")
+        }
+    }
+
+    /// 邮箱密码注册（成功即登录）；返回错误文案（nil = 成功）
+    func registerWithPassword(email: String, password: String) async -> String? {
+        do {
+            let response = try await api.register(email: email, password: password)
+            applySession(response)
+            await loadProjects()
+            return nil
+        } catch let error as APIError {
+            if case .banned(let ban) = error {
+                banInfo = ban
+                return nil
+            }
+            return error.errorDescription
+        } catch {
+            return L10n.string("error_generic")
+        }
     }
 
     /// 游客登录（免费 Apple ID 无法使用 Sign in with Apple 时的兜底）

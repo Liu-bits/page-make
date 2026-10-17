@@ -12,6 +12,11 @@ enum PlainLanguage {
         case "DB_ERROR": return "error_db_error"
         case "INVALID_PROVIDER": return "error_invalid_provider"
         case "EXPIRED": return "error_expired"
+        case "INVALID_EMAIL": return "error_invalid_email"
+        case "WEAK_PASSWORD": return "error_weak_password"
+        case "EMAIL_TAKEN": return "error_email_taken"
+        case "INVALID_CREDENTIALS": return "error_invalid_credentials"
+        case "INVALID_GOOGLE_TOKEN": return "error_invalid_google_token"
         default: return "error_generic"
         }
     }
