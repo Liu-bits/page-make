@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 创建流程：线路选择 → 上传队列
 struct CreateFlowView: View {
-    let files: [PickedFile]
+    let source: CreateSource
 
     @Environment(\.dismiss) private var dismiss
     @State private var selection: HostProvider?
@@ -10,7 +10,7 @@ struct CreateFlowView: View {
 
     var body: some View {
         if let provider = confirmed {
-            UploadQueueView(files: files, provider: provider)
+            UploadQueueView(source: source, provider: provider)
         } else {
             providerSelect
         }

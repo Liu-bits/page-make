@@ -19,6 +19,7 @@
 | `api/upload/finish.js` | `/api/upload/finish` | POST：完成上传，后台处理（processing → ready/failed） |
 | `api/upload/[uploadId].js` | `/api/upload/:uploadId` | DELETE：取消上传，清理临时分片 |
 | `api/projects.js` | `/api/projects` | GET：我的项目列表 |
+| `api/projects/paste.js` | `/api/projects/paste` | POST：粘贴代码直接创建（自动注入 CSS/JS、片段自动包裹） |
 | `api/projects/[id].js` | `/api/projects/:id` | GET 详情 / DELETE 删除 |
 | `api/projects/[id]/status.js` | `/api/projects/:id/status` | GET：状态轮询 |
 | `api/projects/[id]/refresh.js` | `/api/projects/:id/refresh` | POST：重新部署（刷新链接） |

@@ -145,3 +145,20 @@
 "tech_mime" = "Wrong file type";
 "tech_syntax" = "There is a wrong symbol in the code";
 "tech_resource" = "A resource failed to load — check whether it was packed into the zip";
+
+
+// MARK: - Paste code
+"pick_mode_files" = "Upload files";
+"pick_mode_paste" = "Paste code";
+"paste_hint" = "Paste code directly — a page is generated (CSS / JS optional)";
+"paste_html" = "HTML";
+"paste_css" = "CSS";
+"paste_js" = "JavaScript";
+"paste_html_placeholder" = "Paste your HTML here…";
+"paste_css_placeholder" = "Optional: saved as style.css and linked automatically";
+"paste_js_placeholder" = "Optional: saved as script.js and linked automatically";
+"paste_create" = "Create page";
+"paste_html_required" = "Please paste HTML first";
+"paste_too_large" = "Code exceeds the 300KB limit";
+"paste_project_name" = "Pasted page";
+"paste_size" = "Entered %@ KB / 300 KB limit";

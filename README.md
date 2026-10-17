@@ -124,6 +124,7 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 | `POST /api/upload/chunk` | 上传分片（600KB/片） |
 | `POST /api/upload/finish` | 完成上传，后台处理（processing → ready/failed） |
 | `GET /api/projects` | 我的项目列表 |
+| `POST /api/projects/paste` | 粘贴代码直接创建（HTML 必填，CSS/JS 可选，自动注入引用） |
 | `GET/DELETE /api/projects/:id` | 详情 / 删除 |
 | `GET /api/projects/:id/status` | 状态轮询（每 2 秒） |
 | `POST /api/projects/:id/refresh` | 刷新链接（重新部署） |

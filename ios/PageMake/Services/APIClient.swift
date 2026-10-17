@@ -111,6 +111,37 @@ final class APIClient {
         _ = try await request("/api/projects/\(id)", method: "DELETE")
     }
 
+    /// 粘贴代码直接创建网页（同步返回 ready 项目，无需轮询）
+    func createPastedProject(
+        provider: HostProvider,
+        html: String,
+        css: String,
+        js: String,
+        name: String
+    ) async throws -> Project {
+        let body = try encoder.encode(PasteRequest(
+            provider: provider.rawValue,
+            html: html,
+            css: css,
+            js: js,
+            name: name
+        ))
+        let data = try await request("/api/projects/paste", method: "POST", body: body)
+        return try decoder.decode(PasteResponse.self, from: data).project
+    }
+
+    struct PasteRequest: Encodable {
+        let provider: String
+        let html: String
+        let css: String
+        let js: String
+        let name: String
+    }
+
+    struct PasteResponse: Decodable {
+        let project: Project
+    }
+
     /// 取消上传：清理后端已上传的临时分片
     func cancelUpload(uploadId: String) async throws {
         _ = try await request("/api/upload/\(uploadId)", method: "DELETE")

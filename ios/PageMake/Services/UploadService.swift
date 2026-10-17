@@ -54,6 +54,38 @@ final class UploadService: ObservableObject {
         }
     }
 
+    /// 粘贴代码直接创建（单次请求，无需分片与轮询）
+    func createPasted(_ content: PasteContent, provider: HostProvider, name: String) {
+        let item = Item(name: name, provider: provider, status: .uploading)
+        items.insert(item, at: 0)
+        let itemId = item.id
+        tasks[itemId] = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let project = try await self.api.createPastedProject(
+                    provider: provider,
+                    html: content.html,
+                    css: content.css,
+                    js: content.js,
+                    name: name
+                )
+                self.update(itemId) { $0.status = .ready; $0.progress = 1; $0.project = project }
+                LogStore.shared.append("paste", result: "ok", errorCode: nil)
+            } catch let error as APIError {
+                self.update(itemId) { $0.status = .failed; $0.errorMessage = error.errorDescription }
+                LogStore.shared.append("paste", result: "failed", errorCode: "\(error)")
+            } catch {
+                self.update(itemId) { $0.status = .failed; $0.errorMessage = L10n.string("error_generic") }
+                LogStore.shared.append("paste", result: "failed", errorCode: "network")
+            }
+        }
+    }
+
+    private func update(_ itemId: UUID, _ transform: (inout Item) -> Void) {
+        guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
+        transform(&items[index])
+    }
+
     func remove(_ item: Item) {
         tasks[item.id]?.cancel()
         tasks[item.id] = nil

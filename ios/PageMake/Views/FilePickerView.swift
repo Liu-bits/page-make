@@ -1,13 +1,26 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// 选文件页（UIDocumentPicker + 本地校验）
+/// 创建入口：上传文件 / 直接粘贴代码（两种方式二选一）
 struct FilePickerView: View {
-    let onPick: ([PickedFile]) -> Void
+    let onPick: (CreateSource) -> Void
+
+    private enum Mode: Hashable {
+        case files
+        case paste
+    }
 
     @Environment(\.dismiss) private var dismiss
+    @State private var mode: Mode = .files
     @State private var showPicker = false
     @State private var alertItem: AlertItem?
+
+    // 粘贴模式内容
+    @State private var html = ""
+    @State private var css = ""
+    @State private var js = ""
+
+    private static let pasteLimitBytes = 300 * 1024
 
     private static let supportedTypes: [UTType] = {
         var types: [UTType] = []
@@ -17,31 +30,29 @@ struct FilePickerView: View {
         return types
     }()
 
+    private var pasteContent: PasteContent {
+        PasteContent(html: html, css: css, js: js)
+    }
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                Spacer()
-                Image(systemName: "folder.badge.plus")
-                    .font(.system(size: 56))
-                    .foregroundStyle(.secondary)
-                Text(L10n.string("pick_files_title"))
-                    .font(.title2.bold())
-                Text(L10n.string("pick_files_hint"))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-                Button {
-                    showPicker = true
-                } label: {
-                    Text(L10n.string("pick_files_action"))
-                        .frame(maxWidth: .infinity)
+            VStack(spacing: 0) {
+                Picker("", selection: $mode) {
+                    Text(L10n.string("pick_mode_files")).tag(Mode.files)
+                    Text(L10n.string("pick_mode_paste")).tag(Mode.paste)
                 }
-                .buttonStyle(PrimaryButtonStyle())
-                .padding(.horizontal, 32)
-                Spacer()
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.top, 8)
+
+                switch mode {
+                case .files:
+                    filesMode
+                case .paste:
+                    pasteMode
+                }
             }
-            .navigationTitle(L10n.string("pick_files_title"))
+            .navigationTitle(L10n.string("add_project"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -62,6 +73,126 @@ struct FilePickerView: View {
             }
         }
     }
+
+    // MARK: - 文件模式
+
+    private var filesMode: some View {
+        VStack(spacing: 24) {
+            Spacer()
+            Image(systemName: "folder.badge.plus")
+                .font(.system(size: 56))
+                .foregroundStyle(.secondary)
+            Text(L10n.string("pick_files_title"))
+                .font(.title2.bold())
+            Text(L10n.string("pick_files_hint"))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Button {
+                showPicker = true
+            } label: {
+                Text(L10n.string("pick_files_action"))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .padding(.horizontal, 32)
+            Spacer()
+        }
+    }
+
+    // MARK: - 粘贴模式
+
+    private var pasteMode: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(L10n.string("paste_hint"))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                editor(
+                    title: L10n.string("paste_html"),
+                    text: $html,
+                    placeholder: L10n.string("paste_html_placeholder"),
+                    minHeight: 220
+                )
+                editor(
+                    title: L10n.string("paste_css"),
+                    text: $css,
+                    placeholder: L10n.string("paste_css_placeholder"),
+                    minHeight: 120
+                )
+                editor(
+                    title: L10n.string("paste_js"),
+                    text: $js,
+                    placeholder: L10n.string("paste_js_placeholder"),
+                    minHeight: 120
+                )
+
+                Text(sizeText)
+                    .font(.caption)
+                    .foregroundStyle(isTooLarge ? .red : .secondary)
+            }
+            .padding()
+        }
+        .safeAreaInset(edge: .bottom) {
+            Button(L10n.string("paste_create")) {
+                submitPaste()
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .padding()
+            .disabled(pasteContent.isHtmlEmpty)
+            .opacity(pasteContent.isHtmlEmpty ? 0.4 : 1)
+            .background(.regularMaterial)
+        }
+    }
+
+    private func editor(title: String, text: Binding<String>, placeholder: String, minHeight: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline.bold())
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: text)
+                    .font(.system(.footnote, design: .monospaced))
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .frame(minHeight: minHeight, alignment: .topLeading)
+                    .background(Color(.secondarySystemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                if text.wrappedValue.isEmpty {
+                    Text(placeholder)
+                        .font(.system(.footnote, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 14)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+    }
+
+    private var isTooLarge: Bool {
+        pasteContent.totalBytes > Self.pasteLimitBytes
+    }
+
+    private var sizeText: String {
+        let kb = Double(pasteContent.totalBytes) / 1024
+        return L10n.format("paste_size", String(format: "%.1f", kb))
+    }
+
+    private func submitPaste() {
+        guard !pasteContent.isHtmlEmpty else {
+            alertItem = AlertItem(message: L10n.string("paste_html_required"))
+            return
+        }
+        guard !isTooLarge else {
+            alertItem = AlertItem(message: L10n.string("paste_too_large"))
+            return
+        }
+        onPick(.paste(pasteContent))
+    }
+
+    // MARK: - 文件选择
 
     /// 拷贝到临时目录（脱离安全作用域资源）+ 本地校验
     private func handlePicked(_ urls: [URL]) {
@@ -92,7 +223,7 @@ struct FilePickerView: View {
 
         switch FileValidator.validate(picked) {
         case .success(let files):
-            onPick(files)
+            onPick(.files(files))
         case .failure(let error):
             alertItem = AlertItem(message: error.errorDescription ?? L10n.string("error_generic"))
         }

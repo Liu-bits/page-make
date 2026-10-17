@@ -5,7 +5,7 @@ struct RootView: View {
     @EnvironmentObject private var appState: AppState
 
     @State private var showFilePicker = false
-    @State private var pendingFiles: [PickedFile]?
+    @State private var pendingSource: CreateSource?
     @State private var showSettings = false
 
     var body: some View {
@@ -18,17 +18,17 @@ struct RootView: View {
         }
         .animation(.default, value: appState.banInfo != nil)
         .sheet(isPresented: $showFilePicker) {
-            FilePickerView { files in
+            FilePickerView { source in
                 showFilePicker = false
-                pendingFiles = files
+                pendingSource = source
             }
         }
         .sheet(isPresented: Binding(
-            get: { pendingFiles != nil },
-            set: { if !$0 { pendingFiles = nil } }
+            get: { pendingSource != nil },
+            set: { if !$0 { pendingSource = nil } }
         )) {
-            if let files = pendingFiles {
-                CreateFlowView(files: files)
+            if let source = pendingSource {
+                CreateFlowView(source: source)
             }
         }
         .sheet(isPresented: $showSettings) {

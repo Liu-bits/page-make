@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 上传队列页：进度条 + 可取消 + 完成后轮询状态
 struct UploadQueueView: View {
-    let files: [PickedFile]
+    let source: CreateSource
     let provider: HostProvider
 
     @StateObject private var uploadService = UploadService.shared
@@ -37,7 +37,16 @@ struct UploadQueueView: View {
             .onAppear {
                 guard !didStart else { return }
                 didStart = true
-                uploadService.upload(files: files, provider: provider)
+                switch source {
+                case .files(let files):
+                    uploadService.upload(files: files, provider: provider)
+                case .paste(let content):
+                    uploadService.createPasted(
+                        content,
+                        provider: provider,
+                        name: L10n.string("paste_project_name")
+                    )
+                }
             }
         }
     }
