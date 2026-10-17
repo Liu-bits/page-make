@@ -8,6 +8,8 @@ struct SettingsView: View {
     @State private var showFeedback = false
     @State private var showDocument: AppDocument?
     @State private var showPasswordAuth = false
+    @State private var showDeleteAccountConfirm = false
+    @State private var isDeletingAccount = false
 
     var body: some View {
         NavigationStack {
@@ -35,6 +37,17 @@ struct SettingsView: View {
                         Button(L10n.string("sign_out"), role: .destructive) {
                             appState.signOut()
                         }
+                        // App Store 5.1.1(v)：必须提供 App 内账号删除
+                        Button(role: .destructive) {
+                            showDeleteAccountConfirm = true
+                        } label: {
+                            if isDeletingAccount {
+                                ProgressView()
+                            } else {
+                                Text(L10n.string("delete_account"))
+                            }
+                        }
+                        .disabled(isDeletingAccount)
                     } else {
                         Button(L10n.string("login_apple")) {
                             Task { await appState.signIn() }
@@ -104,6 +117,18 @@ struct SettingsView: View {
                 PasswordAuthView()
                     .environmentObject(appState)
             }
+            .confirmationDialog(
+                L10n.string("delete_account_confirm_title"),
+                isPresented: $showDeleteAccountConfirm,
+                titleVisibility: .visible
+            ) {
+                Button(L10n.string("delete_account_button"), role: .destructive) {
+                    Task { await deleteAccount() }
+                }
+                Button(L10n.string("cancel"), role: .cancel) {}
+            } message: {
+                Text(L10n.string("delete_account_confirm_message"))
+            }
             .alert(item: $alertItem) { item in
                 Alert(
                     title: Text(L10n.string(item.titleKey)),
@@ -119,5 +144,15 @@ struct SettingsView: View {
         formatter.allowedUnits = [.useKB, .useMB, .useGB]
         formatter.countStyle = .file
         return formatter.string(fromByteCount: Int64(bytes))
+    }
+
+    private func deleteAccount() async {
+        isDeletingAccount = true
+        defer { isDeletingAccount = false }
+        if let error = await appState.deleteAccount() {
+            alertItem = AlertItem(message: error)
+        } else {
+            dismiss()
+        }
     }
 }

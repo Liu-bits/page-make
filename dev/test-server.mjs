@@ -593,9 +593,9 @@ await test('项目模式：非法扩展名与路径穿越被拒绝', async () =>
   const bad1 = await (await fetch(`${BASE}/api/projects/${explorerId}/files`, {
     method: 'POST',
     headers: { ...AUTH, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: 'evil.php', content: textToBase64('<?php echo 1;') }),
+    body: JSON.stringify({ path: 'evil.exe', content: textToBase64('MZbinary') }),
   })).json();
-  assertEqual(bad1.error, 'BAD_REQUEST', '.php 应被拒绝');
+  assertEqual(bad1.error, 'BAD_REQUEST', '.exe 应被拒绝');
 
   const bad2 = await (await fetch(`${BASE}/api/projects/${explorerId}/files`, {
     method: 'POST',
@@ -639,6 +639,92 @@ await test('项目模式：publish 生成链接 → 公开访问生效', async (
   const css = await fetch(`${BASE}/p/${explorerId}/css/style.css`);
   assertEqual(css.status, 200, '虚拟文件夹内 CSS 应可访问');
   assertEqual(await css.text(), 'h1{color:red}', 'CSS 内容应一致');
+});
+
+await test('项目模式：PHP 文件创建 → publish → 入口路由到 PHP 运行时', async () => {
+  // php-cgi 可用则断言执行结果；不可用（本机/CI 未装）则断言优雅降级提示页
+  const add = await (await fetch(`${BASE}/api/projects/${explorerId}/files`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: 'api.php', content: textToBase64('<?php echo "PHP_OK_12345";') }),
+  })).json();
+  assert(add.ok, `添加 api.php 应成功：${JSON.stringify(add)}`);
+  assertEqual(add.project.fileCount, 3, '文件数应为 3（index.html + css/style.css + api.php）');
+
+  const page = await fetch(`${BASE}/p/${explorerId}/api.php`);
+  const text = await page.text();
+  if (page.status === 503) {
+    assert(text.includes('PHP'), '无 php-cgi 时应返回优雅降级提示页');
+  } else {
+    assertEqual(page.status, 200, '有 php-cgi 时应执行成功');
+    assert(text.includes('PHP_OK_12345'), `应包含 PHP 输出，实际：${text.slice(0, 200)}`);
+  }
+});
+
+await test('粘贴：纯 PHP 创建 → 入口 index.php → 公开访问走 PHP 路由', async () => {
+  const res = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ php: '<?php echo "PASTE_PHP_67890";', name: '纯PHP' }),
+  })).json();
+  assert(res.ok, `纯 PHP 粘贴应成功：${JSON.stringify(res)}`);
+  assertEqual(res.project.entryPath, 'index.php', '纯 PHP 粘贴入口应为 index.php');
+
+  // 粘贴空内容（无 html 无 php）应拒绝
+  const empty = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ html: '  ', php: '' }),
+  })).json();
+  assertEqual(empty.error, 'BAD_REQUEST', '空 HTML + 空 PHP 应报 BAD_REQUEST');
+});
+
+await test('账号删除：删除项目与用户 → 会话失效', async () => {
+  const email = `del-${Date.now()}@test.local`;
+  const reg = await (await fetch(`${BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'password123' }),
+  })).json();
+  assert(reg.ok, `注册应成功：${JSON.stringify(reg)}`);
+  // DEV_NO_AUTH 下用 X-Test-User 指定身份；真实 token 一并携带（生产环境走令牌）
+  const userAuth = { 'X-Test-User': reg.userId, 'X-Pagemake-Token': reg.token };
+
+  // 建一个项目
+  const created = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { ...userAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ html: '<p>bye</p>' }),
+  })).json();
+  assert(created.ok, '建项目应成功');
+
+  // 不带 confirm 应拒绝
+  const noConfirm = await (await fetch(`${BASE}/api/auth/delete`, {
+    method: 'POST',
+    headers: { ...userAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  })).json();
+  assertEqual(noConfirm.error, 'BAD_REQUEST', '缺 confirm 应 400');
+
+  // 确认删除
+  const del = await (await fetch(`${BASE}/api/auth/delete`, {
+    method: 'POST',
+    headers: { ...userAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm: true }),
+  })).json();
+  assert(del.ok && del.deleted === true, '删除应成功');
+
+  // 用户记录应从 KV（磁盘）中消失（DEV_NO_AUTH 下令牌校验被跳过，直接查存储验证）
+  const userFile = path.join(dataDir, kvKeys.user(reg.userId));
+  assert(!fs.existsSync(userFile), '用户记录应已删除');
+
+  // 重新注册同一邮箱应成功（数据已清空）
+  const reReg = await (await fetch(`${BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'password123' }),
+  })).json();
+  assert(reReg.ok, '删除后同邮箱应可重新注册');
 });
 
 await test('删除项目后公开链接失效', async () => {  const res = await fetch(`${BASE}/api/projects/${projectId}`, { method: 'DELETE', headers: AUTH });

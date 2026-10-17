@@ -1,7 +1,8 @@
-// GET /p/:projectId/... — 公开访问项目内静态资源（catch-all 动态路由）
+// GET /p/:projectId/... — 公开访问项目内资源（catch-all 动态路由；.php 交给 PHP 运行时执行）
 import { getKV, kvGet, keys, nowSeconds } from '../../lib/kv.js';
 import { contentTypeFor, htmlPage } from '../../lib/responses.js';
 import { STATUS } from '../../lib/state.js';
+import { runPhp } from '../../lib/php.js';
 
 const ID_RE = /^[a-f0-9]{32}$/;
 
@@ -27,6 +28,11 @@ export async function onRequest(context) {
 
   if (project.provider === 'edgeone' && project.expiresAt && nowSeconds() > project.expiresAt) {
     return htmlPage(410, 'expired', request);
+  }
+
+  // .php → 交给 PHP 运行时执行
+  if (/\.php$/i.test(rel)) {
+    return runPhp({ kv, project, rel, request });
   }
 
   const bytes = await kv.get(keys.siteFile(id, rel), { type: 'arrayBuffer' });

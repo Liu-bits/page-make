@@ -96,6 +96,24 @@ final class AppState: ObservableObject {
         banInfo = nil
     }
 
+    /// 删除账号：服务端清除全部项目与用户记录；成功后清空本地会话
+    /// 返回错误文案（nil = 成功）
+    func deleteAccount() async -> String? {
+        do {
+            try await api.deleteAccount()
+            signOut()
+            return nil
+        } catch let error as APIError {
+            if case .banned(let ban) = error {
+                banInfo = ban
+                return nil
+            }
+            return error.errorDescription
+        } catch {
+            return L10n.string("error_generic")
+        }
+    }
+
     /// Google 登录；返回错误文案（nil = 成功 / 用户取消）
     func signInWithGoogle() async -> String? {
         do {

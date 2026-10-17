@@ -277,6 +277,7 @@ struct ExplorerView: View {
         let lower = path.lowercased()
         if lower.hasSuffix(".css") { return ("paintbrush.pointed.fill", .blue) }
         if lower.hasSuffix(".js") { return ("chevron.left.forwardslash.chevron.right", .orange) }
+        if lower.hasSuffix(".php") { return ("function", .purple) }
         return ("doc.richtext.fill", .red)
     }
 
@@ -421,10 +422,11 @@ struct NewFileSheet: View {
               !raw.hasSuffix("/") else { return nil }
         // 禁止控制字符与反斜杠
         if raw.unicodeScalars.contains(where: { $0.value < 32 }) { return nil }
-        // 仅支持 html / css / js
+        // 仅支持 html / css / js / php
         let lower = raw.lowercased()
         guard lower.hasSuffix(".html") || lower.hasSuffix(".htm")
-                || lower.hasSuffix(".css") || lower.hasSuffix(".js") else { return nil }
+                || lower.hasSuffix(".css") || lower.hasSuffix(".js")
+                || lower.hasSuffix(".php") else { return nil }
         return raw
     }
 
@@ -434,7 +436,7 @@ struct NewFileSheet: View {
         return existingPaths.contains(path)
     }
 
-    /// 新文件起始内容：HTML 给最小骨架，CSS 给注释行，JS 为空
+    /// 新文件起始内容：HTML 给最小骨架，CSS 给注释行，JS 为空，PHP 给最小脚本
     static func starterContent(for path: String) -> String {
         let lower = path.lowercased()
         if lower.hasSuffix(".css") {
@@ -442,6 +444,13 @@ struct NewFileSheet: View {
         }
         if lower.hasSuffix(".js") {
             return ""
+        }
+        if lower.hasSuffix(".php") {
+            return """
+            <?php
+            // \(L10n.string("explorer_php_starter"))
+            echo "Hello, PHP!";
+            """
         }
         let fileName = (path as NSString).lastPathComponent
         return """

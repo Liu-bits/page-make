@@ -8,6 +8,13 @@ FROM node:22-alpine
 
 WORKDIR /app
 
+# PHP 运行时（php-cgi）：项目模式 / 上传 / 粘贴里的 .php 文件可被执行
+# Alpine 版本不同包名不同（php83/php84），逐个尝试；失败不阻断镜像构建（PHP 功能优雅降级）
+RUN apk add --no-cache php83-cgi \
+    || apk add --no-cache php84-cgi \
+    || apk add --no-cache php82-cgi \
+    || echo "WARN: php-cgi not available, PHP execution disabled"
+
 # API 处理器（路由、lib 库，与 CI 测试共用同一份代码）
 COPY backend/ ./backend/
 # 容器适配层（Node HTTP + 磁盘 KV）

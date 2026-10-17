@@ -183,6 +183,7 @@ final class APIClient {
         html: String,
         css: String,
         js: String,
+        php: String,
         name: String
     ) async throws -> Project {
         let body = try encoder.encode(PasteRequest(
@@ -190,6 +191,7 @@ final class APIClient {
             html: html,
             css: css,
             js: js,
+            php: php,
             name: name
         ))
         let data = try await request("/api/projects/paste", method: "POST", body: body)
@@ -201,6 +203,7 @@ final class APIClient {
         let html: String
         let css: String
         let js: String
+        let php: String
         let name: String
     }
 
@@ -349,6 +352,18 @@ final class APIClient {
         let body = try encoder.encode(ActionRequest(action: "publish"))
         let data = try await request("/api/projects/\(id)", method: "POST", body: body)
         return try decoder.decode(ProjectPayload.self, from: data).project
+    }
+
+    // MARK: - 账号删除（App Store 5.1.1(v) 要求）
+
+    struct DeleteAccountRequest: Encodable {
+        let confirm: Bool
+    }
+
+    /// 删除账号：服务端清除全部项目与用户记录；成功后客户端清空本地会话
+    func deleteAccount() async throws {
+        let body = try encoder.encode(DeleteAccountRequest(confirm: true))
+        _ = try await request("/api/auth/delete", method: "POST", body: body)
     }
 
     // MARK: - 反馈 / 举报

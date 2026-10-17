@@ -31,7 +31,7 @@ export async function readSiteFiles(kv, projectId) {
   return files;
 }
 
-// 更新项目记录中的文件清单（重算 fileCount / size）
+// 更新项目记录中的文件清单（重算 fileCount / size；updatedAt 作为 PHP 物化缓存的版本戳）
 export async function syncProjectFiles(kv, project) {
   const keyList = await kvListAll(kv, keys.sitePrefix(project.id));
   const files = [];
@@ -46,6 +46,7 @@ export async function syncProjectFiles(kv, project) {
   project.files = files;
   project.fileCount = files.length;
   project.size = total;
+  project.updatedAt = nowSeconds();
   await kvPut(kv, keys.project(project.id), project);
   return project;
 }

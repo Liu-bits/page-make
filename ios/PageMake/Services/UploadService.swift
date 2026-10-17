@@ -67,6 +67,7 @@ final class UploadService: ObservableObject {
                     html: content.html,
                     css: content.css,
                     js: content.js,
+                    php: content.php,
                     name: name
                 )
                 self.update(itemId) { $0.status = .ready; $0.progress = 1; $0.project = project }

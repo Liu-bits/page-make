@@ -21,19 +21,20 @@ struct FilePickerView: View {
     @State private var html = ""
     @State private var css = ""
     @State private var js = ""
+    @State private var php = ""
 
     private static let pasteLimitBytes = 300 * 1024
 
     private static let supportedTypes: [UTType] = {
         var types: [UTType] = []
-        for ext in ["zip", "html", "css", "js"] {
+        for ext in ["zip", "html", "css", "js", "php"] {
             if let type = UTType(filenameExtension: ext) { types.append(type) }
         }
         return types
     }()
 
     private var pasteContent: PasteContent {
-        PasteContent(html: html, css: css, js: js)
+        PasteContent(html: html, css: css, js: js, php: php)
     }
 
     var body: some View {
@@ -166,6 +167,12 @@ struct FilePickerView: View {
                     placeholder: L10n.string("paste_js_placeholder"),
                     minHeight: 120
                 )
+                editor(
+                    title: L10n.string("paste_php"),
+                    text: $php,
+                    placeholder: L10n.string("paste_php_placeholder"),
+                    minHeight: 120
+                )
 
                 Text(sizeText)
                     .font(.caption)
@@ -179,8 +186,8 @@ struct FilePickerView: View {
             }
             .buttonStyle(.glassProminent)
             .padding()
-            .disabled(pasteContent.isHtmlEmpty)
-            .opacity(pasteContent.isHtmlEmpty ? 0.4 : 1)
+            .disabled(!pasteContent.hasContent)
+            .opacity(pasteContent.hasContent ? 1 : 0.4)
         }
     }
 
@@ -254,8 +261,8 @@ struct FilePickerView: View {
     }
 
     private func submitPaste() {
-        guard !pasteContent.isHtmlEmpty else {
-            alertItem = AlertItem(message: L10n.string("paste_html_required"))
+        guard pasteContent.hasContent else {
+            alertItem = AlertItem(message: L10n.string("paste_content_required"))
             return
         }
         guard !isTooLarge else {

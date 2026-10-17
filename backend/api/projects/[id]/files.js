@@ -1,15 +1,15 @@
 // GET    /api/projects/:id/files?path=... — 读取文件内容（base64，编辑器用）
 // POST   /api/projects/:id/files — 创建/覆盖文件（body: { path, content(base64) }）
 // DELETE /api/projects/:id/files — 删除文件（body: { path }）
-// 说明：项目模式仅支持 .html / .css / .js；路径可带子文件夹（虚拟文件夹，如 css/style.css）
+// 说明：项目模式支持 .html / .css / .js / .php；路径可带子文件夹（虚拟文件夹，如 css/style.css）
 import { getOwnedProject, syncProjectFiles } from '../../../lib/project.js';
 import { keys, kvDel } from '../../../lib/kv.js';
 import { base64ToBytes, bytesToBase64 } from '../../../lib/base64.js';
 import { ok, fail } from '../../../lib/responses.js';
-import { STATUS, FILE_MAX_BYTES } from '../../../lib/state.js';
+import { STATUS, FILE_MAX_BYTES, MAX_TOTAL_BYTES } from '../../../lib/state.js';
 
-// 项目模式仅支持的三类文件（.htm 视同 .html）
-const FILE_EXT_RE = /\.(html?|css|js)$/i;
+// 支持的文件类型（.htm 视同 .html；.php 由容器 PHP 运行时执行）
+const FILE_EXT_RE = /\.(html?|css|js|php)$/i;
 
 // 路径安全：禁止 ..、反斜杠、控制字符、首尾斜杠、超长
 function validPath(path) {
@@ -68,6 +68,13 @@ export async function onRequest(context) {
     if (typeof content !== 'string') return fail('BAD_REQUEST', 400);
     const bytes = base64ToBytes(content);
     if (bytes.length > FILE_MAX_BYTES) return fail('TOO_LARGE', 413);
+
+    // 项目总大小上限（覆盖不增加占用；与上传管线 5MB 保持一致）
+    const existed = project.files?.find((f) => f.path === path);
+    const existingSize = existed ? existed.size : 0;
+    if ((project.size || 0) - existingSize + bytes.length > MAX_TOTAL_BYTES) {
+      return fail('TOO_LARGE', 413);
+    }
 
     await kv.put(keys.siteFile(project.id, path), bytes);
     // 若入口缺失且新增了 html，设为入口

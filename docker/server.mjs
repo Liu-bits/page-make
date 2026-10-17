@@ -112,6 +112,7 @@ const ROUTES = [
   { file: 'backend/api/auth/register.js', pattern: /^\/api\/auth\/register$/ },
   { file: 'backend/api/auth/login.js', pattern: /^\/api\/auth\/login$/ },
   { file: 'backend/api/auth/guest.js', pattern: /^\/api\/auth\/guest$/ },
+  { file: 'backend/api/auth/delete.js', pattern: /^\/api\/auth\/delete$/ },
   { file: 'backend/api/auth.js', pattern: /^\/api\/auth$/ },
   { file: 'backend/api/feedback.js', pattern: /^\/api\/feedback$/ },
   { file: 'backend/api/upload/init.js', pattern: /^\/api\/upload\/init$/ },
