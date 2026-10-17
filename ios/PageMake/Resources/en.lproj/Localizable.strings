@@ -216,7 +216,7 @@
 "explorer_default_name" = "Untitled Project";
 "explorer_create" = "Create Blank Project";
 "explorer_empty_title" = "Empty Folder";
-"explorer_empty_hint" = "Create an index.html as your home page, or add css / js / php files";
+"explorer_empty_hint" = "Easy steps: ① tap + to create index.html as your home page → ② add style.css if needed (no folders required) → ③ tap \"Publish Link\" below";
 "explorer_empty_folder" = "This folder is empty";
 "explorer_new_file" = "New File";
 "explorer_new_file_placeholder" = "index.html or css/style.css";
@@ -229,6 +229,8 @@
 "explorer_publish" = "Publish Link";
 "explorer_republish" = "Update Published Content";
 "explorer_publishing" = "Publishing…";
+"explorer_publish_done" = "Link ready! Copy it or scan the QR code to share";
+"explorer_issues_title" = "%d minor issue(s) found (page still works — worth a look)";
 "explorer_need_entry" = "No HTML or PHP file yet: create an index.html (or index.php) first, then publish";
 "explorer_delete_file_title" = "Delete this file?";
 "explorer_delete_file_message" = "The published page will no longer include this file.";

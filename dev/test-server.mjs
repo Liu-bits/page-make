@@ -727,6 +727,54 @@ await test('账号删除：删除项目与用户 → 会话失效', async () => 
   assert(reReg.ok, '删除后同邮箱应可重新注册');
 });
 
+await test('项目模式：平铺三文件（无文件夹）→ 引用写错目录也能显示', async () => {
+  // 新手场景：三个文件全在根目录，HTML 里却引用了 css/style.css
+  const id3 = (await (await fetch(`${BASE}/api/projects/explorer`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '平铺三文件' }),
+  })).json()).project.id;
+
+  const put = async (p, text) => {
+    const r = await (await fetch(`${BASE}/api/projects/${id3}/files`, {
+      method: 'POST',
+      headers: { ...AUTH, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: p, content: textToBase64(text) }),
+    })).json();
+    assert(r.ok, `添加 ${p} 应成功：${JSON.stringify(r)}`);
+  };
+  await put('about.html', '<!DOCTYPE html><html><head><link rel="stylesheet" href="css/style.css"><script src="js/app.js"></script></head><body><h1>flat ok</h1></body></html>');
+  await put('style.css', 'h1{color:green}');
+  await put('app.js', 'console.log("hi")');
+
+  // publish：唯一 html（about.html）应自动成为入口
+  const pub = await (await fetch(`${BASE}/api/projects/${id3}`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'publish' }),
+  })).json();
+  assert(pub.ok, `publish 应成功：${JSON.stringify(pub)}`);
+  assertEqual(pub.project.entryPath, 'about.html', '平铺三个文件时唯一 html 应成为入口');
+
+  // 页面可访问
+  const page = await fetch(`${BASE}/p/${id3}`);
+  assertEqual(page.status, 200, '入口应可访问');
+
+  // 宽容兜底：引用 css/style.css（实际文件是 style.css）→ 仍返回正确内容
+  const css = await fetch(`${BASE}/p/${id3}/css/style.css`);
+  assertEqual(css.status, 200, '写错目录的引用应被宽容兜底');
+  assertEqual(await css.text(), 'h1{color:green}', '兜底应返回 style.css 内容');
+
+  const js = await fetch(`${BASE}/p/${id3}/js/app.js`);
+  assertEqual(js.status, 200, '写错目录的 JS 引用应被宽容兜底');
+
+  // 诊断给出新手友好提示
+  const diag = pub.project.diagnostics.find((d) => d.kind === 'missingFile' && d.detail.includes('style.css'));
+  assert(diag, '应产出 missingFile 诊断');
+  assert(diag.detail.includes('其实'), `诊断应说明文件实际位置：${diag.detail}`);
+  assert(diag.suggestion.includes('不用建文件夹'), '建议文案应平易近人');
+});
+
 await test('删除项目后公开链接失效', async () => {  const res = await fetch(`${BASE}/api/projects/${projectId}`, { method: 'DELETE', headers: AUTH });
   assert((await res.json()).ok, '删除应成功');
   const page = await fetch(`${BASE}/p/${projectId}`);

@@ -216,7 +216,7 @@
 "explorer_default_name" = "未命名项目";
 "explorer_create" = "创建空白项目";
 "explorer_empty_title" = "空文件夹";
-"explorer_empty_hint" = "先新建一个 index.html 作为主页，也可以创建 css / js / php 文件";
+"explorer_empty_hint" = "照着做就行：① 点右上角 + 新建 index.html 作为主页 → ② 需要样式再新建 style.css（不用建文件夹）→ ③ 点下方「生成链接」";
 "explorer_empty_folder" = "这个文件夹是空的";
 "explorer_new_file" = "新建文件";
 "explorer_new_file_placeholder" = "index.html 或 css/style.css";
@@ -229,6 +229,8 @@
 "explorer_publish" = "生成链接";
 "explorer_republish" = "更新链接内容";
 "explorer_publishing" = "正在生成链接…";
+"explorer_publish_done" = "链接已生成！复制链接或扫二维码，分享给朋友吧";
+"explorer_issues_title" = "发现 %d 个小问题（页面仍可访问，建议看看）";
 "explorer_need_entry" = "还没有 HTML 或 PHP 文件：先新建一个 index.html（或 index.php），再生成链接";
 "explorer_delete_file_title" = "删除这个文件？";
 "explorer_delete_file_message" = "删除后公开页面将不再包含这个文件。";

@@ -76,12 +76,26 @@ export function analyzeHtml(html, files) {
         line,
       });
     } else {
-      diagnostics.push({
-        kind: 'missingFile',
-        detail: `找不到 ${rel}`,
-        suggestion: '检查文件名是否写错、文件是否打包进压缩包',
-        line,
-      });
+      // 新手宽容提示：引用写了目录（如 css/style.css）但文件平铺在项目里（style.css）
+      const base = rel.split('/').pop().toLowerCase();
+      const looseMatch = base && base !== rel.toLowerCase()
+        ? [...files.keys()].find((n) => n.split('/').pop().toLowerCase() === base)
+        : null;
+      if (looseMatch) {
+        diagnostics.push({
+          kind: 'missingFile',
+          detail: `引用了 "${rel}"，但文件其实在 "${looseMatch}"`,
+          suggestion: '不用建文件夹也能用！把引用改成文件名本身就能显示（服务器已自动帮你兼容）',
+          line,
+        });
+      } else {
+        diagnostics.push({
+          kind: 'missingFile',
+          detail: `找不到 ${rel}`,
+          suggestion: '这个文件还不存在：新建一个同名文件，或把引用改成已有的文件名',
+          line,
+        });
+      }
     }
   }
   return diagnostics;

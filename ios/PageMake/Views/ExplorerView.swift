@@ -94,6 +94,7 @@ struct ExplorerView: View {
             if let url = current.publicURL {
                 linkSection(url)
             }
+            diagnosticsSection
         }
         .listStyle(.insetGrouped)
         .navigationTitle(current.name)
@@ -309,6 +310,33 @@ struct ExplorerView: View {
         }
     }
 
+    // MARK: 发布检查提示（小白话，帮助新手发现问题）
+
+    @ViewBuilder
+    private var diagnosticsSection: some View {
+        if !current.diagnostics.isEmpty {
+            Section(L10n.format("explorer_issues_title", current.diagnostics.count)) {
+                ForEach(current.diagnostics) { item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label {
+                            Text(item.detail)
+                                .font(.footnote)
+                        } icon: {
+                            Image(systemName: "lightbulb")
+                                .foregroundStyle(.orange)
+                        }
+                        if !item.suggestion.isEmpty {
+                            Text(item.suggestion)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+
     // MARK: 底部发布栏
 
     private var publishBar: some View {
@@ -379,6 +407,7 @@ struct ExplorerView: View {
         do {
             let updated = try await APIClient.shared.publishProject(current.id)
             apply(updated)
+            alertItem = AlertItem(message: L10n.string("explorer_publish_done"), titleKey: "alert_tip")
         } catch let error as APIError {
             if case .http(_, let code) = error, code == "NO_ENTRY" {
                 alertItem = AlertItem(message: L10n.string("explorer_need_entry"))
