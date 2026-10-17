@@ -126,6 +126,9 @@ const ROUTES = [
   { file: 'backend/api/projects/[id]/status.js', pattern: /^\/api\/projects\/([^/]+)\/status$/, params: ['id'] },
   { file: 'backend/api/projects/[id]/refresh.js', pattern: /^\/api\/projects\/([^/]+)\/refresh$/, params: ['id'] },
   { file: 'backend/api/projects/[id]/files.js', pattern: /^\/api\/projects\/([^/]+)\/files$/, params: ['id'] },
+  { file: 'backend/api/admin/login.js', pattern: /^\/api\/admin\/login$/ },
+  { file: 'backend/api/admin/overview.js', pattern: /^\/api\/admin\/overview$/ },
+  { file: 'backend/api/admin/action.js', pattern: /^\/api\/admin\/action$/ },
   { file: 'backend/p/[projectId].js', pattern: /^\/p\/([^/]+)$/, params: ['projectId'] },
   { file: 'backend/p/[projectId]/[[default]].js', pattern: /^\/p\/([^/]+)\/(.+)$/, params: ['projectId', 'default'] },
 ];
@@ -204,6 +207,15 @@ const server = http.createServer(async (req, res) => {
 
     const request = toWebRequest(req, body.length ? body : undefined);
     const pathname = decodeURIComponent(new URL(request.url).pathname);
+
+    // 管理后台页面（GET /admin → backend/admin.html 单页）
+    if (pathname === '/admin' || pathname === '/admin/') {
+      const { adminPageHtml } = await import(pathToFileURL(path.join(ROOT, 'backend/lib/admin.js')).href);
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      res.end(adminPageHtml());
+      console.log(`GET /admin → 200 (${Date.now() - startedAt}ms)`);
+      return;
+    }
 
     const route = ROUTES.find((r) => r.pattern.test(pathname));
     if (!route) {

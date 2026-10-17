@@ -60,12 +60,11 @@ export async function deleteProjectRecords(kv, userId, id) {
   await kvDel(kv, keys.userProject(userId, id));
 }
 
-// 项目状态对外输出（含过期判定）
+// 项目状态对外输出（含过期判定：所有线路 expiresAt 到期均记为过期）
 export function projectStatusView(project) {
   let status = project.status;
   if (
     status === 'ready' &&
-    project.provider === 'edgeone' &&
     project.expiresAt &&
     nowSeconds() > project.expiresAt
   ) {

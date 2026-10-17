@@ -89,6 +89,11 @@ final class AppState: ObservableObject {
     }
 
     func signOut() {
+        // 游客退出 = 结束本次试用：清除设备游客标识，下次「以游客身份继续」获得全新身份
+        // （重新计时 10 分钟并重新获得 1 个创建名额；旧游客项目链接仍受原 10 分钟 TTL 约束）
+        if let session, session.userId.hasPrefix("guest_") {
+            KeychainStore.shared.clearGuestIdentity()
+        }
         KeychainStore.shared.clearSession()
         api.setToken(nil)
         session = nil

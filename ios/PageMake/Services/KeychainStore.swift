@@ -73,6 +73,12 @@ final class KeychainStore {
         return new
     }
 
+    /// 清除游客身份标识：下次「以游客身份继续」将生成全新设备标识 → 服务端派发全新游客账号
+    /// （效果：重新获得 10 分钟试用时长与 1 个创建名额；旧项目的公开链接仍受原 TTL 约束，不受影响）
+    func clearGuestIdentity() {
+        remove("device_id")
+    }
+
     func saveSession(_ response: AuthResponse) {
         set(response.token, for: "session_token")
         set(DateParsing.string(response.expiresAt), for: "session_expires_at")

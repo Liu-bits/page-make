@@ -2,7 +2,7 @@
 // body: { name? }
 // 项目初始为空（无文件、无入口、无链接）；添加文件后通过 action=publish 生成公开链接
 import { requireAuth } from '../../lib/session.js';
-import { kvPut, kvListAll, keys, nowSeconds, appendLog } from '../../lib/kv.js';
+import { kvPut, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
 import { STATUS } from '../../lib/state.js';
 
@@ -19,10 +19,9 @@ export async function onRequest(context) {
     // body 可省略
   }
 
-  // 游客（免登录兜底）最多创建 1 个网页（与粘贴/上传一致）
+  // 游客限制：不可用项目模式（引导登录），且创建的链接 10 分钟后自动失效
   if (auth.user.userId.startsWith('guest_')) {
-    const existing = await kvListAll(auth.kv, keys.userProject(auth.user.userId, ''));
-    if (existing.length >= 1) return fail('GUEST_LIMIT', 403);
+    return fail('GUEST_NO_EXPLORER', 403);
   }
 
   const name =

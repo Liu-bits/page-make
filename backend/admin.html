@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page-make 管理后台</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: -apple-system, "PingFang SC", system-ui, sans-serif; background: #f1f5f9; color: #0f172a; padding: 16px; }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 8px 0 16px; }
+  h2 { font-size: 16px; margin: 24px 0 10px; color: #334155; }
+  .card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 14px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .stat { text-align: center; padding: 12px 4px; }
+  .stat b { display: block; font-size: 24px; }
+  .stat span { font-size: 12px; color: #64748b; }
+  input, select { padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 15px; width: 100%; }
+  button { padding: 10px 16px; border: 0; border-radius: 10px; font-size: 14px; cursor: pointer; background: #2563eb; color: #fff; }
+  button.gray { background: #64748b; }
+  button.red { background: #dc2626; }
+  button.green { background: #16a34a; }
+  button.sm { padding: 6px 10px; font-size: 12px; }
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #e2e8f0; word-break: break-all; }
+  th { color: #64748b; font-weight: 600; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+  .tag.ok { background: #dcfce7; color: #15803d; }
+  .tag.banned { background: #fee2e2; color: #b91c1c; }
+  .tag.guest { background: #e0e7ff; color: #4338ca; }
+  .muted { color: #94a3b8; font-size: 12px; }
+  .msg { padding: 10px 12px; border-radius: 10px; margin: 10px 0; font-size: 14px; display: none; }
+  .msg.err { background: #fee2e2; color: #b91c1c; }
+  .msg.ok { background: #dcfce7; color: #15803d; }
+  @media (max-width: 640px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- 登录 -->
+  <div id="loginView" class="card" style="max-width:380px;margin:60px auto;">
+    <h1>Page-make 管理后台</h1>
+    <p class="muted" style="margin-bottom:12px">请输入管理员密码（初始 123456，登录后请立即修改）</p>
+    <input id="pwd" type="password" placeholder="管理员密码" onkeydown="if(event.key==='Enter')login()">
+    <div class="row"><button style="width:100%" onclick="login()">登录</button></div>
+    <div id="loginMsg" class="msg err"></div>
+  </div>
+
+  <!-- 主界面 -->
+  <div id="mainView" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h1>Page-make 管理后台</h1>
+      <div>
+        <button class="gray" onclick="changePwd()">改密码</button>
+        <button class="gray" onclick="logout()">退出</button>
+      </div>
+    </div>
+    <div id="msg" class="msg"></div>
+
+    <div class="card"><div class="stats" id="stats"></div></div>
+
+    <h2>账户（封号 / 解封）</h2>
+    <div class="card" style="overflow-x:auto">
+      <table id="userTable">
+        <thead><tr><th>账户</th><th>状态</th><th>项目</th><th>封禁信息</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <h2>项目（可强制删除）</h2>
+    <div class="card" style="overflow-x:auto">
+      <table id="projectTable">
+        <thead><tr><th>名称</th><th>状态</th><th>来源</th><th>大小</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <h2>反馈 / 举报</h2>
+    <div class="card" id="feedbackList"></div>
+  </div>
+</div>
+
+<script>
+const API = {
+  login: '/api/admin/login',
+  overview: '/api/admin/overview',
+  action: '/api/admin/action',
+};
+let token = sessionStorage.getItem('adminToken') || '';
+
+function show(el, on) { el.style.display = on ? '' : 'none'; }
+function msg(text, isErr) {
+  const m = document.getElementById('msg');
+  m.textContent = text; m.className = 'msg ' + (isErr ? 'err' : 'ok');
+  setTimeout(() => { m.className = 'msg'; }, 4000);
+}
+function fmtSize(n) { return n > 1048576 ? (n/1048576).toFixed(1)+'MB' : n > 1024 ? (n/1024).toFixed(1)+'KB' : n+'B'; }
+function fmtTime(ts) { return ts ? new Date(ts*1000).toLocaleString() : '—'; }
+
+async function api(url, body) {
+  const res = await fetch(url, {
+    method: body ? 'POST' : 'GET',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 401) { logout(); throw new Error('登录已过期'); }
+  if (!json.ok) throw new Error(json.error || ('HTTP ' + res.status));
+  return json;
+}
+
+async function login() {
+  const pwd = document.getElementById('pwd').value;
+  try {
+    const r = await fetch(API.login, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({password: pwd}) });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error === 'WRONG_PASSWORD' ? '密码错误' : j.error === 'TOO_MANY_ATTEMPTS' ? '尝试太频繁，稍后再试' : j.error);
+    token = j.token; sessionStorage.setItem('adminToken', token);
+    enter();
+  } catch (e) {
+    const m = document.getElementById('loginMsg');
+    m.textContent = e.message; m.style.display = 'block';
+  }
+}
+
+function logout() { token = ''; sessionStorage.removeItem('adminToken'); show(document.getElementById('loginView'), true); show(document.getElementById('mainView'), false); }
+
+function enter() { show(document.getElementById('loginView'), false); show(document.getElementById('mainView'), true); load(); }
+
+async function load() {
+  try {
+    const data = await api(API.overview);
+    render(data);
+  } catch (e) { msg(e.message, true); }
+}
+
+function render(d) {
+  document.getElementById('stats').innerHTML = [
+    ['账户', d.stats.userCount], ['游客', d.stats.guestCount],
+    ['项目', d.stats.projectCount], ['反馈', d.stats.feedbackCount],
+  ].map(([l, v]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
+
+  document.querySelector('#userTable tbody').innerHTML = d.users.map(u => {
+    const statusTag = u.status === 'banned'
+      ? `<span class="tag banned">已封禁 L${u.banLevel}</span>`
+      : `<span class="tag ok">正常</span>`;
+    const guestTag = u.isGuest ? ' <span class="tag guest">游客</span>' : '';
+    const banInfo = u.status === 'banned'
+      ? `${u.banReason || ''}<br><span class="muted">${u.banUntil ? '至 ' + fmtTime(u.banUntil) : '永久'}</span>`
+      : '<span class="muted">—</span>';
+    const action = u.status === 'banned'
+      ? `<button class="sm green" onclick="unban('${u.userId}')">解封</button>`
+      : `<button class="sm red" onclick="banPrompt('${u.userId}')">封号</button>`;
+    return `<tr><td>${u.email || u.userId}${guestTag}<br><span class="muted">注册 ${fmtTime(u.createdAt)}</span></td>
+      <td>${statusTag}</td><td>${u.projectCount}</td><td>${banInfo}</td><td>${action}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="muted">暂无账户</td></tr>';
+
+  document.querySelector('#projectTable tbody').innerHTML = d.projects.map(p =>
+    `<tr><td>${p.name || p.id}</td><td>${p.status}</td><td>${p.sourceType || '—'}</td>
+     <td>${fmtSize(p.size)} / ${p.fileCount} 文件</td>
+     <td><button class="sm red" onclick="delProject('${p.id}')">删除</button></td></tr>`
+  ).join('') || '<tr><td colspan="5" class="muted">暂无项目</td></tr>';
+
+  document.getElementById('feedbackList').innerHTML = d.feedback.map(f =>
+    `<div style="border-bottom:1px solid #e2e8f0;padding:10px 0">
+      <div style="display:flex;justify-content:space-between">
+        <b style="font-size:13px">${f.type === 'report' ? '⚠️ 举报' : '💬 反馈'}</b>
+        <span class="muted">${fmtTime(f.createdAt)} · ${f.userId || '未登录'}</span>
+      </div>
+      <div style="margin:6px 0;font-size:14px">${escapeHtml(f.message)}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span class="muted">${f.projectId ? '项目 ' + f.projectId : ''} ${f.errorCode ? '· 错误码 ' + f.errorCode : ''}</span>
+        <button class="sm gray" onclick="delFeedback('${f.id}')">已处理，删除</button>
+      </div>
+    </div>`
+  ).join('') || '<p class="muted">暂无反馈</p>';
+}
+
+function escapeHtml(t) { return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function banPrompt(userId) {
+  const reason = prompt('封号原因（必填，会展示给用户）：');
+  if (!reason) return;
+  const level = prompt('封禁等级 1-4：\n1=轻微 1 天\n2=重复 7 天\n3=诈骗 30 天\n4=永久', '1');
+  if (!level) return;
+  const days = level === '4' ? null : level;
+  if (!confirm(`确认封禁 ${userId}？`)) return;
+  api(API.action, { action: 'ban', userId, level: Number(level), reason, days })
+    .then(() => { msg('已封禁'); load(); })
+    .catch(e => msg(e.message, true));
+}
+
+function unban(userId) {
+  api(API.action, { action: 'unban', userId })
+    .then(() => { msg('已解封，项目已恢复'); load(); })
+    .catch(e => msg(e.message, true));
+}
+
+function delProject(id) {
+  if (!confirm('彻底删除项目 ' + id + '？不可恢复')) return;
+  api(API.action, { action: 'deleteProject', projectId: id })
+    .then(() => { msg('已删除'); load(); })
+    .catch(e => msg(e.message, true));
+}
+
+function delFeedback(id) {
+  api(API.action, { action: 'deleteFeedback', id })
+    .then(() => load())
+    .catch(e => msg(e.message, true));
+}
+
+function changePwd() {
+  const p = prompt('新的管理员密码（至少 6 位）：');
+  if (!p) return;
+  api(API.action, { action: 'setPassword', newPassword: p })
+    .then(() => msg('密码已修改，下次登录生效'))
+    .catch(e => msg(e.message === 'WEAK_PASSWORD' ? '密码太短（至少 6 位）' : e.message, true));
+}
+
+if (token) enter();
+</script>
+</body>
+</html>

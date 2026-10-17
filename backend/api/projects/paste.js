@@ -5,7 +5,7 @@
 import { requireAuth } from '../../lib/session.js';
 import { kvPut, kvListAll, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
-import { PROVIDERS, PASTE_MAX_BYTES, STATUS } from '../../lib/state.js';
+import { PROVIDERS, PASTE_MAX_BYTES, STATUS, GUEST_LINK_TTL_SECONDS } from '../../lib/state.js';
 import { analyzeHtml } from '../../lib/diagnostics.js';
 import { deploySite } from '../../lib/deploy/index.js';
 
@@ -160,6 +160,11 @@ export async function onRequest(context) {
     // 写索引后写项目记录（ready 作为提交点）
     await kvPut(kv, keys.userProject(auth.user.userId, projectId), { createdAt: nowSeconds() });
 
+    // 游客创建的链接 10 分钟后自动失效（登录后长期有效）
+    const guestExpires = auth.user.userId.startsWith('guest_')
+      ? nowSeconds() + GUEST_LINK_TTL_SECONDS
+      : null;
+
     const project = {
       id: projectId,
       userId: auth.user.userId,
@@ -175,7 +180,7 @@ export async function onRequest(context) {
       runtimeErrors: [],
       createdAt: nowSeconds(),
       updatedAt: nowSeconds(),
-      expiresAt: deploy.expiresAt,
+      expiresAt: guestExpires ?? deploy.expiresAt,
       deploymentUrl: deploy.deploymentUrl,
       url: `${origin}/p/${projectId}`,
       files: manifest,

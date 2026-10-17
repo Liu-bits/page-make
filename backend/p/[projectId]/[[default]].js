@@ -27,7 +27,8 @@ export async function onRequest(context) {
     return Response.redirect(`${project.deploymentUrl.replace(/\/$/, '')}/${rel}`, 302);
   }
 
-  if (project.provider === 'edgeone' && project.expiresAt && nowSeconds() > project.expiresAt) {
+  // 链接过期判定（所有线路）：expiresAt 到期即过期（游客 10 分钟 / EdgeOne TTL）
+  if (project.expiresAt && nowSeconds() > project.expiresAt) {
     return htmlPage(410, 'expired', request);
   }
 

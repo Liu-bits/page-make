@@ -25,8 +25,8 @@ export async function onRequest(context) {
     return Response.redirect(project.deploymentUrl, 302);
   }
 
-  // 过期检查（自托管 expiresAt 为 null 不会触发；保留兼容边缘部署）
-  if (project.provider === 'edgeone' && project.expiresAt && nowSeconds() > project.expiresAt) {
+  // 链接过期判定（所有线路）：expiresAt 到期即过期（游客 10 分钟 / EdgeOne TTL）
+  if (project.expiresAt && nowSeconds() > project.expiresAt) {
     return htmlPage(410, 'expired', request);
   }
 

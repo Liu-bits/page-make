@@ -66,6 +66,12 @@ struct SettingsView: View {
                             Task { await appState.signInAsGuest() }
                         }
                     }
+                } footer: {
+                    // 游客提示：退出后身份重置，可重新开始试用
+                    if let session = appState.session, session.userId.hasPrefix("guest_") {
+                        Text(L10n.string("guest_signout_hint"))
+                            .font(.footnote)
+                    }
                 }
 
                 Section(L10n.string("tools_section")) {

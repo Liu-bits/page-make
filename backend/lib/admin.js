@@ -1,0 +1,90 @@
+// 管理后台辅助：密码存取（PBKDF2，默认 123456，登录后可在后台修改）+ 会话校验 + 登录限速
+// 合规说明：封号时强制填写原因与期限，用户端可见，并可通过 App 内反馈申诉（Apple 5.1.1/1.2 要求的替代方式）
+import fs from 'node:fs';
+import path from 'node:path';
+import { kvGet, kvPut, kvDel, keys, nowSeconds } from './kv.js';
+import { fail } from './responses.js';
+import { hashPassword, verifyPassword } from './password.js';
+
+const ADMIN_PASSWORD_KEY = 'config_admin_password';
+const ADMIN_SESSION_PREFIX = 'admin_session_';
+const ADMIN_SESSION_TTL = 24 * 3600; // 24 小时
+
+// 登录限速：每 IP 每分钟 5 次（内存计数，容器重启清零即可）
+const rateBucket = new Map();
+export function loginRateLimited(ip) {
+  const now = Date.now();
+  const windowStart = now - 60_000;
+  const hits = (rateBucket.get(ip) || []).filter((t) => t > windowStart);
+  hits.push(now);
+  rateBucket.set(ip, hits);
+  return hits.length > 5;
+}
+
+/** 管理员密码记录（首次访问时初始化为默认密码 123456 的 PBKDF2 哈希） */
+async function getPasswordRecord(kv) {
+  const existing = await kvGet(kv, keys.config(ADMIN_PASSWORD_KEY));
+  if (existing?.hash) return existing;
+  const record = await hashPassword('123456');
+  await kvPut(kv, keys.config(ADMIN_PASSWORD_KEY), record);
+  return record;
+}
+
+export async function verifyAdminPassword(kv, password) {
+  const record = await getPasswordRecord(kv);
+  return verifyPassword(password, record);
+}
+
+export async function changeAdminPassword(kv, newPassword) {
+  if (typeof newPassword !== 'string' || newPassword.length < 6 || newPassword.length > 72) {
+    throw new Error('WEAK_PASSWORD');
+  }
+  const record = await hashPassword(newPassword);
+  await kvPut(kv, keys.config(ADMIN_PASSWORD_KEY), record);
+}
+
+/** 签发管理会话（KV 存储，24 小时有效） */
+export async function createAdminSession(kv) {
+  const token = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '');
+  await kvPut(kv, `${ADMIN_SESSION_PREFIX}${token}`, {
+    createdAt: nowSeconds(),
+    expiresAt: nowSeconds() + ADMIN_SESSION_TTL,
+  });
+  return token;
+}
+
+/**
+ * 校验管理会话（请求头 X-Admin-Token）
+ * @returns {Promise<{kv}|{error: Response}>}
+ */
+export async function requireAdmin(context) {
+  const token = context.request.headers.get('x-admin-token') || '';
+  if (!token) return { error: fail('UNAUTHORIZED', 401) };
+  const kv = context.env?.PAGEMAKE;
+  if (!kv) return { error: fail('STORAGE_ERROR', 500) };
+  const session = await kvGet(kv, `${ADMIN_SESSION_PREFIX}${token}`);
+  if (!session || session.expiresAt < nowSeconds()) {
+    return { error: fail('UNAUTHORIZED', 401) };
+  }
+  return { kv };
+}
+
+/** 管理会话文件（admin_session_ 前缀不经 encodeKey，纯十六进制 token 作文件名安全） */
+export const ADMIN_SESSION_KEY_PREFIX = ADMIN_SESSION_PREFIX;
+
+// admin 页面 HTML 读取（容器内 backend/admin.html 与 lib/ 同级）
+let cachedPage = null;
+let cachedMtime = 0;
+export function adminPageHtml() {
+  const file = path.join(process.cwd(), 'backend', 'admin.html');
+  try {
+    const mtime = fs.statSync(file).mtimeMs;
+    if (!cachedPage || mtime !== cachedMtime) {
+      cachedPage = fs.readFileSync(file, 'utf8');
+      cachedMtime = mtime;
+    }
+    return cachedPage;
+  } catch {
+    return '<!DOCTYPE html><html><body><h1>admin.html missing</h1></body></html>';
+  }
+}

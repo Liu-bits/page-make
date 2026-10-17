@@ -59,6 +59,9 @@ jobs:
       - name: 运行自托管容器冒烟测试（HTTP 全流程）
         run: node dev/test-server.mjs
 
+      - name: 运行游客 10 分钟试用链路测试（真实游客会话 · 到期 410 · 身份重置）
+        run: node dev/test-guest-ttl.mjs
+
       - name: 校验 Docker 镜像可构建
         run: docker build -t pagemake-test .
 

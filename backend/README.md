@@ -62,7 +62,8 @@ KV key 仅允许数字、字母、下划线 → 所有 key 部件经 UTF-8 十�
 - **容器（当前唯一形态）**：文件落盘，`/p/` 路由本地提供，链接长期有效
 - **线路选择**：`provider` 字段保留 iOS 端契约（`edgeone` / `cloudflare`），容器模式下两者均本地服务；
   配置了 Cloudflare 凭证时 `cloudflare` 走 Direct Upload（`lib/deploy/cloudflare.js`），否则自动降级本地服务
-- **过期**：自托管无预览域名限制，`expiresAt` 为 null，链接直到用户删除才失效
+- **过期**：登录用户的链接长期有效（`expiresAt` 为 null，直到用户删除）；**游客**创建的链接 10 分钟后自动失效
+  （所有线路统一按 `expiresAt` 判定：`/p/` 路由 410 过期页、项目状态报 `expired`；游客「刷新」可重新计时 10 分钟）
 
 ## 平台限制适配（历史）
 

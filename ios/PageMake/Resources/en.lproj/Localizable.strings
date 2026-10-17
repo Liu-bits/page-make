@@ -11,6 +11,7 @@
 "login_canceled" = "Sign-in cancelled";
 "login_guest" = "Continue as guest";
 "guest_login_hint" = "Free Apple IDs cannot use Sign in with Apple — guest mode supports all features";
+"guest_signout_hint" = "Guest links expire after 10 minutes. Signing out resets your guest identity so you can start a fresh trial.";
 "error_apple_authorization_failed" = "Sign-in failed (code %@), please try again";
 
 // MARK: - Sign in

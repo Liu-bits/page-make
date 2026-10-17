@@ -2,9 +2,9 @@
 // 重新部署 → 更新 expiresAt → 返回新链接
 import { getOwnedProject, readSiteFiles, syncProjectFiles } from '../../../lib/project.js';
 import { deploySite } from '../../../lib/deploy/index.js';
-import { appendLog } from '../../../lib/kv.js';
+import { appendLog, nowSeconds, kvPut, keys } from '../../../lib/kv.js';
 import { ok, fail } from '../../../lib/responses.js';
-import { STATUS } from '../../../lib/state.js';
+import { STATUS, GUEST_LINK_TTL_SECONDS } from '../../../lib/state.js';
 
 export async function onRequest(context) {
   const { request, params } = context;
@@ -33,14 +33,20 @@ export async function onRequest(context) {
 
     project.status = STATUS.READY;
     project.errorCode = null;
-    project.expiresAt = deploy.expiresAt;
+    // 游客链接重新计时 10 分钟（登录用户长期有效，随部署 TTL）
+    project.expiresAt = user.userId.startsWith('guest_')
+      ? nowSeconds() + GUEST_LINK_TTL_SECONDS
+      : deploy.expiresAt;
     if (deploy.deploymentUrl) project.deploymentUrl = deploy.deploymentUrl;
+    // 持久化：内存对象不会自动写回 KV（历史缺陷：刷新后列表/状态读到的仍是旧记录）
+    await kvPut(kv, keys.project(project.id), project);
     await appendLog(kv, { projectId: project.id, step: 'refresh', result: 'ok', duration: Date.now() - started });
 
     return ok({ project });
   } catch (error) {
     project.status = STATUS.FAILED;
     project.errorCode = error.code || 'STORAGE_ERROR';
+    try { await kvPut(kv, keys.project(project.id), project); } catch { /* 持久化失败不掩盖原始错误 */ }
     await appendLog(kv, { projectId: project.id, step: 'refresh', result: 'failed', errorCode: error.code, duration: Date.now() - started });
     return fail(error.code || 'STORAGE_ERROR', 500, { message: error.message });
   }

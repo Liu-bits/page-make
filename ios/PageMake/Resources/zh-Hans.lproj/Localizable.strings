@@ -11,6 +11,7 @@
 "login_canceled" = "已取消登录";
 "login_guest" = "以游客身份继续";
 "guest_login_hint" = "免费 Apple ID 无法使用 Apple 登录，游客身份可完整测试所有功能";
+"guest_signout_hint" = "游客链接 10 分钟后自动失效；退出登录后将重置为新的游客身份，可重新开始试用";
 "error_apple_authorization_failed" = "登录失败（错误码 %@），请重试";
 
 // MARK: - 登录
