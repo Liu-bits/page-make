@@ -6,9 +6,7 @@ enum Config {
     static var baseURL: URL = URL(string: "https://liu20150413-page-make.ms.show")!
 
     /// Google OAuth iOS 客户端 ID（Google Cloud Console 创建，完全免费）
-    /// TODO: 替换为你的 Client ID（形如 123456-abc.apps.googleusercontent.com）
-    /// 未配置时 App 内 Google 登录按钮会提示未配置
-    static let googleClientID = "YOUR_CLIENT_ID.apps.googleusercontent.com"
+    static let googleClientID = "242453650088-qm3mk3l3eg7b8ukraenl0gdufeuvc0dj.apps.googleusercontent.com"
 
     /// 分片大小：EdgeOne Functions 单请求 body 上限 1MB，留出 base64 开销余量
     static let chunkSize = 600 * 1024

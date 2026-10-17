@@ -6,6 +6,10 @@ import { createSession } from '../../lib/session.js';
 import { ok, fail } from '../../lib/responses.js';
 import { verifyGoogleIdentityToken } from '../../lib/google-auth.js';
 
+// iOS OAuth 客户端 ID 是公开信息（随 App 分发），作为 aud 校验默认值；
+// 可用环境变量 GOOGLE_CLIENT_ID 覆盖（多客户端场景）
+const DEFAULT_GOOGLE_CLIENT_ID = '242453650088-qm3mk3l3eg7b8ukraenl0gdufeuvc0dj.apps.googleusercontent.com';
+
 export async function onRequest(context) {
   const { request } = context;
   if (request.method !== 'POST') return fail('METHOD_NOT_ALLOWED', 405);
@@ -25,7 +29,7 @@ export async function onRequest(context) {
   let google;
   try {
     google = await verifyGoogleIdentityToken(idToken, {
-      clientId: context.env?.GOOGLE_CLIENT_ID || '',
+      clientId: context.env?.GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID,
     });
   } catch {
     await appendLog(kv, { step: 'auth_google', result: 'failed', errorCode: 'INVALID_GOOGLE_TOKEN' });
