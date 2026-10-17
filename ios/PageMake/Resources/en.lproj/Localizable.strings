@@ -183,3 +183,5 @@
 "google_not_configured" = "Google sign-in not configured (missing Client ID)";
 "error_invalid_google_token" = "Google sign-in verification failed, please retry";
 "alert_tip" = "Notice";
+"provider_local_name" = "ModelScope Space";
+"provider_local_detail" = "Self-hosted container — links stay valid";

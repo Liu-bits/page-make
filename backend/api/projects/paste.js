@@ -79,8 +79,8 @@ export async function onRequest(context) {
     return fail('BAD_REQUEST', 400);
   }
 
-  // 与文件上传一致：每次创建必须选线路
-  const provider = body?.provider;
+  // 单线路部署：provider 可省略，默认 local（非法值仍拒绝）
+  const provider = body?.provider || 'local';
   if (!PROVIDERS.has(provider)) return fail('INVALID_PROVIDER', 400);
 
   const html = typeof body?.html === 'string' ? body.html : '';

@@ -2,6 +2,8 @@ import Foundation
 
 /// 托管线路
 enum HostProvider: String, Codable, CaseIterable, Identifiable {
+    /// 自托管（ModelScope 创空间）——当前唯一线路
+    case local
     case edgeone
     case cloudflare
 
@@ -9,6 +11,7 @@ enum HostProvider: String, Codable, CaseIterable, Identifiable {
 
     var titleKey: String {
         switch self {
+        case .local: return "provider_local_name"
         case .edgeone: return "provider_edgeone_name"
         case .cloudflare: return "provider_cloudflare_name"
         }
@@ -16,6 +19,7 @@ enum HostProvider: String, Codable, CaseIterable, Identifiable {
 
     var detailKey: String {
         switch self {
+        case .local: return "provider_local_detail"
         case .edgeone: return "provider_edgeone_detail"
         case .cloudflare: return "provider_cloudflare_detail"
         }

@@ -34,8 +34,8 @@ export async function onRequest(context) {
     return fail('BAD_REQUEST', 400);
   }
 
-  // 每次创建必须选线路：缺失或非法 → 400 INVALID_PROVIDER
-  const provider = body?.provider;
+  // 单线路部署：provider 可省略，默认 local（非法值仍拒绝）
+  const provider = body?.provider || 'local';
   if (!PROVIDERS.has(provider)) return fail('INVALID_PROVIDER', 400);
 
   const files = Array.isArray(body?.files) ? body.files : [];

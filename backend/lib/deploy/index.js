@@ -34,6 +34,11 @@ export async function deploySite(args) {
   // 先落 KV（两条线路都需要：刷新、文件管理、灾备）
   await persistToKV(kv, projectId, files, entryPath, name);
 
+  // local = 自托管容器：persistToKV 已完成落盘，/p/ 路由直接服务，链接长期有效
+  if (provider === 'local') {
+    return { expiresAt: null, deploymentUrl: null };
+  }
+
   if (provider === 'edgeone') {
     const result = await deployToEdgeOne({ kv, projectId, files, entryPath, name });
     return { expiresAt: result.expiresAt, deploymentUrl: null };

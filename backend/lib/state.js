@@ -18,7 +18,8 @@ export const ERR = {
   EXPIRED: 'EXPIRED',
 };
 
-export const PROVIDERS = new Set(['edgeone', 'cloudflare']);
+// local = 自托管容器（当前唯一线路）；edgeone/cloudflare 保留兼容旧客户端
+export const PROVIDERS = new Set(['local', 'edgeone', 'cloudflare']);
 
 // 登录态有效期 7 天（到期前 1 天 iOS 静默刷新）
 export const SESSION_TTL_SECONDS = 7 * 24 * 3600;

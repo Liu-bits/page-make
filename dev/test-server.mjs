@@ -92,7 +92,7 @@ await test('公开配置 /api/config', async () => {
   const res = await fetch(`${BASE}/api/config`);
   const json = await res.json();
   assert(json.ok, '应成功');
-  assert(json.providers.includes('edgeone'), '应包含线路列表');
+  assert(json.providers.includes('local'), '应包含线路列表（local）');
 });
 
 await test('容器布局兼容（server.mjs 与 backend/ 同级，模拟镜像内布局）', async () => {
@@ -130,14 +130,24 @@ await test('未知路由返回 404', async () => {
   assert(res.status === 404, '应 404');
 });
 
-await test('未选线路时 init 返回 INVALID_PROVIDER', async () => {
+await test('未传线路时默认 local + 非法线路仍拒绝', async () => {
+  // 单线路部署：provider 省略 → 默认 local
   const res = await fetch(`${BASE}/api/upload/init`, {
     method: 'POST',
     headers: { ...AUTH, 'Content-Type': 'application/json' },
     body: JSON.stringify({ files: [{ name: 'site.zip', size: 100 }] }),
   });
   const json = await res.json();
-  assert(res.status === 400 && json.error === 'INVALID_PROVIDER', '应返回 400 INVALID_PROVIDER');
+  assert(json.ok && json.uploadId, '缺省 provider 应默认 local 成功');
+
+  // 非法 provider 仍拒绝
+  const bad = await fetch(`${BASE}/api/upload/init`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: 'nope', files: [{ name: 'site.zip', size: 100 }] }),
+  });
+  const badJson = await bad.json();
+  assert(bad.status === 400 && badJson.error === 'INVALID_PROVIDER', '非法 provider 应返回 INVALID_PROVIDER');
 });
 
 await test('反向代理头兼容（x-forwarded-proto 多值逗号分隔）', async () => {
@@ -334,12 +344,15 @@ await test('粘贴代码创建：HTML 片段自动包裹完整文档', async () 
 });
 
 await test('粘贴代码创建：参数校验', async () => {
+  // 缺 provider → 默认 local（单线路部署）
   const noProvider = await fetch(`${BASE}/api/projects/paste`, {
     method: 'POST',
     headers: { ...AUTH, 'Content-Type': 'application/json' },
     body: JSON.stringify({ html: '<p>x</p>' }),
   });
-  assertEqual((await noProvider.json()).error, 'INVALID_PROVIDER', '缺 provider 应报 INVALID_PROVIDER');
+  const noProviderJson = await noProvider.json();
+  assert(noProviderJson.ok, '缺 provider 应默认 local 成功');
+  assertEqual(noProviderJson.project.provider, 'local', '项目线路应为 local');
 
   const noHtml = await fetch(`${BASE}/api/projects/paste`, {
     method: 'POST',

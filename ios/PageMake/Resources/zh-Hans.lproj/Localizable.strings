@@ -183,3 +183,5 @@
 "google_not_configured" = "Google 登录未配置（缺少 Client ID），请先配置";
 "error_invalid_google_token" = "Google 登录校验失败，请重试";
 "alert_tip" = "提示";
+"provider_local_name" = "ModelScope 创空间";
+"provider_local_detail" = "自托管容器，链接长期有效";

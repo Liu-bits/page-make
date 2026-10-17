@@ -5,7 +5,7 @@ import { MAX_TOTAL_BYTES, CHUNK_BYTES, SESSION_TTL_SECONDS } from '../lib/state.
 export async function onRequest() {
   return ok({
     service: 'page-make',
-    providers: ['edgeone', 'cloudflare'],
+    providers: ['local'],
     limits: {
       maxTotalBytes: MAX_TOTAL_BYTES,
       chunkSize: CHUNK_BYTES,
