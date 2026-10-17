@@ -69,6 +69,19 @@ struct ProjectListView: View {
             }
             .buttonStyle(PrimaryButtonStyle())
             .padding(.horizontal, 32)
+            Button {
+                Task { await appState.signInAsGuest() }
+            } label: {
+                Text(L10n.string("login_guest"))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .padding(.horizontal, 32)
+            Text(L10n.string("guest_login_hint"))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
             Text(L10n.string("public_links_note"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)

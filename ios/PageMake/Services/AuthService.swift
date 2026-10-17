@@ -67,13 +67,26 @@ extension AuthService: ASAuthorizationControllerDelegate {
     }
 
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
-        if let authError = error as? ASAuthorizationError, authError.code == .canceled {
-            continuation?.resume(throwing: AuthError.canceled)
-        } else {
-            // 其他失败（含 entitlement 缺失、设备不支持等）：统一友好提示，
-            // 不把原始 ASAuthorizationError 文本（含 com.apple.AuthenticationServices）暴露给用户
-            continuation?.resume(throwing: AuthError.authorizationFailed)
+        if let authError = error as? ASAuthorizationError {
+            // 记录原始错误（诊断面板/日志可见），便于定位签名 / entitlement 问题
+            LogStore.shared.append(
+                "auth_failed",
+                result: "error",
+                errorCode: "code=\(authError.code.rawValue) \((error as NSError).domain)"
+            )
+            if authError.code == .canceled {
+                continuation?.resume(throwing: AuthError.canceled)
+                continuation = nil
+                return
+            }
+            // 带上错误码，便于区分：1000=未知(多为 entitlement/签名问题)、1001=取消、
+            // 1002=无响应、1003=未处理、1004=失败、1005=无效响应
+            continuation?.resume(throwing: AuthError.authorizationFailed(code: authError.code.rawValue))
+            continuation = nil
+            return
         }
+        LogStore.shared.append("auth_failed", result: "error", errorCode: (error as NSError).domain)
+        continuation?.resume(throwing: AuthError.authorizationFailed(code: (error as NSError).code))
         continuation = nil
     }
 }
@@ -92,13 +105,17 @@ extension AuthService: ASAuthorizationControllerPresentationContextProviding {
 enum AuthError: LocalizedError, Equatable {
     case missingIdentityToken
     case canceled
-    case authorizationFailed
+    case authorizationFailed(code: Int)
 
     var errorDescription: String? {
         switch self {
-        case .missingIdentityToken: return L10n.string("error_generic")
-        case .canceled: return L10n.string("login_canceled")
-        case .authorizationFailed: return L10n.string("error_apple_authorization_failed")
+        case .missingIdentityToken:
+            return L10n.string("error_generic")
+        case .canceled:
+            return L10n.string("login_canceled")
+        case .authorizationFailed(let code):
+            // 显示错误码，便于用户反馈时精确定位（1000 多为签名/entitlement 问题）
+            return L10n.format("error_apple_authorization_failed", "\(code)")
         }
     }
 }

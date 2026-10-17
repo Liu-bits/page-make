@@ -9,7 +9,9 @@
 "error_generic" = "服务出错了，稍后重试";
 "error_network" = "网络出错，请检查网络后重试";
 "login_canceled" = "已取消登录";
-"error_apple_authorization_failed" = "Apple 登录失败，请重试";
+"login_guest" = "以游客身份继续";
+"guest_login_hint" = "免费 Apple ID 无法使用 Apple 登录，游客身份可完整测试所有功能";
+"error_apple_authorization_failed" = "Apple 登录失败（错误码 %@），请重试";
 
 // MARK: - 登录
 "welcome_title" = "Page-make";

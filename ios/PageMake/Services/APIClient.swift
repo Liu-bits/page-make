@@ -95,6 +95,17 @@ final class APIClient {
         return try decoder.decode(AuthResponse.self, from: data)
     }
 
+    /// 游客登录（设备 ID 免密，免费 Apple ID 环境的兜底）
+    func guestAuthenticate(deviceId: String) async throws -> AuthResponse {
+        let body = try encoder.encode(GuestAuthRequest(deviceId: deviceId))
+        let data = try await request("/api/auth/guest", method: "POST", body: body, requiresAuth: false)
+        return try decoder.decode(AuthResponse.self, from: data)
+    }
+
+    struct GuestAuthRequest: Encodable {
+        let deviceId: String
+    }
+
     // MARK: - 项目
 
     struct ProjectsPayload: Decodable {

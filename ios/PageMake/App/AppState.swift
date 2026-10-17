@@ -94,6 +94,19 @@ final class AppState: ObservableObject {
         banInfo = nil
     }
 
+    /// 游客登录（免费 Apple ID 无法使用 Sign in with Apple 时的兜底）
+    func signInAsGuest() async {
+        do {
+            let response = try await api.guestAuthenticate(deviceId: KeychainStore.shared.deviceId)
+            applySession(response)
+            await loadProjects()
+        } catch let error as APIError {
+            authError = error.errorDescription
+        } catch {
+            authError = L10n.string("error_generic")
+        }
+    }
+
     private func applySession(_ response: AuthResponse) {
         let newSession = UserSession(
             token: response.token,

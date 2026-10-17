@@ -1,0 +1,52 @@
+Page-make User Agreement
+
+Effective date: October 2026
+
+1. Service Description
+
+Page-make is a static site hosting tool: you upload a zip or individual HTML/CSS/JS files, and we automatically extract them, check your code, and generate a publicly accessible link. The service is free for signed-in users.
+
+2. Accounts
+
+2.1 This service uses Sign in with Apple. Accounts are for personal use only.
+2.2 You are responsible for all activity under your account.
+
+3. Content Rules
+
+Uploaded content must comply with applicable laws and public order. The following are prohibited:
+
+3.1 Fraud and phishing content;
+3.2 Pornographic content;
+3.3 Violent or terrorist content;
+3.4 Malware and viruses;
+3.5 Content infringing intellectual property or other lawful rights;
+3.6 Any other unlawful content.
+
+4. Enforcement
+
+4.1 Violating projects will be taken down (link shows "taken down"); files are kept for 7 days as evidence, then deleted.
+4.2 Violating accounts are banned by level: first minor violation — 1 day; repeat violations — 1 week; fraud or phishing — 1 month; pornography, terrorism, or malware — permanent.
+4.3 Reports are reviewed manually. If you believe an action was taken in error, you may appeal via the feedback channel.
+
+5. User Responsibility
+
+5.1 You are solely responsible for the legality and copyright of your uploaded content.
+5.2 Public links are open to everyone. Do not upload passwords, keys, or other sensitive information.
+
+6. Service Availability
+
+6.1 This is a free service with no guarantee of continuous availability; it may be interrupted or changed due to maintenance, failures, or platform policy changes.
+6.2 EdgeOne default preview domains expire after 3 hours; you can refresh the link manually in the app.
+6.3 Cloudflare default domains may be unstable within mainland China. This is a known issue.
+
+7. Disclaimer
+
+The service is provided "as is" without warranty of any kind. We are not liable for any direct or indirect damages arising from use of the service.
+
+8. Open Source
+
+This app is open source under the GPL-3.0 license; the source code is publicly available.
+
+9. Feedback and Reporting
+
+You can submit feedback and report violating content via Settings > Feedback in the app.

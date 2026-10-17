@@ -120,6 +120,7 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 | 路由 | 说明 |
 | --- | --- |
 | `POST /api/auth` | Sign in with Apple 换 7 天会话凭证 |
+| `POST /api/auth/guest` | 游客登录（设备 ID 免密，免费 Apple ID 兜底） |
 | `POST /api/upload/init` | 初始化分片上传（校验线路选择，5MB 上限） |
 | `POST /api/upload/chunk` | 上传分片（600KB/片） |
 | `POST /api/upload/finish` | 完成上传，后台处理（processing → ready/failed） |

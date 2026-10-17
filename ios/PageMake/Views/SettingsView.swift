@@ -30,6 +30,9 @@ struct SettingsView: View {
                         Button(L10n.string("login_apple")) {
                             Task { await appState.signIn() }
                         }
+                        Button(L10n.string("login_guest")) {
+                            Task { await appState.signInAsGuest() }
+                        }
                     }
                 }
 

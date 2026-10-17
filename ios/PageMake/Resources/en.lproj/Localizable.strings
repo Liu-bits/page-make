@@ -9,7 +9,9 @@
 "error_generic" = "Service error, please try again later";
 "error_network" = "Network error, please check your connection";
 "login_canceled" = "Sign-in cancelled";
-"error_apple_authorization_failed" = "Apple sign-in failed, please try again";
+"login_guest" = "Continue as guest";
+"guest_login_hint" = "Free Apple IDs cannot use Sign in with Apple — guest mode supports all features";
+"error_apple_authorization_failed" = "Apple sign-in failed (code %@), please try again";
 
 // MARK: - Sign in
 "welcome_title" = "Page-make";

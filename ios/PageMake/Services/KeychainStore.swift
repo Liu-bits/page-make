@@ -63,6 +63,16 @@ final class KeychainStore {
         string(forKey: "user_email")
     }
 
+    /// 游客登录用的设备标识（首次生成后持久保存）
+    var deviceId: String {
+        if let existing = string(forKey: "device_id") {
+            return existing
+        }
+        let new = UUID().uuidString
+        set(new, for: "device_id")
+        return new
+    }
+
     func saveSession(_ response: AuthResponse) {
         set(response.token, for: "session_token")
         set(DateParsing.string(response.expiresAt), for: "session_expires_at")

@@ -34,11 +34,18 @@ enum DocumentStore {
     }
 
     private static func load(document: AppDocument, suffix: String) -> String? {
-        let name = "Documents/\(document.rawValue)-\(suffix)"
-        guard let url = Bundle.main.url(forResource: name, withExtension: "txt"),
-              let text = try? String(contentsOf: url, encoding: .utf8) else {
-            return nil
+        // 资源在打包时被拍平到 .app 根目录（XcodeGen 不保留 Documents/ 子目录），
+        // 先按根目录找，再兼容带子目录的布局
+        let candidates = [
+            "\(document.rawValue)-\(suffix)",
+            "Documents/\(document.rawValue)-\(suffix)",
+        ]
+        for name in candidates {
+            if let url = Bundle.main.url(forResource: name, withExtension: "txt"),
+               let text = try? String(contentsOf: url, encoding: .utf8) {
+                return text
+            }
         }
-        return text
+        return nil
     }
 }

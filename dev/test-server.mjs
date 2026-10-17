@@ -349,6 +349,35 @@ await test('粘贴代码创建：参数校验', async () => {
   assertEqual((await noHtml.json()).error, 'BAD_REQUEST', '空 HTML 应报 BAD_REQUEST');
 });
 
+await test('游客登录：设备 ID 换会话（免费 Apple ID 兜底）', async () => {
+  const deviceId = 'test-device-0123456789abcdef';
+  const res = await fetch(`${BASE}/api/auth/guest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId }),
+  });
+  const json = await res.json();
+  assert(json.ok, `游客登录应成功：${JSON.stringify(json)}`);
+  assert(typeof json.token === 'string' && json.token.length > 0, '应返回 token');
+  assert(json.userId.startsWith('guest_'), 'userId 应为 guest_ 前缀');
+
+  // 同一设备重复登录应得到同一 userId（会话复用同一账号）
+  const again = await (await fetch(`${BASE}/api/auth/guest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId }),
+  })).json();
+  assertEqual(again.userId, json.userId, '同一设备应得到同一 userId');
+
+  // 非法 deviceId → 400
+  const bad = await fetch(`${BASE}/api/auth/guest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId: 'x' }),
+  });
+  assertEqual((await bad.json()).error, 'BAD_REQUEST', '非法 deviceId 应 400');
+});
+
 await test('删除项目后公开链接失效', async () => {
   const res = await fetch(`${BASE}/api/projects/${projectId}`, { method: 'DELETE', headers: AUTH });
   assert((await res.json()).ok, '删除应成功');
