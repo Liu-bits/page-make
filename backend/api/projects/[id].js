@@ -1,9 +1,11 @@
 // GET /api/projects/:id — 项目详情
-// POST /api/projects/:id — action: delete（删除）/ rename（重命名）
+// POST /api/projects/:id — action: delete（删除）/ rename（重命名）/ publish（生成公开链接）
 // DELETE /api/projects/:id — 删除项目（兼容；ModelScope 网关拦截 DELETE，客户端走 POST）
-import { getOwnedProject, deleteProjectRecords, syncProjectFiles } from '../../lib/project.js';
+import { getOwnedProject, deleteProjectRecords, syncProjectFiles, readSiteFiles, projectPublicUrl } from '../../lib/project.js';
 import { ok, fail } from '../../lib/responses.js';
 import { appendLog } from '../../lib/kv.js';
+import { STATUS } from '../../lib/state.js';
+import { analyzeHtml } from '../../lib/diagnostics.js';
 
 export async function onRequest(context) {
   const { request, params } = context;
@@ -39,6 +41,35 @@ export async function onRequest(context) {
     project.name = name;
     await syncProjectFiles(kv, project);
     await appendLog(kv, { projectId: project.id, step: 'rename_project', result: 'ok' });
+    return ok({ project });
+  }
+
+  // 项目模式：统一生成公开链接（至少需要一个 HTML 文件作为入口）
+  if (action === 'publish') {
+    const files = await readSiteFiles(kv, project.id);
+    if (files.size === 0) return fail('NO_ENTRY', 400);
+
+    // 入口选择：沿用已设入口 → index.html → 字典序第一个 .html
+    let entry =
+      project.entryPath && files.has(project.entryPath) ? project.entryPath : null;
+    if (!entry) {
+      if (files.has('index.html')) {
+        entry = 'index.html';
+      } else {
+        const htmlPaths = [...files.keys()].filter((p) => /\.html?$/i.test(p)).sort();
+        entry = htmlPaths[0] || null;
+      }
+    }
+    if (!entry) return fail('NO_ENTRY', 400);
+
+    // 静态诊断（与上传/粘贴流程一致）
+    const html = new TextDecoder().decode(files.get(entry));
+    project.diagnostics = analyzeHtml(html, files);
+    project.entryPath = entry;
+    project.status = STATUS.READY;
+    project.url = projectPublicUrl(new URL(request.url).origin, project.id);
+    await syncProjectFiles(kv, project);
+    await appendLog(kv, { projectId: project.id, step: 'publish', result: 'ok' });
     return ok({ project });
   }
 

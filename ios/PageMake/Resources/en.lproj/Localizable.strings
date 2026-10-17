@@ -207,3 +207,36 @@
 // MARK: - Paste code (placeholder fix)
 "paste_css_placeholder" = "Optional: saved as the file you link (e.g. style.css)";
 "paste_js_placeholder" = "Optional: saved as the file you reference (e.g. app.js)";
+
+// MARK: - Project mode (explorer)
+"mode_explorer" = "Project Mode";
+"explorer_intro" = "Start from blank: create virtual folders and files (html / css / js), edit online, then publish one public link";
+"explorer_name_placeholder" = "Project name";
+"explorer_default_name" = "Untitled Project";
+"explorer_create" = "Create Blank Project";
+"explorer_empty_title" = "Empty Folder";
+"explorer_empty_hint" = "Create an index.html as your home page, or add css / js files";
+"explorer_empty_folder" = "This folder is empty";
+"explorer_new_file" = "New File";
+"explorer_new_file_placeholder" = "index.html or css/style.css";
+"explorer_new_file_hint" = "Paths with / create virtual folders automatically; .html is appended by default; only .html / .css / .js are supported";
+"explorer_bad_name" = "Invalid name: only .html / .css / .js files, without special characters";
+"explorer_exists_overwrite" = "A file with this name exists — creating will overwrite it";
+"explorer_create_file" = "Create";
+"explorer_entry_badge" = "Entry";
+"explorer_link_section" = "Public Link";
+"explorer_publish" = "Publish Link";
+"explorer_republish" = "Update Published Content";
+"explorer_publishing" = "Publishing…";
+"explorer_need_entry" = "No HTML file yet: create an index.html (or any .html file) first, then publish";
+"explorer_delete_file_title" = "Delete this file?";
+"explorer_delete_file_message" = "The published page will no longer include this file.";
+"explorer_save" = "Save";
+"explorer_unsaved" = "Unsaved";
+"explorer_discard_confirm" = "You have unsaved changes. Discard them?";
+"explorer_discard_yes" = "Discard";
+"explorer_read_failed" = "Failed to load file content, please try again later";
+"explorer_chars" = "%d characters";
+"explorer_root" = "Root";
+"explorer_css_starter" = "/* Write your styles here */";
+"explorer_html_starter" = "Edit this page below";

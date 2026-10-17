@@ -38,7 +38,7 @@ enum ProjectStatus: String, Codable {
 }
 
 /// 项目文件
-struct ProjectFile: Identifiable, Codable, Equatable {
+struct ProjectFile: Identifiable, Codable, Equatable, Hashable {
     let path: String
     let size: Int64
     let contentType: String?
@@ -47,7 +47,7 @@ struct ProjectFile: Identifiable, Codable, Equatable {
 }
 
 /// 诊断项（后台静态检查 + 前端运行时检查共用）
-struct DiagnosticItem: Identifiable, Codable, Equatable {
+struct DiagnosticItem: Identifiable, Codable, Equatable, Hashable {
     let kind: DiagnosticKind
     let detail: String
     let suggestion: String
@@ -94,7 +94,7 @@ enum DiagnosticKind: String, Codable {
 }
 
 /// 项目
-struct Project: Identifiable, Codable, Equatable {
+struct Project: Identifiable, Codable, Equatable, Hashable {
     let id: String
     let name: String
     let provider: HostProvider

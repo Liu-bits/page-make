@@ -8,12 +8,14 @@ struct FilePickerView: View {
     private enum Mode: Hashable {
         case files
         case paste
+        case explorer
     }
 
     @Environment(\.dismiss) private var dismiss
     @State private var mode: Mode = .files
     @State private var showPicker = false
     @State private var alertItem: AlertItem?
+    @State private var explorerName = ""
 
     // 粘贴模式内容
     @State private var html = ""
@@ -40,6 +42,7 @@ struct FilePickerView: View {
                 Picker("", selection: $mode) {
                     Text(L10n.string("pick_mode_files")).tag(Mode.files)
                     Text(L10n.string("pick_mode_paste")).tag(Mode.paste)
+                    Text(L10n.string("mode_explorer")).tag(Mode.explorer)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
@@ -50,6 +53,8 @@ struct FilePickerView: View {
                     filesMode
                 case .paste:
                     pasteMode
+                case .explorer:
+                    explorerMode
                 }
             }
             .navigationTitle(L10n.string("add_project"))
@@ -93,6 +98,37 @@ struct FilePickerView: View {
                 showPicker = true
             } label: {
                 Text(L10n.string("pick_files_action"))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.glassProminent)
+            .padding(.horizontal, 32)
+            Spacer()
+        }
+    }
+
+    // MARK: - 项目模式
+
+    private var explorerMode: some View {
+        VStack(spacing: 20) {
+            Spacer()
+            Image(systemName: "folder.badge.gearshape")
+                .font(.system(size: 56))
+                .foregroundStyle(.secondary)
+            Text(L10n.string("mode_explorer"))
+                .font(.title2.bold())
+            Text(L10n.string("explorer_intro"))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            TextField(L10n.string("explorer_name_placeholder"), text: $explorerName)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal, 32)
+            Button {
+                let name = explorerName.trimmingCharacters(in: .whitespacesAndNewlines)
+                onPick(.explorer(name: name.isEmpty ? L10n.string("explorer_default_name") : name))
+            } label: {
+                Text(L10n.string("explorer_create"))
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.glassProminent)

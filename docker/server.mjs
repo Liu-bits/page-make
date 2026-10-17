@@ -120,6 +120,7 @@ const ROUTES = [
   { file: 'backend/api/upload/[uploadId].js', pattern: /^\/api\/upload\/([a-f0-9]{32})$/, params: ['uploadId'] },
   { file: 'backend/api/projects.js', pattern: /^\/api\/projects$/ },
   { file: 'backend/api/projects/paste.js', pattern: /^\/api\/projects\/paste$/ },
+  { file: 'backend/api/projects/explorer.js', pattern: /^\/api\/projects\/explorer$/ },
   { file: 'backend/api/projects/[id].js', pattern: /^\/api\/projects\/([^/]+)$/, params: ['id'] },
   { file: 'backend/api/projects/[id]/status.js', pattern: /^\/api\/projects\/([^/]+)\/status$/, params: ['id'] },
   { file: 'backend/api/projects/[id]/refresh.js', pattern: /^\/api\/projects\/([^/]+)\/refresh$/, params: ['id'] },

@@ -1,9 +1,10 @@
 import Foundation
 
-/// 创建来源：上传文件 / 直接粘贴代码
+/// 创建来源：上传文件 / 直接粘贴代码 / 项目模式（空白项目）
 enum CreateSource {
     case files([PickedFile])
     case paste(PasteContent)
+    case explorer(name: String)
 }
 
 /// 粘贴的代码内容（HTML 必填，CSS/JS 可选）

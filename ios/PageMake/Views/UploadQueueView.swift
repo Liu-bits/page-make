@@ -46,6 +46,9 @@ struct UploadQueueView: View {
                         provider: provider,
                         name: L10n.string("paste_project_name")
                     )
+                case .explorer:
+                    // 项目模式由 RootView 直接创建并打开资源管理器，不进入上传队列
+                    break
                 }
             }
         }

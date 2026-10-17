@@ -207,3 +207,36 @@
 // MARK: - 粘贴代码（占位符修正）
 "paste_css_placeholder" = "可选：保存为你在 <link> 里引用的文件名（如 style.css）";
 "paste_js_placeholder" = "可选：保存为你在 <script> 里引用的文件名（如 app.js）";
+
+// MARK: - 项目模式
+"mode_explorer" = "项目模式";
+"explorer_intro" = "从空白开始：创建虚拟文件夹和文件（支持 html / css / js），在线编辑，最后统一生成公开链接";
+"explorer_name_placeholder" = "项目名称";
+"explorer_default_name" = "未命名项目";
+"explorer_create" = "创建空白项目";
+"explorer_empty_title" = "空文件夹";
+"explorer_empty_hint" = "先新建一个 index.html 作为主页，也可以创建 css / js 文件";
+"explorer_empty_folder" = "这个文件夹是空的";
+"explorer_new_file" = "新建文件";
+"explorer_new_file_placeholder" = "index.html 或 css/style.css";
+"explorer_new_file_hint" = "输入带 / 的路径会自动创建虚拟文件夹；不写后缀时默认补 .html；仅支持 .html / .css / .js";
+"explorer_bad_name" = "文件名不合法：仅支持 .html / .css / .js，且不能包含特殊字符";
+"explorer_exists_overwrite" = "同名文件已存在，创建将覆盖其内容";
+"explorer_create_file" = "创建";
+"explorer_entry_badge" = "入口";
+"explorer_link_section" = "公开链接";
+"explorer_publish" = "生成链接";
+"explorer_republish" = "更新链接内容";
+"explorer_publishing" = "正在生成链接…";
+"explorer_need_entry" = "还没有 HTML 文件：先新建一个 index.html（或其他 .html 文件），再生成链接";
+"explorer_delete_file_title" = "删除这个文件？";
+"explorer_delete_file_message" = "删除后公开页面将不再包含这个文件。";
+"explorer_save" = "保存";
+"explorer_unsaved" = "未保存";
+"explorer_discard_confirm" = "有未保存的修改，确定放弃吗？";
+"explorer_discard_yes" = "放弃修改";
+"explorer_read_failed" = "文件内容读取失败，请稍后重试";
+"explorer_chars" = "%d 字符";
+"explorer_root" = "根目录";
+"explorer_css_starter" = "/* 在这里写样式 */";
+"explorer_html_starter" = "在下方编辑这个页面";

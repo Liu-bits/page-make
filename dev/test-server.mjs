@@ -9,6 +9,7 @@ import path from 'node:path';
 
 import { buildZip } from './make-zip.mjs';
 import { keys as kvKeys } from '../backend/lib/kv.js';
+import { textToBase64, base64ToText } from '../backend/lib/base64.js';
 
 const PORT = 18786;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -17,6 +18,7 @@ const AUTH = { Authorization: 'Bearer dev-test-token' };
 let passed = 0;
 let failed = 0;
 let projectId = null;
+let explorerId = null;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message || '断言失败');
@@ -539,8 +541,107 @@ await test('游客限 1 个：第二次创建返回 GUEST_LIMIT', async () => {
   assertEqual(second.error, 'GUEST_LIMIT', '游客第二个项目应返回 GUEST_LIMIT');
 });
 
-await test('删除项目后公开链接失效', async () => {
-  const res = await fetch(`${BASE}/api/projects/${projectId}`, { method: 'DELETE', headers: AUTH });
+// ---------------------------------------------------------------------------
+// 项目模式（explorer）：空白项目 → 虚拟文件创建/读取/校验 → publish 生成链接
+// ---------------------------------------------------------------------------
+await test('项目模式：创建空白项目（无文件无链接）', async () => {
+  const res = await (await fetch(`${BASE}/api/projects/explorer`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '我的项目模式' }),
+  })).json();
+  assert(res.ok, `创建应成功：${JSON.stringify(res)}`);
+  explorerId = res.project.id;
+  assertEqual(res.project.sourceType, 'explorer', 'sourceType 应为 explorer');
+  assertEqual(res.project.fileCount, 0, '初始文件数应为 0');
+  assertEqual(res.project.url, null, '初始不应有链接');
+  assertEqual(res.project.name, '我的项目模式', '名称应保存');
+});
+
+await test('项目模式：空项目公开访问 404、publish 报 NO_ENTRY', async () => {
+  const page = await fetch(`${BASE}/p/${explorerId}`);
+  assertEqual(page.status, 404, '无入口时公开链接应 404');
+
+  const pub = await (await fetch(`${BASE}/api/projects/${explorerId}`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'publish' }),
+  })).json();
+  assertEqual(pub.error, 'NO_ENTRY', '无 HTML 文件时 publish 应报 NO_ENTRY');
+});
+
+await test('项目模式：创建虚拟文件夹内文件（index.html + css/style.css）', async () => {
+  const html = '<!DOCTYPE html><html><head><link rel="stylesheet" href="css/style.css"></head><body><h1>项目模式页</h1></body></html>';
+  const add1 = await (await fetch(`${BASE}/api/projects/${explorerId}/files`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: 'index.html', content: textToBase64(html) }),
+  })).json();
+  assert(add1.ok, `添加 index.html 应成功：${JSON.stringify(add1)}`);
+  assertEqual(add1.project.entryPath, 'index.html', '首个 html 应自动成为入口');
+
+  const add2 = await (await fetch(`${BASE}/api/projects/${explorerId}/files`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: 'css/style.css', content: textToBase64('h1{color:red}') }),
+  })).json();
+  assert(add2.ok, `添加 css/style.css 应成功：${JSON.stringify(add2)}`);
+  assertEqual(add2.project.fileCount, 2, '文件数应为 2');
+});
+
+await test('项目模式：非法扩展名与路径穿越被拒绝', async () => {
+  const bad1 = await (await fetch(`${BASE}/api/projects/${explorerId}/files`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: 'evil.php', content: textToBase64('<?php echo 1;') }),
+  })).json();
+  assertEqual(bad1.error, 'BAD_REQUEST', '.php 应被拒绝');
+
+  const bad2 = await (await fetch(`${BASE}/api/projects/${explorerId}/files`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: '../escape.html', content: textToBase64('<p>x</p>') }),
+  })).json();
+  assertEqual(bad2.error, 'BAD_REQUEST', '路径穿越应被拒绝');
+
+  const bad3 = await (await fetch(`${BASE}/api/projects/${explorerId}/files`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: 'a\\b.html', content: textToBase64('<p>x</p>') }),
+  })).json();
+  assertEqual(bad3.error, 'BAD_REQUEST', '反斜杠路径应被拒绝');
+});
+
+await test('项目模式：读取文件内容（GET 回读一致，含中文）', async () => {
+  const res = await (await fetch(`${BASE}/api/projects/${explorerId}/files?path=css%2Fstyle.css`, { headers: AUTH })).json();
+  assert(res.ok, '读取应成功');
+  assertEqual(base64ToText(res.content), 'h1{color:red}', 'CSS 内容应一致');
+
+  const missing = await fetch(`${BASE}/api/projects/${explorerId}/files?path=nope.html`, { headers: AUTH });
+  assertEqual(missing.status, 404, '不存在的文件应 404');
+});
+
+await test('项目模式：publish 生成链接 → 公开访问生效', async () => {
+  const res = await (await fetch(`${BASE}/api/projects/${explorerId}`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'publish' }),
+  })).json();
+  assert(res.ok, `publish 应成功：${JSON.stringify(res)}`);
+  assert(res.project.url?.includes(`/p/${explorerId}`), '应生成公开链接');
+  assertEqual(res.project.entryPath, 'index.html', '入口应为 index.html');
+
+  const page = await fetch(`${BASE}/p/${explorerId}`);
+  assertEqual(page.status, 200, 'publish 后入口应可访问');
+  const text = await page.text();
+  assert(text.includes('项目模式页'), '页面应包含内容');
+
+  const css = await fetch(`${BASE}/p/${explorerId}/css/style.css`);
+  assertEqual(css.status, 200, '虚拟文件夹内 CSS 应可访问');
+  assertEqual(await css.text(), 'h1{color:red}', 'CSS 内容应一致');
+});
+
+await test('删除项目后公开链接失效', async () => {  const res = await fetch(`${BASE}/api/projects/${projectId}`, { method: 'DELETE', headers: AUTH });
   assert((await res.json()).ok, '删除应成功');
   const page = await fetch(`${BASE}/p/${projectId}`);
   assert(page.status === 404, '删除后入口应 404');

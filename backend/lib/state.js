@@ -33,6 +33,9 @@ export const UPLOAD_TTL_SECONDS = 30 * 60;
 // 粘贴代码创建：HTML + CSS + JS 总字节上限
 export const PASTE_MAX_BYTES = 300 * 1024;
 
+// 项目模式（虚拟文件管理器）：单文件上限（与 iOS 端 file_too_large_single 提示一致）
+export const FILE_MAX_BYTES = 900 * 1024;
+
 // 封号分级（第一版：用户举报 + 人工审核）
 export const BAN_LEVELS = {
   L1: { days: 1, label: '初次轻微违规' },

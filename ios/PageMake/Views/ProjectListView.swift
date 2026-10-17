@@ -221,6 +221,8 @@ struct ProjectListView: View {
                 NavigationLink {
                     if project.status == .failed {
                         ProjectErrorView(project: project)
+                    } else if project.sourceType == "explorer" {
+                        ExplorerView(project: project)
                     } else {
                         PreviewView(project: project)
                     }

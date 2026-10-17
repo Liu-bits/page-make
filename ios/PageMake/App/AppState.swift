@@ -143,6 +143,27 @@ final class AppState: ObservableObject {
         stats = try? await api.stats()
     }
 
+    // MARK: - 项目模式
+
+    /// 创建空白项目（项目模式）；成功返回项目并同步列表，失败返回 nil（错误写入 authError）
+    func createExplorerProject(name: String) async -> Project? {
+        do {
+            let project = try await api.createExplorerProject(name: name)
+            upsertProject(project)
+            return project
+        } catch let error as APIError {
+            if case .banned(let ban) = error {
+                banInfo = ban
+            } else {
+                authError = error.errorDescription
+            }
+            return nil
+        } catch {
+            authError = L10n.string("error_generic")
+            return nil
+        }
+    }
+
     /// 邮箱密码登录；返回错误文案（nil = 成功）
     func signInWithPassword(email: String, password: String) async -> String? {
         do {

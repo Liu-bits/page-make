@@ -314,6 +314,43 @@ final class APIClient {
         return payload.project
     }
 
+    // MARK: - 项目模式（虚拟文件管理器）
+
+    struct ExplorerCreateRequest: Encodable {
+        let name: String
+    }
+
+    /// 创建空白项目（项目模式：初始无文件无链接，逐个创建文件后 publish）
+    func createExplorerProject(name: String) async throws -> Project {
+        let body = try encoder.encode(ExplorerCreateRequest(name: name))
+        let data = try await request("/api/projects/explorer", method: "POST", body: body)
+        return try decoder.decode(ProjectPayload.self, from: data).project
+    }
+
+    struct FileContentPayload: Decodable {
+        let path: String
+        let content: String
+    }
+
+    /// 读取文本文件内容（编辑器载入用）
+    func readTextFile(projectId: String, path: String) async throws -> String {
+        let encoded = path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? path
+        let data = try await request("/api/projects/\(projectId)/files?path=\(encoded)")
+        let payload = try decoder.decode(FileContentPayload.self, from: data)
+        guard let bytes = Data(base64Encoded: payload.content),
+              let text = String(data: bytes, encoding: .utf8) else {
+            throw APIError.decoding
+        }
+        return text
+    }
+
+    /// 生成公开链接（publish：选入口 → 静态诊断 → 返回带 url 的项目）
+    func publishProject(_ id: String) async throws -> Project {
+        let body = try encoder.encode(ActionRequest(action: "publish"))
+        let data = try await request("/api/projects/\(id)", method: "POST", body: body)
+        return try decoder.decode(ProjectPayload.self, from: data).project
+    }
+
     // MARK: - 反馈 / 举报
 
     struct FeedbackRequest: Encodable {

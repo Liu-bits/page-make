@@ -7,6 +7,7 @@ struct RootView: View {
     @State private var showFilePicker = false
     @State private var pendingSource: CreateSource?
     @State private var showSettings = false
+    @State private var explorerProject: Project?
 
     var body: some View {
         Group {
@@ -20,7 +21,16 @@ struct RootView: View {
         .sheet(isPresented: $showFilePicker) {
             FilePickerView { source in
                 showFilePicker = false
-                pendingSource = source
+                if case .explorer(let name) = source {
+                    // 项目模式：直接创建空白项目并打开资源管理器
+                    Task {
+                        if let project = await appState.createExplorerProject(name: name) {
+                            explorerProject = project
+                        }
+                    }
+                } else {
+                    pendingSource = source
+                }
             }
         }
         .sheet(isPresented: Binding(
@@ -54,6 +64,9 @@ struct RootView: View {
     private var mainContent: some View {
         NavigationStack {
             ProjectListView(showFilePicker: $showFilePicker, showSettings: $showSettings)
+                .navigationDestination(item: $explorerProject) { project in
+                    ExplorerView(project: project)
+                }
         }
     }
 }
