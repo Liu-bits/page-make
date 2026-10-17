@@ -48,6 +48,13 @@ struct SettingsView: View {
                             }
                         }
                         .disabled(isDeletingAccount)
+                        // 游客提示：退出后身份重置，可重新开始试用
+                        if let session = appState.session, session.userId.hasPrefix("guest_") {
+                            Text(L10n.string("guest_signout_hint"))
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 4)
+                        }
                     } else {
                         Button(L10n.string("login_apple")) {
                             Task { await appState.signIn() }
@@ -65,12 +72,6 @@ struct SettingsView: View {
                         Button(L10n.string("login_guest")) {
                             Task { await appState.signInAsGuest() }
                         }
-                    }
-                } footer: {
-                    // 游客提示：退出后身份重置，可重新开始试用
-                    if let session = appState.session, session.userId.hasPrefix("guest_") {
-                        Text(L10n.string("guest_signout_hint"))
-                            .font(.footnote)
                     }
                 }
 
