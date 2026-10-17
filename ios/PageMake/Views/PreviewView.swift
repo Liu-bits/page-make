@@ -16,6 +16,7 @@ struct PreviewView: View {
     @State private var showDeleteConfirm = false
     @State private var alertItem: AlertItem?
     @State private var isRefreshing = false
+    @State private var showQR = false
 
     init(project: Project) {
         self.project = project
@@ -43,6 +44,9 @@ struct PreviewView: View {
             ManageFilesView(project: current) { updated in
                 current = updated
             }
+        }
+        .sheet(isPresented: $showQR) {
+            QRCodeView(project: current)
         }
         .confirmationDialog(
             L10n.string("delete_confirm_title"),
@@ -101,6 +105,12 @@ struct PreviewView: View {
                     Image(systemName: "safari")
                 }
                 .accessibilityLabel(L10n.string("open_in_safari"))
+                Button {
+                    showQR = true
+                } label: {
+                    Image(systemName: "qrcode")
+                }
+                .accessibilityLabel(L10n.string("qr_code"))
             }
         }
         .padding(.horizontal, 12)

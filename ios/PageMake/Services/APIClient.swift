@@ -149,6 +149,28 @@ final class APIClient {
         return payload.projects
     }
 
+    /// 重命名项目（POST + action=rename）
+    func renameProject(_ id: String, name: String) async throws -> Project {
+        let body = try encoder.encode(RenameRequest(action: "rename", name: name))
+        let data = try await request("/api/projects/\(id)", method: "POST", body: body)
+        return try decoder.decode(ProjectPayload.self, from: data).project
+    }
+
+    struct RenameRequest: Encodable {
+        let action: String
+        let name: String
+    }
+
+    /// 用量统计
+    func stats() async throws -> UserStats {
+        let data = try await request("/api/stats")
+        return try decoder.decode(StatsPayload.self, from: data).stats
+    }
+
+    struct StatsPayload: Decodable {
+        let stats: UserStats
+    }
+
     /// 删除项目（ModelScope 网关拦截 DELETE 方法，改用 POST + action）
     func deleteProject(_ id: String) async throws {
         let body = try encoder.encode(ActionRequest(action: "delete"))

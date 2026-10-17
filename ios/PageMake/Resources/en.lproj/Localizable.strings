@@ -186,3 +186,24 @@
 "provider_local_name" = "ModelScope Space";
 "provider_local_detail" = "Self-hosted container — links stay valid";
 "error_guest_limit" = "Guests can create 1 page — log in to create more";
+
+// MARK: - QR code sharing
+"qr_code" = "QR Code";
+"qr_hint" = "Scan to open the page on any device";
+
+// MARK: - Paste templates
+"templates" = "Templates";
+"use_template" = "Fill template";
+"template_profile" = "Personal Page";
+"template_landing" = "Landing Page";
+"template_blog" = "Blog Post";
+
+// MARK: - Usage stats
+"stats_section" = "Usage";
+"stats_projects" = "Projects";
+"stats_files" = "Files";
+"stats_size" = "Total size";
+
+// MARK: - Paste code (placeholder fix)
+"paste_css_placeholder" = "Optional: saved as the file you link (e.g. style.css)";
+"paste_js_placeholder" = "Optional: saved as the file you reference (e.g. app.js)";

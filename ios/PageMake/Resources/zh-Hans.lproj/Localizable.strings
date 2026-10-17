@@ -186,3 +186,24 @@
 "provider_local_name" = "ModelScope 创空间";
 "provider_local_detail" = "自托管容器，链接长期有效";
 "error_guest_limit" = "游客只能创建 1 个网页，登录后可创建更多";
+
+// MARK: - 二维码分享
+"qr_code" = "二维码";
+"qr_hint" = "扫码即可在手机或电脑上打开网页";
+
+// MARK: - 粘贴模板
+"templates" = "模板";
+"use_template" = "填入模板";
+"template_profile" = "个人主页";
+"template_landing" = "产品落地页";
+"template_blog" = "博客文章";
+
+// MARK: - 用量统计
+"stats_section" = "用量统计";
+"stats_projects" = "项目数";
+"stats_files" = "文件数";
+"stats_size" = "总大小";
+
+// MARK: - 粘贴代码（占位符修正）
+"paste_css_placeholder" = "可选：保存为你在 <link> 里引用的文件名（如 style.css）";
+"paste_js_placeholder" = "可选：保存为你在 <script> 里引用的文件名（如 app.js）";

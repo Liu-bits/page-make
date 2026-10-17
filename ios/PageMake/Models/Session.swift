@@ -102,3 +102,10 @@ struct ProjectStatusResponse: Decodable {
         project = try c.decodeIfPresent(Project.self, forKey: .project)
     }
 }
+
+/// 用量统计
+struct UserStats: Decodable, Equatable {
+    let projectCount: Int
+    let totalSize: Int
+    let fileCount: Int
+}

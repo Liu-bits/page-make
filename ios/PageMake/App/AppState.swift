@@ -5,6 +5,7 @@ import Foundation
 final class AppState: ObservableObject {
     @Published var session: UserSession?
     @Published var projects: [Project] = []
+    @Published var stats: UserStats?
     @Published var isLoadingProjects = false
     @Published var authError: String?
     @Published var banInfo: BanInfo?
@@ -120,6 +121,26 @@ final class AppState: ObservableObject {
             let detail = ns.localizedDescription
             return detail.isEmpty ? "\(ns.domain) \(ns.code)" : "\(ns.domain) \(ns.code)：\(detail)"
         }
+    }
+
+    /// 重命名项目；返回错误文案（nil = 成功）
+    func renameProject(_ id: String, name: String) async -> String? {
+        do {
+            let updated = try await api.renameProject(id, name: name)
+            if let index = projects.firstIndex(where: { $0.id == id }) {
+                projects[index] = updated
+            }
+            return nil
+        } catch let error as APIError {
+            return error.errorDescription
+        } catch {
+            return L10n.string("error_generic")
+        }
+    }
+
+    /// 加载用量统计
+    func loadStats() async {
+        stats = try? await api.stats()
     }
 
     /// 邮箱密码登录；返回错误文案（nil = 成功）

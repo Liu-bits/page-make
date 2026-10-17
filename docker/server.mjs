@@ -107,6 +107,7 @@ class DiskKV {
 const ROUTES = [
   { file: 'backend/index.js', pattern: /^\/$/ },
   { file: 'backend/api/config.js', pattern: /^\/api\/config$/ },
+  { file: 'backend/api/stats.js', pattern: /^\/api\/stats$/ },
   { file: 'backend/api/auth/google.js', pattern: /^\/api\/auth\/google$/ },
   { file: 'backend/api/auth/register.js', pattern: /^\/api\/auth\/register$/ },
   { file: 'backend/api/auth/login.js', pattern: /^\/api\/auth\/login$/ },

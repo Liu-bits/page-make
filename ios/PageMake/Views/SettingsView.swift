@@ -12,6 +12,14 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                if appState.isLoggedIn, let stats = appState.stats {
+                    Section(L10n.string("stats_section")) {
+                        LabeledContent(L10n.string("stats_projects"), value: "\(stats.projectCount)")
+                        LabeledContent(L10n.string("stats_files"), value: "\(stats.fileCount)")
+                        LabeledContent(L10n.string("stats_size"), value: formatBytes(stats.totalSize))
+                    }
+                }
+
                 Section(L10n.string("account_section")) {
                     if appState.isLoggedIn {
                         if let session = appState.session {
@@ -78,6 +86,9 @@ struct SettingsView: View {
             .listStyle(.insetGrouped)
             .navigationTitle(L10n.string("settings"))
             .navigationBarTitleDisplayMode(.inline)
+            .task {
+                await appState.loadStats()
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(L10n.string("done")) { dismiss() }
@@ -101,5 +112,12 @@ struct SettingsView: View {
                 )
             }
         }
+    }
+
+    private func formatBytes(_ bytes: Int) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(bytes))
     }
 }

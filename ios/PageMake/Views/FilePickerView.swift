@@ -110,6 +110,8 @@ struct FilePickerView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
+                templatesRow
+
                 editor(
                     title: L10n.string("paste_html"),
                     text: $html,
@@ -144,6 +146,42 @@ struct FilePickerView: View {
             .disabled(pasteContent.isHtmlEmpty)
             .opacity(pasteContent.isHtmlEmpty ? 0.4 : 1)
         }
+    }
+
+    // MARK: - 模板
+
+    private var templatesRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L10n.string("templates"))
+                .font(.subheadline.bold())
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(PasteTemplates.all) { tpl in
+                        Button {
+                            applyTemplate(tpl)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(L10n.string(tpl.nameKey))
+                                    .font(.subheadline.bold())
+                                Text(L10n.string("use_template"))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(12)
+                            .frame(width: 150, alignment: .leading)
+                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+        }
+    }
+
+    private func applyTemplate(_ tpl: PasteTemplate) {
+        html = tpl.html
+        css = tpl.css
+        js = tpl.js
     }
 
     private func editor(title: String, text: Binding<String>, placeholder: String, minHeight: CGFloat) -> some View {
