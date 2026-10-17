@@ -58,7 +58,8 @@ final class APIClient {
             if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
         }
         if requiresAuth, let token {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            // 自定义头：ModelScope 网关会拦截 Authorization（误判为 SDK Token）
+            req.setValue(token, forHTTPHeaderField: "X-Pagemake-Token")
         }
 
         let (data, response): (Data, URLResponse)

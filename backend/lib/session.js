@@ -4,6 +4,10 @@ import { SESSION_TTL_SECONDS } from './state.js';
 import { fail } from './responses.js';
 
 export function bearerToken(request) {
+  // 优先自定义头：ModelScope 网关会把 Authorization 误判为 SDK Token 并拦截
+  const custom = request.headers.get('x-pagemake-token');
+  if (custom && custom.trim()) return custom.trim();
+  // 兼容标准 Authorization（自建反代 / 其他环境）
   const auth = request.headers.get('Authorization') || request.headers.get('authorization') || '';
   const match = auth.match(/^Bearer\s+(.+)$/i);
   return match ? match[1].trim() : null;
