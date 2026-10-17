@@ -3,7 +3,7 @@
 // 说明：html 必填；css/js 可选，写入 style.css / script.js 并自动注入 HTML 引用；
 //       HTML 片段（无 <html> 结构）自动包裹成完整文档。
 import { requireAuth } from '../../lib/session.js';
-import { kvPut, keys, nowSeconds, appendLog } from '../../lib/kv.js';
+import { kvPut, kvListAll, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
 import { PROVIDERS, PASTE_MAX_BYTES, STATUS } from '../../lib/state.js';
 import { analyzeHtml } from '../../lib/diagnostics.js';
@@ -24,14 +24,31 @@ function escapeHtml(text) {
 }
 
 /**
+ * 从 HTML 中找出 CSS/JS 的引用文件名（跟随用户写的 <link href> / <script src>）
+ * 找不到时用默认名（style.css / script.js）
+ */
+function findAssetPath(html, tag, attr, ext, fallback) {
+  const re = new RegExp(`<${tag}[^>]+${attr}=["']([^"']+\\.${ext})["']`, 'i');
+  const match = html.match(re);
+  if (!match) return fallback;
+  return match[1].replace(/^\.\//, '').replace(/^\//, '');
+}
+
+/**
  * 组装 HTML：
- * - 有 <html> 结构 → 在 </head> 前注入 CSS 引用、</body> 前注入 JS 引用（已有引用则跳过）
+ * - 有 <html> 结构 → 用户已写 link/script 就不重复注入；没写才注入
  * - 无结构（片段）→ 包裹成完整文档
+ * 返回 { html, cssPath, jsPath }：CSS/JS 内容应保存到 cssPath/jsPath
  */
 function buildHtml(html, css, js, name) {
   const hasStructure = /<html[\s>]/i.test(html);
-  const cssLink = '<link rel="stylesheet" href="style.css">';
-  const jsTag = '<script src="script.js"></script>';
+  const cssPath = findAssetPath(html, 'link', 'href', 'css', 'style.css');
+  const jsPath = findAssetPath(html, 'script', 'src', 'js', 'script.js');
+  const hasCssRef = cssPath !== 'style.css' || /style\.css/i.test(html);
+  const hasJsRef = jsPath !== 'script.js' || /script\.js/i.test(html);
+
+  const cssLink = `<link rel="stylesheet" href="${cssPath}">`;
+  const jsTag = `<script src="${jsPath}"></script>`;
 
   if (!hasStructure) {
     const head = [
@@ -41,7 +58,8 @@ function buildHtml(html, css, js, name) {
       css ? cssLink : '',
     ].filter(Boolean).join('\n  ');
     const bodyTail = js ? `\n  ${jsTag}` : '';
-    return `<!DOCTYPE html>
+    return {
+      html: `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   ${head}
@@ -49,21 +67,24 @@ function buildHtml(html, css, js, name) {
 <body>
 ${html}${bodyTail}
 </body>
-</html>`;
+</html>`,
+      cssPath,
+      jsPath,
+    };
   }
 
   let out = html;
-  if (css && !/style\.css/i.test(out)) {
+  if (css && !hasCssRef) {
     out = /<\/head>/i.test(out)
       ? out.replace(/<\/head>/i, `  ${cssLink}\n</head>`)
       : `${cssLink}\n${out}`;
   }
-  if (js && !/script\.js/i.test(out)) {
+  if (js && !hasJsRef) {
     out = /<\/body>/i.test(out)
       ? out.replace(/<\/body>/i, `  ${jsTag}\n</body>`)
       : `${out}\n${jsTag}`;
   }
-  return out;
+  return { html: out, cssPath, jsPath };
 }
 
 export async function onRequest(context) {
@@ -77,6 +98,12 @@ export async function onRequest(context) {
     body = await request.json();
   } catch {
     return fail('BAD_REQUEST', 400);
+  }
+
+  // 游客（免登录兜底）最多创建 1 个网页
+  if (auth.user.userId.startsWith('guest_')) {
+    const existing = await kvListAll(auth.kv, keys.userProject(auth.user.userId, ''));
+    if (existing.length >= 1) return fail('GUEST_LIMIT', 403);
   }
 
   // 单线路部署：provider 可省略，默认 local（非法值仍拒绝）
@@ -99,15 +126,15 @@ export async function onRequest(context) {
   const started = Date.now();
 
   try {
-    // 组装文件
+    // 组装文件（CSS/JS 文件名跟随用户 HTML 里的引用）
     const files = new Map();
-    const finalHtml = buildHtml(html, css, js, name);
-    files.set('index.html', bytes(finalHtml));
-    if (css.trim()) files.set('style.css', bytes(css));
-    if (js.trim()) files.set('script.js', bytes(js));
+    const built = buildHtml(html, css, js, name);
+    files.set('index.html', bytes(built.html));
+    if (css.trim()) files.set(built.cssPath, bytes(css));
+    if (js.trim()) files.set(built.jsPath, bytes(js));
 
     // 静态诊断（与上传流程一致）
-    const diagnostics = analyzeHtml(finalHtml, files);
+    const diagnostics = analyzeHtml(built.html, files);
 
     // 部署
     const deploy = await deploySite({ kv, env: context.env, provider, projectId, files, entryPath: 'index.html', name });

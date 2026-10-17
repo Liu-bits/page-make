@@ -185,3 +185,4 @@
 "alert_tip" = "Notice";
 "provider_local_name" = "ModelScope Space";
 "provider_local_detail" = "Self-hosted container — links stay valid";
+"error_guest_limit" = "Guests can create 1 page — log in to create more";

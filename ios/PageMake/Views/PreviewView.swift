@@ -30,7 +30,6 @@ struct PreviewView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbarBar
-            Divider()
             webArea
             Divider()
             bottomBar
@@ -104,8 +103,11 @@ struct PreviewView: View {
                 .accessibilityLabel(L10n.string("open_in_safari"))
             }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
     }
 
     // MARK: - 网页区域

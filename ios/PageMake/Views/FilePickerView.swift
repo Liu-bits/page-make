@@ -95,7 +95,7 @@ struct FilePickerView: View {
                 Text(L10n.string("pick_files_action"))
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(PrimaryButtonStyle())
+            .buttonStyle(.glassProminent)
             .padding(.horizontal, 32)
             Spacer()
         }
@@ -139,16 +139,15 @@ struct FilePickerView: View {
             Button(L10n.string("paste_create")) {
                 submitPaste()
             }
-            .buttonStyle(PrimaryButtonStyle())
+            .buttonStyle(.glassProminent)
             .padding()
             .disabled(pasteContent.isHtmlEmpty)
             .opacity(pasteContent.isHtmlEmpty ? 0.4 : 1)
-            .background(.regularMaterial)
         }
     }
 
     private func editor(title: String, text: Binding<String>, placeholder: String, minHeight: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.subheadline.bold())
             ZStack(alignment: .topLeading) {
@@ -157,8 +156,6 @@ struct FilePickerView: View {
                     .scrollContentBackground(.hidden)
                     .padding(6)
                     .frame(minHeight: minHeight, alignment: .topLeading)
-                    .background(Color(.secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
                 if text.wrappedValue.isEmpty {
                     Text(placeholder)
                         .font(.system(.footnote, design: .monospaced))
@@ -169,6 +166,8 @@ struct FilePickerView: View {
                 }
             }
         }
+        .padding(12)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private var isTooLarge: Bool {

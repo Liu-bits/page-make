@@ -28,9 +28,13 @@ function decodeJwt(token) {
   if (parts.length !== 3) {
     throw Object.assign(new Error('INVALID_JWT_FORMAT'), { code: 'AUTH_ERROR' });
   }
-  const header = JSON.parse(new TextDecoder().decode(base64urlToBytes(parts[0])));
-  const payload = JSON.parse(new TextDecoder().decode(base64urlToBytes(parts[1])));
-  return { header, payload, signingInput: `${parts[0]}.${parts[1]}`, signature: base64urlToBytes(parts[2]) };
+  try {
+    const header = JSON.parse(new TextDecoder().decode(base64urlToBytes(parts[0])));
+    const payload = JSON.parse(new TextDecoder().decode(base64urlToBytes(parts[1])));
+    return { header, payload, signingInput: `${parts[0]}.${parts[1]}`, signature: base64urlToBytes(parts[2]) };
+  } catch {
+    throw Object.assign(new Error('INVALID_JWT_FORMAT'), { code: 'AUTH_ERROR' });
+  }
 }
 
 /**

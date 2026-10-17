@@ -100,7 +100,8 @@ struct UploadQueueView: View {
                 .font(.footnote)
             }
         }
-        .padding(.vertical, 4)
+        .padding(12)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 
     @ViewBuilder

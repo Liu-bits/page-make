@@ -368,7 +368,7 @@ await test('Google 登录：非法 token 拒绝 + 参数校验', async () => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ idToken: 'fake.google.token' }),
   })).json();
-  assertEqual(bad.error, 'INVALID_GOOGLE_TOKEN', '非法 Google token 应被拒绝');
+  assertEqual(bad.error, 'INVALID_JWT_FORMAT', '非法 Google token 应被拒绝（JWT 格式错误）');
 
   const missing = await (await fetch(`${BASE}/api/auth/google`, {
     method: 'POST',
@@ -488,6 +488,55 @@ await test('POST 删除项目（网关拦截 DELETE 的替代方案）', async (
   // 公开链接应失效
   const page = await fetch(`${BASE}/p/${id}`);
   assertEqual(page.status, 404, '删除后公开链接应 404');
+});
+
+await test('粘贴：CSS 文件名跟随 HTML 的 link 引用', async () => {
+  const html = '<!DOCTYPE html><html><head><link rel="stylesheet" href="main.css"></head><body><h1>styled</h1></body></html>';
+  const res = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ html, css: 'h1{color:blue}', name: 'link测试' }),
+  })).json();
+  assert(res.ok, `创建应成功：${JSON.stringify(res)}`);
+  const id = res.project.id;
+
+  // CSS 应保存为用户指定的 main.css
+  const css = await fetch(`${BASE}/p/${id}/main.css`);
+  assertEqual(css.status, 200, 'main.css 应可访问');
+  assertEqual(await css.text(), 'h1{color:blue}', 'CSS 内容应一致');
+
+  // 不应额外注入 style.css
+  const page = await (await fetch(`${BASE}/p/${id}`)).text();
+  assert(!page.includes('style.css'), '已有 link 时不应重复注入 style.css');
+  assert(page.includes('main.css'), '页面应保留用户的 main.css 引用');
+});
+
+await test('游客限 1 个：第二次创建返回 GUEST_LIMIT', async () => {
+  const deviceId = `guest-limit-${Date.now()}`;
+  const login = await (await fetch(`${BASE}/api/auth/guest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId }),
+  })).json();
+  assert(login.ok, '游客登录应成功');
+  // 调试模式下用 X-Test-User 指定游客身份（DEV_NO_AUTH 会跳过鉴权）
+  const guestAuth = { 'X-Test-User': login.userId };
+
+  // 第一个成功
+  const first = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { ...guestAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ html: '<p>guest one</p>' }),
+  })).json();
+  assert(first.ok, '游客首个项目应成功');
+
+  // 第二个被拒
+  const second = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { ...guestAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ html: '<p>guest two</p>' }),
+  })).json();
+  assertEqual(second.error, 'GUEST_LIMIT', '游客第二个项目应返回 GUEST_LIMIT');
 });
 
 await test('删除项目后公开链接失效', async () => {

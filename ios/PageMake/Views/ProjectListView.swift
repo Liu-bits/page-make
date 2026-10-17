@@ -80,43 +80,42 @@ struct ProjectListView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-            Button {
-                Task { await appState.signIn() }
-            } label: {
-                Text(L10n.string("login_apple"))
-                    .frame(maxWidth: .infinity)
+            GlassEffectContainer(spacing: 14) {
+                VStack(spacing: 14) {
+                    Button {
+                        Task { await appState.signIn() }
+                    } label: {
+                        Text(L10n.string("login_apple"))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.glassProminent)
+
+                    Button {
+                        Task { await signInWithGoogle() }
+                    } label: {
+                        Text(L10n.string("login_google"))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.glass)
+
+                    Button {
+                        showPasswordAuth = true
+                    } label: {
+                        Text(L10n.string("password_login"))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.glass)
+
+                    Button {
+                        Task { await appState.signInAsGuest() }
+                    } label: {
+                        Text(L10n.string("login_guest"))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.glass)
+                }
             }
-            .buttonStyle(PrimaryButtonStyle())
             .padding(.horizontal, 32)
-            Button {
-                Task { await signInWithGoogle() }
-            } label: {
-                Text(L10n.string("login_google"))
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .padding(.horizontal, 32)
-            Button {
-                showPasswordAuth = true
-            } label: {
-                Text(L10n.string("password_login"))
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .padding(.horizontal, 32)
-            Button {
-                Task { await appState.signInAsGuest() }
-            } label: {
-                Text(L10n.string("login_guest"))
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .padding(.horizontal, 32)
-            Text(L10n.string("guest_login_hint"))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
             Text(L10n.string("public_links_note"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)

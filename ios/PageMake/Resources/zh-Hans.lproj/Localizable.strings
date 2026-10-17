@@ -185,3 +185,4 @@
 "alert_tip" = "提示";
 "provider_local_name" = "ModelScope 创空间";
 "provider_local_detail" = "自托管容器，链接长期有效";
+"error_guest_limit" = "游客只能创建 1 个网页，登录后可创建更多";

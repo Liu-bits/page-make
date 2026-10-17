@@ -36,9 +36,11 @@ export async function requireAuth(context) {
 
   // 开发/自托管调试：DEV_NO_AUTH=1 时跳过鉴权（仅本地测试，生产环境必须不设置）
   if (context.env?.DEV_NO_AUTH === '1') {
+    // 调试模式可用 X-Test-User 指定身份（仅用于测试游客限制等按用户分支的逻辑）
+    const testUser = context.request.headers.get('x-test-user') || 'dev-user';
     return {
-      user: { userId: 'dev-user', email: 'dev@local', status: 'active', banLevel: 0, banUntil: null, banReason: null },
-      session: { userId: 'dev-user', expiresAt: Number.MAX_SAFE_INTEGER },
+      user: { userId: testUser, email: 'dev@local', status: 'active', banLevel: 0, banUntil: null, banReason: null },
+      session: { userId: testUser, expiresAt: Number.MAX_SAFE_INTEGER },
       kv,
     };
   }

@@ -34,6 +34,12 @@ export async function onRequest(context) {
     return fail('BAD_REQUEST', 400);
   }
 
+  // 游客（免登录兜底）最多创建 1 个网页
+  if (auth.user.userId.startsWith('guest_')) {
+    const existing = await kvListAll(auth.kv, keys.userProject(auth.user.userId, ''));
+    if (existing.length >= 1) return fail('GUEST_LIMIT', 403);
+  }
+
   // 单线路部署：provider 可省略，默认 local（非法值仍拒绝）
   const provider = body?.provider || 'local';
   if (!PROVIDERS.has(provider)) return fail('INVALID_PROVIDER', 400);
