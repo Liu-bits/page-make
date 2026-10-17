@@ -14,7 +14,10 @@ final class PlainLanguageTests: XCTestCase {
     }
 
     func testUnknownErrorCodeFallsBackToGeneric() {
-        XCTAssertEqual(PlainLanguage.messageKey(forErrorCode: "WHATEVER"), "error_generic")
+        // 未知错误码：messageKey 返回空，message 显示码本身（便于反馈定位），且永不为空
+        XCTAssertEqual(PlainLanguage.messageKey(forErrorCode: "WHATEVER"), "")
+        XCTAssertEqual(PlainLanguage.message(forErrorCode: "WHATEVER"), "WHATEVER")
+        XCTAssertFalse(PlainLanguage.message(forErrorCode: "").isEmpty)
     }
 
     func testDifferentCodesMapToDifferentMessages() {
