@@ -265,4 +265,12 @@ server.listen(PORT, '0.0.0.0', () => {
   if (env.DEV_NO_AUTH === '1') {
     console.warn('⚠️ DEV_NO_AUTH=1：已跳过登录鉴权，仅限本地调试，生产环境禁止！');
   }
+
+  // 预热 JWKS 加载器：首个登录请求直接命中内存缓存（境内实时拉取会 5s 超时后回退种子，
+  // 不预热的话第一次 Google/Apple 登录要干等这个超时）。失败静默（加载器内部已三级回退）。
+  for (const mod of ['./backend/lib/google-auth.js', './backend/lib/apple-auth.js']) {
+    import(new URL(mod, import.meta.url))
+      .then((m) => (mod.includes('google') ? m.googleJwks : m.appleJwks).getKeys())
+      .catch(() => { /* 预热失败不影响启动，登录时才加载 */ });
+  }
 });
