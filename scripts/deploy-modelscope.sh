@@ -24,6 +24,11 @@ echo "克隆创空间仓库：${SPACE}"
 git clone --depth 1 "https://oauth2:${TOKEN}@www.modelscope.cn/studios/${SPACE}.git" "${WORK}/space"
 
 # 只同步容器构建需要的文件（不含 iOS / CI / 文档 / 本地脚本）
+# 先刷新 JWKS 种子（Google/Apple 验签公钥）：CI runner 有外网，容器在境内没有；
+# 失败不阻断部署（保留旧种子，加载器会回退磁盘缓存/种子）
+echo "刷新 JWKS 种子（登录验签公钥）"
+node scripts/refresh-jwks.mjs || echo "::warning::JWKS 种子刷新失败，使用旧种子继续部署"
+
 cp Dockerfile .dockerignore "${WORK}/space/"
 rm -rf "${WORK}/space/backend" "${WORK}/space/docker"
 cp -r backend "${WORK}/space/backend"

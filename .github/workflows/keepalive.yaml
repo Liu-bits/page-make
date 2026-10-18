@@ -41,3 +41,8 @@ jobs:
             exit 1
           fi
           echo "保活成功"
+
+          # 附加诊断：/api/config 含 JWKS 种子状态（source=seed 说明境内拉不到实时密钥，属预期回退）
+          echo "---- /api/config ----"
+          curl -s --max-time 30 -A "PageMake-Keepalive/1.0" "${PAGEMAKE_URL%/}/api/config" || true
+          echo

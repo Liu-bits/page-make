@@ -62,6 +62,9 @@ jobs:
       - name: 运行游客 10 分钟试用链路测试（真实游客会话 · 到期 410 · 身份重置）
         run: node dev/test-guest-ttl.mjs
 
+      - name: 运行 CSS/JS 引用全模式回归测试（粘贴/片段/子目录/PHP/探索器）
+        run: node dev/test-assets.mjs
+
       - name: 校验 Docker 镜像可构建
         run: docker build -t pagemake-test .
 

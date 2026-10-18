@@ -1,0 +1,47 @@
+# =============================================================================
+# JWKS 种子每日刷新（Google / Apple 登录验签公钥）
+# -----------------------------------------------------------------------------
+# 背景：自托管容器在境内网络无法访问 googleapis.com，登录验签依赖内置种子
+#       （backend/data/*-jwks.json，由 CI 部署时刷新）。Google 会轮换签名密钥，
+#       本 workflow 每日从官方 JWKS 地址拉取并自动提交，保证种子不过期。
+# 手动触发：Actions → JWKS 种子刷新 → Run workflow
+# =============================================================================
+
+name: JWKS 种子刷新
+
+on:
+  schedule:
+    - cron: "37 18 * * *" # 每日 02:37（北京时间）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    name: 刷新 JWKS 种子
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 刷新种子（失败保留旧种子）
+        run: node scripts/refresh-jwks.mjs
+
+      - name: 有变化则提交推送
+        run: |
+          if git diff --quiet -- backend/data/; then
+            echo "种子无变化，无需提交"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/data/
+          git commit -m "chore: 刷新 JWKS 种子（自动）"
+          git push
+          echo "✓ 种子已更新并推送"

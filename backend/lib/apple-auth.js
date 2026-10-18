@@ -1,34 +1,27 @@
 // Sign in with Apple 身份令牌校验（Web Crypto，纯边缘函数实现）
-// 流程：iOS 拿 identityToken(JWT) + nonce → 本文件验签 → 提取 userId(Apple sub)
+// 流程：iOS 拿 identityToken(JWT) + nonce → 本文件验签（JWKS 三级加载）→ 提取 userId(Apple sub)
 import { base64urlToBytes, bytesToBase64 } from './base64.js';
+import { createJwksLoader } from './jwks.js';
 
-const JWKS_URL = 'https://appleid.apple.com/auth/keys';
-const JWKS_TTL_MS = 60 * 60 * 1000;
-
-let jwksCache = { fetchedAt: 0, keys: [] };
-
-async function fetchAppleKeys() {
-  const now = Date.now();
-  if (jwksCache.keys.length && now - jwksCache.fetchedAt < JWKS_TTL_MS) {
-    return jwksCache.keys;
-  }
-  const response = await fetch(JWKS_URL);
-  if (!response.ok) {
-    throw Object.assign(new Error('APPLE_JWKS_FETCH_FAILED'), { code: 'AUTH_ERROR' });
-  }
-  const data = await response.json();
-  jwksCache = { fetchedAt: now, keys: data.keys || [] };
-  return jwksCache.keys;
-}
+// JWKS 加载器：实时拉取（5s 超时）→ DATA_DIR 磁盘缓存 → 内置种子（CI 每日/部署时刷新）
+export const appleJwks = createJwksLoader({
+  name: 'apple',
+  url: 'https://appleid.apple.com/auth/keys',
+  seedUrl: new URL('../data/apple-jwks.json', import.meta.url),
+});
 
 export function decodeJwt(token) {
   const parts = String(token).split('.');
   if (parts.length !== 3) {
     throw Object.assign(new Error('INVALID_JWT_FORMAT'), { code: 'AUTH_ERROR' });
   }
-  const header = JSON.parse(new TextDecoder().decode(base64urlToBytes(parts[0])));
-  const payload = JSON.parse(new TextDecoder().decode(base64urlToBytes(parts[1])));
-  return { header, payload, signingInput: `${parts[0]}.${parts[1]}`, signature: base64urlToBytes(parts[2]) };
+  try {
+    const header = JSON.parse(new TextDecoder().decode(base64urlToBytes(parts[0])));
+    const payload = JSON.parse(new TextDecoder().decode(base64urlToBytes(parts[1])));
+    return { header, payload, signingInput: `${parts[0]}.${parts[1]}`, signature: base64urlToBytes(parts[2]) };
+  } catch {
+    throw Object.assign(new Error('INVALID_JWT_FORMAT'), { code: 'AUTH_ERROR' });
+  }
 }
 
 export async function sha256Hex(text) {
@@ -66,8 +59,8 @@ export async function verifyAppleIdentityToken(token, options = {}) {
     }
   }
 
-  const appleKeys = await fetchAppleKeys();
-  const jwk = appleKeys.find((k) => k.kid === header.kid);
+  const { keys } = await appleJwks.getKeys();
+  const jwk = keys.find((k) => k.kid === header.kid);
   if (!jwk) {
     throw Object.assign(new Error('APPLE_KEY_NOT_FOUND'), { code: 'AUTH_ERROR' });
   }
