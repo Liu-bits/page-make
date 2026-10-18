@@ -119,7 +119,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// Google 登录；返回错误文案（nil = 成功 / 用户取消）
+    /// Google 登录；返回错误文案（nil = 成功 / 用户取消 / 已展示封禁页）
     func signInWithGoogle() async -> String? {
         do {
             let idToken = try await googleAuth.signIn()
@@ -136,6 +136,11 @@ final class AppState: ObservableObject {
             }
             return error.errorDescription
         } catch let error as APIError {
+            // 封禁中：展示封禁详情页（原因/等级/解封时间），而非一句错误
+            if case .banned(let ban) = error {
+                banInfo = ban
+                return nil
+            }
             return error.errorDescription
         } catch {
             // 透出底层错误（ASWebAuthenticationSession / 网络），便于定位
@@ -230,7 +235,12 @@ final class AppState: ObservableObject {
             applySession(response)
             await loadProjects()
         } catch let error as APIError {
-            authError = error.errorDescription
+            // 封禁中的游客身份：展示封禁详情页，而非一句错误
+            if case .banned(let ban) = error {
+                banInfo = ban
+            } else {
+                authError = error.errorDescription
+            }
         } catch {
             authError = L10n.string("error_generic")
         }

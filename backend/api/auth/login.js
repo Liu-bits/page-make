@@ -1,7 +1,7 @@
 // POST /api/auth/login — 邮箱 + 密码登录
 // body: { email, password }
-import { getKV, kvGet, keys, appendLog } from '../../lib/kv.js';
-import { createSession } from '../../lib/session.js';
+import { getKV, kvGet, keys, nowSeconds, appendLog } from '../../lib/kv.js';
+import { createSession, publicBan, isBanned } from '../../lib/session.js';
 import { ok, fail } from '../../lib/responses.js';
 import { verifyPassword, userIdFromEmail, EMAIL_RE } from '../../lib/password.js';
 
@@ -31,6 +31,11 @@ export async function onRequest(context) {
   if (!valid) {
     await appendLog(kv, { step: 'auth_login', result: 'failed', errorCode: 'INVALID_CREDENTIALS' });
     return fail('INVALID_CREDENTIALS', 401);
+  }
+
+  // 封禁中禁止登录（管理员解封后才恢复；用户端 BannedView 可见原因/等级/解封时间）
+  if (isBanned(user)) {
+    return fail('BANNED', 403, { ban: publicBan(user) });
   }
 
   const session = await createSession(kv, userId);

@@ -23,6 +23,20 @@ export function publicBan(user) {
 }
 
 /**
+ * 封禁中判断（status=banned 且未到解封时间）
+ * 所有登录入口（邮箱/Google/游客）在签发会话前都必须调用，保证「解封前无法登录」
+ */
+export function isBanned(user) {
+  if (!user || user.status !== 'banned') return false;
+  return !user.banUntil || user.banUntil > nowSeconds();
+}
+
+/** 测试账号（管理员后台创建）：权益最高，绕过大小/数量限制 */
+export function isTestUser(user) {
+  return Boolean(user?.isTest);
+}
+
+/**
  * 校验登录态 + 封号状态
  * @returns {Promise<{user, session, kv}|{error: Response}>}
  */

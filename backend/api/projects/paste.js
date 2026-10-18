@@ -2,7 +2,7 @@
 // body: { provider, html, css?, js?, name? }
 // 说明：html 必填；css/js 可选，写入 style.css / script.js 并自动注入 HTML 引用；
 //       HTML 片段（无 <html> 结构）自动包裹成完整文档。
-import { requireAuth } from '../../lib/session.js';
+import { requireAuth, isTestUser } from '../../lib/session.js';
 import { kvPut, kvListAll, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
 import { PROVIDERS, PASTE_MAX_BYTES, STATUS, GUEST_LINK_TTL_SECONDS } from '../../lib/state.js';
@@ -120,7 +120,8 @@ export async function onRequest(context) {
   if (!html.trim() && !php.trim()) return fail('BAD_REQUEST', 400);
 
   const totalBytes = bytes(html).length + bytes(css).length + bytes(js).length + bytes(php).length;
-  if (totalBytes > PASTE_MAX_BYTES) return fail('TOO_LARGE', 413);
+  // 测试账号（后台创建）权益最高：绕过粘贴大小上限
+  if (!isTestUser(auth.user) && totalBytes > PASTE_MAX_BYTES) return fail('TOO_LARGE', 413);
 
   const projectId = crypto.randomUUID().replace(/-/g, '');
   const origin = new URL(request.url).origin;

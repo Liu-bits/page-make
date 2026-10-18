@@ -10,6 +10,7 @@ function publicUser(u) {
     userId: u.userId,
     email: u.email ?? null,
     isGuest: Boolean(u.userId?.startsWith('guest_')),
+    isTest: Boolean(u.isTest),
     status: u.status ?? 'active',
     banLevel: u.banLevel ?? 0,
     banReason: u.banReason ?? null,
@@ -74,6 +75,7 @@ export async function onRequest(context) {
     stats: {
       userCount: users.length,
       guestCount: users.filter((u) => u.isGuest).length,
+      testCount: users.filter((u) => u.isTest).length,
       projectCount: projects.length,
       feedbackCount: feedback.length,
     },

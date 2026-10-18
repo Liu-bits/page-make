@@ -11,7 +11,7 @@
   h1 { font-size: 22px; margin: 8px 0 16px; }
   h2 { font-size: 16px; margin: 24px 0 10px; color: #334155; }
   .card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 14px; }
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
   .stat { text-align: center; padding: 12px 4px; }
   .stat b { display: block; font-size: 24px; }
   .stat span { font-size: 12px; color: #64748b; }
@@ -25,15 +25,17 @@
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #e2e8f0; word-break: break-all; }
   th { color: #64748b; font-weight: 600; }
+  td button + button { margin-left: 4px; }
   .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
   .tag.ok { background: #dcfce7; color: #15803d; }
   .tag.banned { background: #fee2e2; color: #b91c1c; }
   .tag.guest { background: #e0e7ff; color: #4338ca; }
+  .tag.test { background: #fef3c7; color: #b45309; }
   .muted { color: #94a3b8; font-size: 12px; }
   .msg { padding: 10px 12px; border-radius: 10px; margin: 10px 0; font-size: 14px; display: none; }
   .msg.err { background: #fee2e2; color: #b91c1c; }
   .msg.ok { background: #dcfce7; color: #15803d; }
-  @media (max-width: 640px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 640px) { .stats { grid-template-columns: repeat(3, 1fr); } }
 </style>
 </head>
 <body>
@@ -60,7 +62,21 @@
 
     <div class="card"><div class="stats" id="stats"></div></div>
 
-    <h2>账户（封号 / 解封）</h2>
+    <h2>测试账号（权益最高：绕过大小/数量限制，可删除）</h2>
+    <div class="card">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="testEmail" type="email" placeholder="邮箱（登录名）" style="flex:2;min-width:200px">
+        <input id="testPwd" type="text" placeholder="密码（至少 8 位）" style="flex:2;min-width:160px">
+        <button onclick="createTestAccount()" style="flex:0 0 auto">创建测试账号</button>
+      </div>
+      <p class="muted" style="margin-top:8px">测试账号用指定邮箱+密码走普通登录；权限最高，可创建任意大小/数量的项目，仅供压测。</p>
+      <table id="testTable" style="margin-top:10px">
+        <thead><tr><th>邮箱</th><th>项目</th><th>创建时间</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <h2>账户（封号 / 解封 / 删除）</h2>
     <div class="card" style="overflow-x:auto">
       <table id="userTable">
         <thead><tr><th>账户</th><th>状态</th><th>项目</th><th>封禁信息</th><th>操作</th></tr></thead>
@@ -137,22 +153,31 @@ async function load() {
 
 function render(d) {
   document.getElementById('stats').innerHTML = [
-    ['账户', d.stats.userCount], ['游客', d.stats.guestCount],
+    ['账户', d.stats.userCount], ['游客', d.stats.guestCount], ['测试', d.stats.testCount || 0],
     ['项目', d.stats.projectCount], ['反馈', d.stats.feedbackCount],
   ].map(([l, v]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
+
+  const testUsers = d.users.filter(u => u.isTest);
+  document.querySelector('#testTable tbody').innerHTML = testUsers.map(u =>
+    `<tr><td>${u.email || u.userId}</td><td>${u.projectCount}</td><td>${fmtTime(u.createdAt)}</td>
+     <td><button class="sm red" onclick="deleteTestAccount('${u.userId}')">删除</button></td></tr>`
+  ).join('') || '<tr><td colspan="4" class="muted">暂无测试账号</td></tr>';
 
   document.querySelector('#userTable tbody').innerHTML = d.users.map(u => {
     const statusTag = u.status === 'banned'
       ? `<span class="tag banned">已封禁 L${u.banLevel}</span>`
       : `<span class="tag ok">正常</span>`;
     const guestTag = u.isGuest ? ' <span class="tag guest">游客</span>' : '';
+    const testTag = u.isTest ? ' <span class="tag test">测试</span>' : '';
     const banInfo = u.status === 'banned'
       ? `${u.banReason || ''}<br><span class="muted">${u.banUntil ? '至 ' + fmtTime(u.banUntil) : '永久'}</span>`
       : '<span class="muted">—</span>';
     const action = u.status === 'banned'
-      ? `<button class="sm green" onclick="unban('${u.userId}')">解封</button>`
-      : `<button class="sm red" onclick="banPrompt('${u.userId}')">封号</button>`;
-    return `<tr><td>${u.email || u.userId}${guestTag}<br><span class="muted">注册 ${fmtTime(u.createdAt)}</span></td>
+      ? `<button class="sm green" onclick="unban('${u.userId}')">解封</button>
+         <button class="sm red" onclick="deleteUser('${u.userId}')">删除账号</button>`
+      : `<button class="sm red" onclick="banPrompt('${u.userId}')">封号</button>
+         <button class="sm gray" onclick="deleteUser('${u.userId}')">删除账号</button>`;
+    return `<tr><td>${u.email || u.userId}${guestTag}${testTag}<br><span class="muted">注册 ${fmtTime(u.createdAt)}</span></td>
       <td>${statusTag}</td><td>${u.projectCount}</td><td>${banInfo}</td><td>${action}</td></tr>`;
   }).join('') || '<tr><td colspan="5" class="muted">暂无账户</td></tr>';
 
@@ -194,6 +219,29 @@ function banPrompt(userId) {
 function unban(userId) {
   api(API.action, { action: 'unban', userId })
     .then(() => { msg('已解封，项目已恢复'); load(); })
+    .catch(e => msg(e.message, true));
+}
+
+function createTestAccount() {
+  const email = document.getElementById('testEmail').value.trim();
+  const password = document.getElementById('testPwd').value;
+  if (!email || !password) { msg('邮箱和密码都要填', true); return; }
+  api(API.action, { action: 'createTestAccount', email, password })
+    .then((r) => { msg(`测试账号已创建：${r.email}`); document.getElementById('testPwd').value = ''; load(); })
+    .catch(e => msg(e.message === 'USER_EXISTS' ? '该邮箱已被占用' : e.message === 'WEAK_PASSWORD' ? '密码至少 8 位' : e.message, true));
+}
+
+function deleteTestAccount(userId) {
+  if (!confirm('删除测试账号 ' + userId + '？其全部项目将一并删除')) return;
+  api(API.action, { action: 'deleteTestAccount', userId })
+    .then(() => { msg('已删除'); load(); })
+    .catch(e => msg(e.message, true));
+}
+
+function deleteUser(userId) {
+  if (!confirm('彻底删除账号 ' + userId + '？\n将删除其全部项目并强制下线，不可恢复！')) return;
+  api(API.action, { action: 'deleteUser', userId })
+    .then(() => { msg('账号已删除'); load(); })
     .catch(e => msg(e.message, true));
 }
 

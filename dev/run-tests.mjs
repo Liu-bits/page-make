@@ -10,12 +10,17 @@ import {
 } from '../backend/lib/kv.js';
 import { bytesToBase64, base64ToBytes, base64urlToBytes, encodeKey, decodeKey } from '../backend/lib/base64.js';
 import { decodeJwt } from '../backend/lib/apple-auth.js';
+import { createJwksLoader } from '../backend/lib/jwks.js';
 import { processUpload } from '../backend/lib/process.js';
 import {
   STATUS, ERR, PROVIDERS, SESSION_TTL_SECONDS,
   MAX_TOTAL_BYTES, CHUNK_BYTES, BAN_LEVELS,
 } from '../backend/lib/state.js';
 import { contentTypeFor } from '../backend/lib/responses.js';
+import { readFile } from 'node:fs/promises';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 let passed = 0;
 let failed = 0;
@@ -369,6 +374,62 @@ await test('状态码与错误码齐全', () => {
   assert(CHUNK_BYTES <= 900 * 1024, '分片应保证 base64 后 < 1MB body 限制');
   assertEqual(BAN_LEVELS.L1.days, 1);
   assertEqual(BAN_LEVELS.L4.days, null);
+});
+
+// ---------------------------------------------------------------------------
+console.log('\n[10] JWKS 三级加载（境内网络容错）');
+
+await test('种子文件有效（google/apple 均可解析且含 kid/n）', async () => {
+  for (const name of ['google', 'apple']) {
+    const data = JSON.parse(await readFile(new URL(`../backend/data/${name}-jwks.json`, import.meta.url), 'utf8'));
+    assert(Array.isArray(data.keys) && data.keys.length > 0, `${name} 种子应含密钥`);
+    assert(data.keys.every((k) => k.kid && k.n), `${name} 种子密钥应含 kid/n 字段`);
+  }
+});
+
+await test('实时拉取失败 → 回退内置种子（模拟境内无法访问 Google）', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('模拟网络不通'); };
+  try {
+    const loader = createJwksLoader({
+      name: 'test-fallback',
+      url: 'https://invalid.example/jwks',
+      seedUrl: new URL('../backend/data/google-jwks.json', import.meta.url),
+      cacheDir: mkdtempSync(path.join(os.tmpdir(), 'jwks-empty-')), // 空目录：无磁盘缓存
+      timeoutMs: 100,
+    });
+    const { keys: jwksKeys, source } = await loader.getKeys();
+    assertEqual(source, 'seed', '应回退到内置种子');
+    assert(jwksKeys.length > 0, '种子应提供密钥');
+    assertEqual(loader.status().source, 'seed', 'status() 应报告 seed');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+await test('实时拉取成功 → 优先 live 并写入磁盘缓存', async () => {
+  const tmp = mkdtempSync(path.join(os.tmpdir(), 'jwks-live-'));
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ keys: [{ kid: 'test-kid', n: 'x' }] }), { status: 200 });
+  try {
+    const loader = createJwksLoader({
+      name: 'test-live',
+      url: 'https://example.invalid/jwks',
+      seedUrl: new URL('../backend/data/apple-jwks.json', import.meta.url),
+      cacheDir: tmp,
+      timeoutMs: 100,
+    });
+    const { keys: jwksKeys, source } = await loader.getKeys();
+    assertEqual(source, 'live', '实时可达时应走 live');
+    assertEqual(jwksKeys[0].kid, 'test-kid');
+    // 磁盘缓存为 fire-and-forget 写入，等一个微任务+短延时再读
+    await new Promise((r) => setTimeout(r, 50));
+    const cached = JSON.parse(readFileSync(path.join(tmp, 'test-live-jwks.json'), 'utf8'));
+    assertEqual(cached.keys[0].kid, 'test-kid', '磁盘缓存应已写入');
+  } finally {
+    globalThis.fetch = originalFetch;
+    rmSync(tmp, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------

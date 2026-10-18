@@ -2,7 +2,7 @@
 // body: { idToken } — iOS 端 OAuth 拿到的 Google id_token
 // 环境变量：GOOGLE_CLIENT_ID（iOS OAuth 客户端 ID）
 import { getKV, kvGet, kvPut, keys, nowSeconds, appendLog } from '../../lib/kv.js';
-import { createSession } from '../../lib/session.js';
+import { createSession, publicBan, isBanned } from '../../lib/session.js';
 import { ok, fail } from '../../lib/responses.js';
 import { verifyGoogleIdentityToken } from '../../lib/google-auth.js';
 
@@ -55,6 +55,9 @@ export async function onRequest(context) {
       banCount: 0,
       createdAt: nowSeconds(),
     });
+  } else if (isBanned(existing)) {
+    // 封禁中禁止登录（管理员解封后恢复）
+    return fail('BANNED', 403, { ban: publicBan(existing) });
   }
 
   const session = await createSession(kv, userId);
