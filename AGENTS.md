@@ -186,14 +186,14 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 85 项，提交前必须全绿）
+## 5. 测试体系（共 94 项，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
-| `node dev/run-tests.mjs` | 26 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护：总量/条目数上限） |
-| `node dev/test-server.mjs` | 36 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 zip 炸弹端到端、反馈限流、删号 KV 残留断言） |
+| `node dev/run-tests.mjs` | 30 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护、密码强度校验） |
+| `node dev/test-server.mjs` | 38 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 zip 炸弹端到端、反馈限流、删号 KV 残留断言、弱口令拒绝、登录 429 限速） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
-| `node dev/test-assets.mjs` | 5 | CSS/JS 引用全模式回归（粘贴完整/片段/子目录/PHP/explorer publish） |
+| `node dev/test-assets.mjs` | 8 | CSS/JS 引用全模式回归（粘贴完整/片段/子目录/`../`与`/`归一/查询串+type 不重复注入/外链忽略/PHP/explorer publish） |
 | `node dev/test-admin.mjs` | 10 | 后台（登录/哈希存储/测试账号权益/封禁下架+禁登/解封恢复/删号） |
 
 > Node 用 managed 绝对路径运行。测试脚本坑：`fail()` 的 error 字段是错误码字符串本身；
@@ -208,7 +208,7 @@ E:/Page-make/
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
-| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 85 项）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
+| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 94 项）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
 | keepalive.yaml | 每 10 分钟 | 探 `${PAGEMAKE_URL}/healthz`，**必须带 UA**（`-A "PageMake-Keepalive/1.0"`），并回显 /api/config 的 jwks 诊断 |
 | jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子并提交（境内拉不到 Google，只能靠 runner） |
 
@@ -272,6 +272,20 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
    （ZIP_MAX_TOTAL_BYTES=32MB / ZIP_MAX_ENTRIES=500，超限抛 TOO_LARGE）
  - 未登录可写的接口（feedback 等）必须加 IP 限流：否则脚本可无限刷量打满 KV →
    lib/ratelimit.js 通用滑动窗口（admin 登录与 feedback 共用，每 IP 每分钟 5 次）
+ - **文件路径必须经 `lib/paths.js` 的 normalizeRelPath 规范化后再入库**：外部路径来自
+   用户 HTML 引用、ZIP 条目名、API 入参三处。漏规范化会导致「存 `../style.css`、
+   浏览器请求被 URL 规范化成 /p/style.css」→ 404 断链，以及 ZIP 路径穿越
+ - 识别 HTML 里的 link/script 引用**不能**用 `<tag[^>]+attr=["']([^"']+\.ext)["']`
+   这类正则：`type="text/javascript"` 会抢先匹配、`a.js?v=1`（.ext 后带查询串）匹配不到，
+   两者都会让「是否已引用」误判 → 重复注入 + 用户引用的文件 404。
+   正确做法：先抓标签目标属性值，再按「剥查询串后的扩展名」筛选，并跳过外链/data URI
+ - 加限速后跑测试套件要注意：**同套件共用一个 IP**，限速用例必须放文件最后，
+   否则会把后续用例的注册/登录一起限掉（用户登录 8 次/分、注册 20 次/小时）
+ - 密码不能只查长度：`password.js` 的 checkPasswordStrength 已含常见口令表、
+   重复/连续序列、字符类别三类校验，新增任何设密码的入口都要复用它
+ - 给已有文件加 import 时 apply_patch 可能静默失败（不报错但内容没进去）→
+   改动后用 `node -e "import('file:///...').then(m=>console.log(...))"` 冒烟验证，
+   否则会出现 `xxx is not defined` 且只在运行时暴露
 - JWKS：Node fetch 无默认超时，境内连 googleapis 挂 75s+ → 三级加载（live 5s →
   DATA_DIR 磁盘缓存 → 内置种子）；种子由 CI/runner 刷新，**沙箱自己拉不到 Google**
 - Dockerfile 的 `data/` ignore 只匹配根级，`backend/data/` 种子不受影响
