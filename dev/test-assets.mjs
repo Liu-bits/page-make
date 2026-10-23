@@ -406,6 +406,109 @@ await test('探索器：三文件 publish → HTML/CSS/JS 全部可访问', asyn
   assertEqual(js.status, 200, 'app.js 应 200');
 });
 
+// ⑥ CSS 内部 url() 引用归一（背景图 / @font-face 字体）
+// 与 HTML 的 link/script 同一根因，但 HTML 侧修复完全覆盖不到 CSS 文件内容：
+// style.css 以 /p/<id>/style.css 引入，其中 url(../img/bg.png) 会被浏览器
+// 解析到 /p/ 前缀之外 → 404，症状是背景图/字体不显示，排查时容易误判成断链。
+await test('粘贴：CSS 内部 url() 引用归一后可访问', async () => {
+  const { token } = await login();
+  const css = [
+    '.hero { background-image: url(../img/bg.png); }',
+    '.logo { background: url("img/logo.png") no-repeat; }',
+    '.ico { background: url(\'../icon.ico\'); }',
+    '@font-face { font-family: F; src: url(../fonts/f.woff2); }',
+    // 外链与 data URI 必须原样保留，不能被当成本地引用改写
+    '.ext { background: url(https://cdn.example.com/a.png); }',
+    '.data { background: url(data:image/png;base64,iVBORw0KGgo=); }',
+  ].join('\n');
+  const html = '<html><head><link rel="stylesheet" href="style.css"></head><body><h1>x</h1></body></html>';
+  const { status, body } = await paste(token, { name: 'cssurl', html, css, js: '' });
+  assertEqual(status, 200, '粘贴应成功');
+  const id = body.project.id;
+
+  const served = await (await fetch(`${BASE}/p/${id}/style.css`)).text();
+  assert(served.includes('url(img/bg.png)'), `url(../img/bg.png) 应归一为 url(img/bg.png)，实际：${JSON.stringify(served.slice(0, 200))}`);
+  assert(!served.includes('url(../img/bg.png)'), '不得仍含 ../ 引用');
+  assert(served.includes("url('icon.ico')"), '单引号形式应归一并保留引号风格');
+  assert(served.includes('url(fonts/f.woff2)'), '@font-face 的字体引用应归一');
+  // 已是规范路径的不应被改写
+  assert(served.includes('url("img/logo.png")'), '规范路径 img/logo.png 不应被改写');
+  // 外链 / data URI 原样保留
+  assert(served.includes('url(https://cdn.example.com/a.png)'), '外链必须原样保留');
+  assert(served.includes('url(data:image/png;base64,iVBORw0KGgo=)'), 'data URI 必须原样保留');
+});
+
+// ⑥-b 上传 ZIP 链路：ZIP 里的 style.css 内部 url() 同样要归一
+// （HTML 侧归一覆盖不到 CSS 文件内容，上传管线必须单独处理）
+await test('上传 ZIP：CSS 内部 url() 归一后可访问', async () => {
+  const { buildZip } = await import('./make-zip.mjs');
+  const { token } = await login();
+  const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+  const zip = buildZip([
+    ['index.html', '<html><head><link rel="stylesheet" href="../style.css"></head><body><h1>zip</h1></body></html>'],
+    ['style.css', '.hero { background-image: url(../img/bg.png); }'],
+  ]);
+  const init = await (await fetch(`${BASE}/api/upload/init`, {
+    method: 'POST', headers: H,
+    body: JSON.stringify({ files: [{ name: 'site.zip', size: zip.length }] }),
+  })).json();
+  const { uploadId, chunkSize } = init;
+  for (let i = 0; i * chunkSize < zip.length; i++) {
+    const part = zip.subarray(i * chunkSize, Math.min((i + 1) * chunkSize, zip.length));
+    const up = await fetch(`${BASE}/api/upload/chunk`, {
+      method: 'POST', headers: H,
+      body: JSON.stringify({
+        uploadId, fileIndex: 0, chunkIndex: i,
+        data: Buffer.from(part).toString('base64'),
+      }),
+    });
+    assertEqual(up.status, 200, `分片 ${i} 应 200`);
+  }
+  const fin = await fetch(`${BASE}/api/upload/finish`, { method: 'POST', headers: H, body: JSON.stringify({ uploadId }) });
+  assertEqual(fin.status, 200, `finish 应 200，实际 ${fin.status}`);
+  const finBody = await fin.json();
+  const id = finBody.projectId || finBody.project?.id;
+
+  let project = null;
+  for (let i = 0; i < 60; i++) {
+    const st = await (await fetch(`${BASE}/api/projects/${id}/status`, { headers: H })).json();
+    if (st.status === 'ready' || st.status === 'failed') { project = st; break; }
+    await sleep(200);
+  }
+  assertEqual(project?.status, 'ready', `项目应 ready，实际 ${JSON.stringify(project)}`);
+
+  const page = await fetch(`${BASE}/p/${id}`);
+  assertEqual(page.status, 200, '入口应 200');
+  const pageText = await page.text();
+  assert(!pageText.includes('href="../style.css"'), 'HTML 引用应已归一');
+  const css = await fetch(`${BASE}/p/${id}/style.css`);
+  assertEqual(css.status, 200, 'style.css 应 200');
+  assert((await css.text()).includes('url(img/bg.png)'), 'ZIP 内 CSS 的 url() 应归一');
+});
+
+// ⑥-c 项目模式 publish：编辑器里 CSS 的 url() 引用同样归一
+await test('探索器：CSS 内 url(../img/x.png) → publish 归一', async () => {
+  const { token } = await login();
+  const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+  const created = await (await fetch(`${BASE}/api/projects/explorer`, {
+    method: 'POST', headers: H, body: JSON.stringify({ name: 'cssurl-expro' }),
+  })).json();
+  const id = created.project.id;
+  const put = async (p, content) => (await fetch(`${BASE}/api/projects/${id}/files`, {
+    method: 'POST', headers: H, body: JSON.stringify({ path: p, content: Buffer.from(content).toString('base64') }),
+  })).status;
+  assertEqual(await put('index.html', '<html><head><link rel="stylesheet" href="style.css"></head><body><h1>e</h1></body></html>'), 200, '写 index.html');
+  assertEqual(await put('style.css', '.hero { background-image: url(../img/bg.png); }'), 200, '写 style.css');
+  const pub = await fetch(`${BASE}/api/projects/${id}`, { method: 'POST', headers: H, body: JSON.stringify({ action: 'publish' }) });
+  assertEqual(pub.status, 200, `publish 应 200，实际 ${pub.status}`);
+
+  const css = await fetch(`${BASE}/p/${id}/style.css`);
+  assertEqual(css.status, 200, 'style.css 应 200');
+  const text = await css.text();
+  assert(text.includes('url(img/bg.png)'), `CSS 内 url() 应归一，实际：${JSON.stringify(text.slice(0, 120))}`);
+  assert(!text.includes('url(../'), '不得残留 ../ 引用');
+});
+
 server.kill();
 try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch { /* ignore */ }
 console.log(`\n结果：${passed} 通过，${failed} 失败`);

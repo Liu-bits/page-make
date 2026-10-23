@@ -4,6 +4,7 @@ import { getKV, kvGet, kvListAll, keys, nowSeconds, pathFromSiteKey } from '../.
 import { contentTypeFor, htmlPage } from '../../lib/responses.js';
 import { STATUS } from '../../lib/state.js';
 import { runPhp } from '../../lib/php.js';
+import { rewriteCssRefs } from '../../lib/paths.js';
 
 const ID_RE = /^[a-f0-9]{32}$/;
 
@@ -68,9 +69,18 @@ export async function onRequest(context) {
   }
   if (!bytes) return htmlPage(404, 'notFound', request);
 
-  return new Response(bytes, {
+  // CSS 内部的 url() 引用（背景图/字体）同样要归一：与 HTML 的 link/script
+  // 同一根因，但 HTML 侧修复覆盖不到 CSS 文件内容。只改 text/css，其他
+  // 二进制资源（图片/字体/JS）原样返回，避免损坏内容。
+  const type = contentTypeFor(actualPath);
+  let body = bytes;
+  if (/^text\/css/i.test(type)) {
+    body = rewriteCssRefs(new TextDecoder().decode(bytes));
+  }
+
+  return new Response(body, {
     headers: {
-      'Content-Type': contentTypeFor(actualPath),
+      'Content-Type': type,
       'Cache-Control': 'public, max-age=60',
     },
   });

@@ -113,3 +113,40 @@ export function rewriteLocalRefs(html) {
   );
   return rewrite(rewrite(html, 'link', 'href', 'css'), 'script', 'src', 'js');
 }
+
+// CSS url() 引用：url(x) / url("x") / url('x') 三种写法都要覆盖
+const CSS_URL_RE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)/gi;
+
+/**
+ * 把 CSS 里的本地 url() 引用改写成与存储路径一致的形式
+ *
+ * 与 rewriteLocalRefs 同一根因，但作用对象是 CSS 而非 HTML：用户在样式表里写
+ * `url(../img/bg.png)`、`url("/img/x.png")` 时，CSS 又是被 <link> 以
+ * `/p/<id>/style.css` 这个「无尾斜杠入口」引入的，浏览器对相对引用的解析基准
+ * 是 CSS 自身 URL 而非入口页，结果仍会跳出 /p/ 前缀 → 404 断链。
+ * 症状和 HTML 断链一样（背景图/字体不显示），但根因在 CSS 内部，HTML 侧修复
+ * 完全覆盖不到，必须单独归一。
+ *
+ * 外链 / data: URI / #锚点 一律不动；只改本地引用，且只改需要改的。
+ *
+ * 注意不能用 localAssetRef(value, '')：空扩展名会生成 `\.(?:[?#]|$)`，
+ * 反而要求引用必须带小数点。CSS 的 url() 里图片/字体/任意资源都可能出现，
+ * 这里只判断「是不是本地引用」，不限定扩展名。
+ */
+export function rewriteCssRefs(css) {
+  return String(css ?? '').replace(CSS_URL_RE, (whole, dq, sq, bare) => {
+    const value = dq ?? sq ?? bare ?? '';
+    const quote = dq !== undefined ? '"' : (sq !== undefined ? "'" : '');
+    const normalized = cssLocalRef(value);
+    if (!normalized || normalized === value.trim()) return whole;
+    return `url(${quote}${normalized}${quote})`;
+  });
+}
+
+/** CSS url() 专用：只判本地引用，不限扩展名 */
+function cssLocalRef(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  if (NON_LOCAL_RE.test(raw) || raw.startsWith('//')) return null;
+  return normalizeRelPath(raw) || null;
+}

@@ -6,7 +6,7 @@ import { ok, fail } from '../../lib/responses.js';
 import { appendLog, keys } from '../../lib/kv.js';
 import { STATUS } from '../../lib/state.js';
 import { analyzeHtml } from '../../lib/diagnostics.js';
-import { rewriteLocalRefs } from '../../lib/paths.js';
+import { rewriteLocalRefs, rewriteCssRefs } from '../../lib/paths.js';
 
 export async function onRequest(context) {
   const { request, params } = context;
@@ -81,6 +81,17 @@ export async function onRequest(context) {
         files.set(entry, bytes);
         await kv.put(keys.siteFile(project.id, entry), bytes);
       }
+    }
+
+    // 同理归一 CSS 内部的 url() 引用：项目模式里 style.css 是独立文件，
+    // HTML 入口改写覆盖不到它，背景图/字体仍会断链
+    for (const [path, data] of files) {
+      if (!/\.css$/i.test(path)) continue;
+      const rewritten = rewriteCssRefs(new TextDecoder().decode(data));
+      if (rewritten === new TextDecoder().decode(data)) continue;
+      const bytes = new TextEncoder().encode(rewritten);
+      files.set(path, bytes);
+      await kv.put(keys.siteFile(project.id, path), bytes);
     }
 
     // 静态诊断（仅 HTML 入口；PHP 入口为服务端动态内容，静态检查不适用）
