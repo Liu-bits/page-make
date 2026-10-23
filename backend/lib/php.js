@@ -5,6 +5,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { kvListAll, keys, pathFromSiteKey } from './kv.js';
+import { rewriteLocalRefs } from './paths.js';
 
 const PHP_TIMEOUT_MS = 10_000;      // 单次 PHP 执行超时
 const PHP_MAX_OUTPUT = 2 * 1024 * 1024; // 输出上限 2MB
@@ -114,6 +115,22 @@ function parseCgiOutput(stdout) {
   }
   if (!headers['content-type']) headers['content-type'] = 'text/html; charset=utf-8';
   return { status, headers, body };
+}
+
+/**
+ * 归一 PHP 输出里的本地资源引用（../style.css → style.css）
+ *
+ * PHP 页面被直接请求为 /p/<id>/x.php，若它输出 `../style.css`，
+ * 浏览器会解析成 /p/style.css（跳出 /p/ 前缀）→ 404 断链。
+ * 仅当响应明确是 text/html 时才改写：PHP 也可能返回 JSON/CSS/图片等，
+ * 改写非 HTML 响应会直接破坏内容。body 非字符串（二进制）一律跳过。
+ */
+function normalizePhpOutput(parsed) {
+  const contentType = String(parsed.headers?.['content-type'] || '');
+  if (!/text\/html/i.test(contentType)) return parsed;
+  if (typeof parsed.body !== 'string') return parsed;
+  // 输出上限 2MB，正则扫描开销可接受；HTML 里没有本地引用时 rewriteLocalRefs 原样返回
+  return { ...parsed, body: rewriteLocalRefs(parsed.body) };
 }
 
 /** PHP 不可用时的提示页 */
@@ -230,7 +247,7 @@ export async function runPhp(args) {
         }));
         return;
       }
-      const { status, headers, body } = parseCgiOutput(stdout);
+      const { status, headers, body } = normalizePhpOutput(parseCgiOutput(stdout));
       const safeStatus = Number.isFinite(status) && status >= 200 && status < 600 ? status : 200;
       done(new Response(body, {
         status: safeStatus,

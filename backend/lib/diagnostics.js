@@ -1,6 +1,8 @@
 // 上传后静态检查：入口查找 + HTML 引用分析
 // 检查项：缺失文件、大小写不一致、中文路径（写入 projects.diagnostics）
 
+import { normalizeRelPath } from './paths.js';
+
 export function findEntry(files) {
   const names = [...files.keys()];
   // 优先根目录 index.html（大小写不敏感）
@@ -51,7 +53,12 @@ export function analyzeHtml(html, files) {
 
     const clean = raw.split(/[?#]/)[0];
     if (!clean) continue;
-    const rel = clean.replace(/^\.\//, '').replace(/^\//, '');
+    // 必须用与服务端一致的 normalizeRelPath：用户写 `../style.css`、`/style.css`、
+    // `./css/a.css` 时，服务端已把存储路径折叠成项目内相对路径。这里若只剥 `./` 和
+    // 首部 `/`，`../style.css` 就匹配不到 style.css → 误报「引用缺失」，
+    // 而实际资源是好的（曾出现文件存在却报缺失的假告警）。
+    const rel = normalizeRelPath(clean);
+    if (!rel) continue;
     const line = lineOf(html, match.index);
 
     const lower = rel.toLowerCase();

@@ -9,6 +9,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+// 直接单测 diagnostics 的路径归一（不需要起服务）
+import { analyzeHtml } from '../backend/lib/diagnostics.js';
+
 const PORT = 18788;
 const BASE = `http://127.0.0.1:${PORT}`;
 
@@ -83,6 +86,25 @@ async function paste(token, body) {
 
 await waitForServer();
 console.log('\n[CSS/JS 引用全模式复现]');
+
+// ⓿ 诊断路径归一：必须与 normalizeRelPath 一致，否则文件存在却误报「引用缺失」
+await test('诊断：../style.css、/style.css 不再误报缺失', async () => {
+  const files = new Map([['index.html', new Uint8Array(0)], ['style.css', new Uint8Array(1)]]);
+  // 服务端已把存储路径归一为 style.css，诊断必须能匹配上
+  for (const ref of ['../style.css', './style.css', '/style.css', 'style.css']) {
+    const d = analyzeHtml(`<link rel="stylesheet" href="${ref}">`, files);
+    assertEqual(d.length, 0, `引用 ${ref} 不应产生告警，实际 ${JSON.stringify(d)}`);
+  }
+  // 原有行为必须保留：大小写不一致、真缺失、平铺宽容提示仍要报
+  const caseD = analyzeHtml('<link href="Style.CSS">', files);
+  assertEqual(caseD[0]?.kind, 'caseMismatch', '大小写不一致仍应报 caseMismatch');
+  const missD = analyzeHtml('<link href="missing.css">', files);
+  assertEqual(missD[0]?.kind, 'missingFile', '真缺失仍应报 missingFile');
+  assert(missD[0]?.detail.includes('missing.css'), '应指出具体缺失文件');
+  const flatD = analyzeHtml('<link href="css/style.css">', files);
+  assertEqual(flatD[0]?.kind, 'missingFile', '平铺宽容提示仍应报');
+  assert(flatD[0]?.detail.includes('style.css'), '应提示文件实际在 style.css');
+});
 
 // ① 完整 HTML（自带模板形态：link + script 标签都在）
 await test('粘贴：完整 HTML 引用 style.css / script.js → 资源可访问', async () => {
