@@ -18,7 +18,16 @@ struct PasswordAuthView: View {
     @State private var alertItem: AlertItem?
 
     private var canSubmit: Bool {
-        email.contains("@") && password.count >= 8 && !isSubmitting
+        // 客户端预检与后端规则保持一致：只查长度会让 Qwertyuiop12345 这类
+        // "看着很强"的密码被放行、提交后才被拒，且拒绝原因与规则对不上
+        email.contains("@") && PasswordStrength.rejection(for: password) == nil && !isSubmitting
+    }
+
+    /// 注册时才提示强度问题（登录时密码可能来自旧账号，不该拦）
+    private var strengthHint: String? {
+        guard mode == .register, !password.isEmpty else { return nil }
+        guard let rejection = PasswordStrength.rejection(for: password) else { return nil }
+        return L10n.string(PlainLanguage.messageKey(forErrorCode: rejection.rawValue))
     }
 
     var body: some View {
@@ -46,7 +55,12 @@ struct PasswordAuthView: View {
                 } header: {
                     Text(L10n.string("password_label"))
                 } footer: {
-                    Text(L10n.string("password_rule"))
+                    if let hint = strengthHint {
+                        // 强度不达标时用具体原因替换通用说明，按钮同时置灰
+                        Text(hint).foregroundStyle(.orange)
+                    } else {
+                        Text(L10n.string("password_rule"))
+                    }
                 }
 
                 Section {
