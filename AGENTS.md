@@ -186,11 +186,11 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 99 项，提交前必须全绿）
+## 5. 测试体系（共 103 项，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
-| `node dev/run-tests.mjs` | 30 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护、密码强度校验） |
+| `node dev/run-tests.mjs` | 34 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护、密码强度校验） |
 | `node dev/test-server.mjs` | 38 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 zip 炸弹端到端、反馈限流、删号 KV 残留断言、弱口令拒绝、登录 429 限速） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 13 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP） |
@@ -208,7 +208,7 @@ E:/Page-make/
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
-| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 99 项）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
+| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 103 项）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
 | keepalive.yaml | 每 10 分钟 | 探 `${PAGEMAKE_URL}/healthz`，**必须带 UA**（`-A "PageMake-Keepalive/1.0"`），并回显 /api/config 的 jwks 诊断 |
 | jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子并提交（境内拉不到 Google，只能靠 runner） |
 
