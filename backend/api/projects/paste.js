@@ -6,7 +6,7 @@ import { requireAuth, isTestUser } from '../../lib/session.js';
 import { kvPut, kvListAll, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
 import { PROVIDERS, PASTE_MAX_BYTES, STATUS, GUEST_LINK_TTL_SECONDS } from '../../lib/state.js';
-import { normalizeRelPath } from '../../lib/paths.js';
+import { findLocalAsset, rewriteLocalRefs } from '../../lib/paths.js';
 import { analyzeHtml } from '../../lib/diagnostics.js';
 import { deploySite } from '../../lib/deploy/index.js';
 
@@ -24,9 +24,6 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;');
 }
 
-// 非本地引用（外链 / data URI / 协议相对）：不应被当成本地文件路径
-const NON_LOCAL_RE = /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i;
-
 /**
  * 从 HTML 中找出 CSS/JS 的引用文件名（跟随用户写的 <link href> / <script src>）
  * 找不到时用默认名（style.css / script.js）
@@ -40,23 +37,7 @@ const NON_LOCAL_RE = /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i;
  * 会抢先匹配，且 `app.js?v=9`（.js 后带查询串）匹配不到，两者都会导致引用断链。
  */
 function findAssetPath(html, tag, attr, ext, fallback) {
-  const tagRe = new RegExp(`<${tag}\\b[^>]*>`, 'gi');
-  const attrRe = new RegExp(`${attr}\\s*=\\s*["']([^"']*)["']`, 'i');
-  const extRe = new RegExp(`\\.${ext}$`, 'i');
-  let tagMatch;
-  while ((tagMatch = tagRe.exec(html)) !== null) {
-    const attrMatch = tagMatch[0].match(attrRe);
-    if (!attrMatch) continue;
-    const raw = attrMatch[1].trim();
-    if (!raw) continue;
-    // 跳过外链 / data: / 锚点：否则会把 https://cdn.../a.css 存成垃圾路径
-    if (NON_LOCAL_RE.test(raw) || raw.startsWith('//')) continue;
-    // 按「剥掉查询串/锚点后的扩展名」判断，兼容 style.css?v=1
-    if (!extRe.test(raw.split(/[?#]/)[0])) continue;
-    const normalized = normalizeRelPath(raw);
-    if (normalized) return normalized;
-  }
-  return fallback;
+  return findLocalAsset(html, tag, attr, ext) ?? fallback;
 }
 
 /**
@@ -66,6 +47,9 @@ function findAssetPath(html, tag, attr, ext, fallback) {
  * 返回 { html, cssPath, jsPath }：CSS/JS 内容应保存到 cssPath/jsPath
  */
 function buildHtml(html, css, js, name) {
+  // 先归一 HTML 里的引用字符串：后续 findAssetPath 取到的就是最终存储路径，
+  // 保证「HTML 引用的路径」与「文件实际存储的路径」严格一致
+  html = rewriteLocalRefs(html);
   const hasStructure = /<html[\s>]/i.test(html);
   const cssPath = findAssetPath(html, 'link', 'href', 'css', 'style.css');
   const jsPath = findAssetPath(html, 'script', 'src', 'js', 'script.js');

@@ -50,3 +50,66 @@ export function isValidRelPath(p) {
     !/[\u0000-\u001f]/.test(p)
   );
 }
+
+// 非本地引用（外链 / data URI / 协议相对）：不应被当成本地文件路径
+const NON_LOCAL_RE = /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i;
+
+// 标签 / 属性匹配：attr 前加 (?<![-\w]) 防止 data-href、xlink:href 误命中
+const tagReFor = (tag) => new RegExp(`<${tag}\\b[^>]*>`, 'gi');
+const attrReFor = (attr) => new RegExp(`(?<![-\\w])${attr}\\s*=\\s*["']([^"']*)["']`, 'i');
+const attrReFullFor = (attr) => new RegExp(`((?<![-\\w])${attr}\\s*=\\s*)(["'])([^"']*)\\2`, 'i');
+// 扩展名后可跟查询串/锚点（style.css?v=1）
+const extReFor = (ext) => new RegExp(`\\.${ext}(?:[?#]|$)`, 'i');
+
+/**
+ * 判定属性值是否为「项目内本地资源引用」，是则返回归一后的相对路径
+ * 外链 / data: / #锚点 / mailto: / tel: 一律返回 null（用户的远程引用不碰）
+ * @returns {string|null}
+ */
+export function localAssetRef(value, ext) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  if (NON_LOCAL_RE.test(raw) || raw.startsWith('//')) return null;
+  if (!extReFor(ext).test(raw.split(/[?#]/)[0])) return null;
+  return normalizeRelPath(raw) || null;
+}
+
+/**
+ * 从 HTML 中找出 CSS/JS 的引用文件名（跟随用户写的 <link href> / <script src>）
+ * @returns {string|null} 归一后的相对路径，找不到返回 null
+ */
+export function findLocalAsset(html, tag, attr, ext) {
+  const tagRe = tagReFor(tag);
+  const attrRe = attrReFor(attr);
+  let tagMatch;
+  while ((tagMatch = tagRe.exec(html)) !== null) {
+    const attrMatch = tagMatch[0].match(attrRe);
+    if (!attrMatch) continue;
+    const normalized = localAssetRef(attrMatch[1], ext);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+/**
+ * 把 HTML 里的本地资源引用字符串改写成与存储路径一致的形式
+ *
+ * 背景：用户常写 `../style.css`、`./css/a.css`、`/style.css`。
+ * 存储侧已归一，但若 HTML 字符串原样下发，浏览器在入口页 `/p/<id>`
+ * （无尾斜杠，是该站点唯一入口 URL）下会把 `../style.css` 解析成
+ * `https://host/style.css`——直接跳出 `/p/` 前缀落到站点外 → 404 断链。
+ * 存访必须同时改写，只改存储名只是半截修复（曾因此留下真实断链）。
+ * 逐标签就地替换，不做全文字符串替换，避免误改正文里同名的普通文本。
+ */
+export function rewriteLocalRefs(html) {
+  const rewrite = (source, tag, attr, ext) => source.replace(
+    tagReFor(tag),
+    (tagText) => tagText.replace(attrReFullFor(attr), (whole, prefix, quote, value) => {
+      const normalized = localAssetRef(value, ext);
+      // 已是规范形式（或非本地引用）就不动，减少无意义的 HTML 改动
+      if (!normalized || normalized === value.trim()) return whole;
+      return `${prefix}${quote}${normalized}${quote}`;
+    })
+  );
+  return rewrite(rewrite(html, 'link', 'href', 'css'), 'script', 'src', 'js');
+}

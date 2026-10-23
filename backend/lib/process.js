@@ -3,6 +3,7 @@
 import { unzip } from './zip.js';
 import { findEntry, analyzeHtml, autoPreviewHtml } from './diagnostics.js';
 import { deploySite } from './deploy/index.js';
+import { rewriteLocalRefs } from './paths.js';
 import {
   keys, kvGet, kvPut, kvDel, kvListAll, readChunkWithRetry,
   nowSeconds, appendLog, pathFromSiteKey,
@@ -16,6 +17,27 @@ function concatBytes(chunks) {
   for (const chunk of chunks) {
     out.set(chunk, offset);
     offset += chunk.length;
+  }
+  return out;
+}
+
+/**
+ * 归一 HTML 里的本地资源引用（../a.css / /a.css / ./a.css → a.css）
+ *
+ * ZIP 条目名已在 lib/zip.js 归一成项目内相对路径，但 HTML 内的引用字符串
+ * 若原样下发，浏览器在入口页 `/p/<id>`（无尾斜杠）下会把 `../style.css`
+ * 解析成 `https://host/style.css`，直接跳出 `/p/` 前缀落到站点外 → 404 断链。
+ * 存储侧与引用侧必须同步改写（粘贴建站已修，这里补齐上传链路）。
+ */
+function normalizeHtmlRefs(files) {
+  const out = new Map();
+  for (const [path, data] of files) {
+    if (/\.html?$/i.test(path)) {
+      const rewritten = rewriteLocalRefs(new TextDecoder().decode(data));
+      out.set(path, new TextEncoder().encode(rewritten));
+    } else {
+      out.set(path, data);
+    }
   }
   return out;
 }
@@ -71,6 +93,10 @@ export async function processUpload(args) {
         files.set(name, bytes);
       }
     }
+    // 归一 HTML 内的本地引用字符串，使「引用路径」与「存储路径」一致（防断链）
+    const htmlNormalized = normalizeHtmlRefs(files);
+    files.clear();
+    for (const [path, data] of htmlNormalized) files.set(path, data);
 
     // 3. 找入口；没有 HTML 就自动生成预览页
     let entryPath = findEntry(files);

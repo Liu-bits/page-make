@@ -3,9 +3,10 @@
 // DELETE /api/projects/:id — 删除项目（兼容；ModelScope 网关拦截 DELETE，客户端走 POST）
 import { getOwnedProject, deleteProjectRecords, syncProjectFiles, readSiteFiles, projectPublicUrl } from '../../lib/project.js';
 import { ok, fail } from '../../lib/responses.js';
-import { appendLog } from '../../lib/kv.js';
+import { appendLog, keys } from '../../lib/kv.js';
 import { STATUS } from '../../lib/state.js';
 import { analyzeHtml } from '../../lib/diagnostics.js';
+import { rewriteLocalRefs } from '../../lib/paths.js';
 
 export async function onRequest(context) {
   const { request, params } = context;
@@ -68,6 +69,19 @@ export async function onRequest(context) {
       }
     }
     if (!entry) return fail('NO_ENTRY', 400);
+
+    // 归一入口 HTML 内的本地引用：项目模式允许用户手写 `../style.css`，
+    // 存储侧 validPath 拒绝带 .. 的路径，但 HTML 里的字符串原样下发仍会断链
+    // （入口页 `/p/<id>` 无尾斜杠，`../x` 会被解析到站点外）
+    if (/\.html?$/i.test(entry)) {
+      const raw = files.get(entry);
+      const rewritten = rewriteLocalRefs(new TextDecoder().decode(raw));
+      if (rewritten !== new TextDecoder().decode(raw)) {
+        const bytes = new TextEncoder().encode(rewritten);
+        files.set(entry, bytes);
+        await kv.put(keys.siteFile(project.id, entry), bytes);
+      }
+    }
 
     // 静态诊断（仅 HTML 入口；PHP 入口为服务端动态内容，静态检查不适用）
     if (/\.html?$/i.test(entry)) {
