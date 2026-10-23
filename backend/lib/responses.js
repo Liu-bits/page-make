@@ -54,6 +54,35 @@ export function contentTypeFor(path) {
     webm: 'video/webm',
     mp3: 'audio/mpeg',
     pdf: 'application/pdf',
+    // 预处理器与源码映射：用户常直接下载模板使用，HTML 里会 link/script 引用。
+    // 漏配会让浏览器拿到 application/octet-stream 而拒绝应用（MIME 嗅探拦截），
+    // 表现为「CSS/JS 明明存在却不生效」
+    scss: 'text/x-scss',
+    sass: 'text/x-sass',
+    less: 'text/x-less',
+    styl: 'text/x-styl',
+    map: 'application/json; charset=utf-8',
+    ts: 'text/typescript',
+    tsx: 'text/typescript',
+    jsx: 'text/jsx',
+    wasm: 'application/wasm',
+    avif: 'image/avif',
+    heic: 'image/heic',
+    bmp: 'image/bmp',
+    tif: 'image/tiff',
+    tiff: 'image/tiff',
+    csv: 'text/csv; charset=utf-8',
+    vtt: 'text/vtt',
+    m4a: 'audio/mp4',
+    ogg: 'audio/ogg',
+    wav: 'audio/wav',
+    flac: 'audio/flac',
+    oga: 'audio/ogg',
+    m4v: 'video/mp4',
+    mov: 'video/quicktime',
+    avi: 'video/x-msvideo',
+    mkv: 'video/x-matroska',
+    eot: 'application/vnd.ms-fontobject',
   };
   return map[ext] || 'application/octet-stream';
 }

@@ -537,5 +537,39 @@ await test('加固后不误伤正常强密码', async () => {
   }
 });
 
+console.log('\n[12] 静态资源 MIME 类型');
+
+await test('CSS/JS 及衍生类型返回可应用 MIME（漏配会导致不生效）', async () => {
+  const { contentTypeFor } = await import('../backend/lib/responses.js');
+  // 浏览器对 application/octet-stream 的样式/脚本会拒绝应用（MIME 嗅探拦截）
+  const expect = {
+    'style.css': 'text/css; charset=utf-8',
+    'app.js': 'application/javascript; charset=utf-8',
+    'mod.mjs': 'application/javascript; charset=utf-8',
+    'index.html': 'text/html; charset=utf-8',
+    'a.htm': 'text/html; charset=utf-8',
+    'd.json': 'application/json; charset=utf-8',
+    'l.svg': 'image/svg+xml',
+    'f.woff2': 'font/woff2',
+  };
+  for (const [file, type] of Object.entries(expect)) {
+    assertEqual(contentTypeFor(file), type, `${file} 的 Content-Type`);
+  }
+  // 大小写不敏感（.CSS / .Js 都要正确）
+  assertEqual(contentTypeFor('A.CSS'), 'text/css; charset=utf-8', '.CSS 应识别');
+  assertEqual(contentTypeFor('A.Js'), 'application/javascript; charset=utf-8', '.Js 应识别');
+});
+
+await test('预处理器与源码映射类型已覆盖（模板常见）', async () => {
+  const { contentTypeFor } = await import('../backend/lib/responses.js');
+  // 用户下载的模板里常带这些文件，HTML 也会引用；漏配 = 资源存在但不生效
+  for (const file of ['a.scss', 'a.sass', 'a.less', 'a.styl', 'a.css.map', 'a.js.map',
+    'a.ts', 'a.tsx', 'a.jsx', 'a.wasm', 'a.avif', 'a.bmp', 'a.csv', 'a.vtt']) {
+    const type = contentTypeFor(file);
+    assert(type !== 'application/octet-stream', `${file} 不应落到 octet-stream（实际 ${type}）`);
+  }
+  assertEqual(contentTypeFor('a.css.map'), 'application/json; charset=utf-8', '.map 应视为 JSON');
+});
+
 console.log(`\n结果：${passed} 通过，${failed} 失败\n`);
 process.exit(failed > 0 ? 1 : 0);
