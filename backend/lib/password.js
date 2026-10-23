@@ -102,12 +102,57 @@ function isSequentialPattern(password) {
   return asc || desc;
 }
 
+// QWERTY 键盘行/列（含 Shift 形态）：asdfghjkl / 1qaz2wsx / qwertyuiop 都是常见弱模式
+const KEYBOARD_ROWS = [
+  '1234567890', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm',
+  '!@#$%^&*()', 'qazwsxedc', '!qaz@wsx#edc',
+  // 对角线序列：1qaz2wsx3edc4rfv / zaq12wsx 是人肉记强密码时最常写的"形状"
+  '1qaz2wsx3edc4rfv5tgb', '1q2w3e4r5t6y7u8i9o0p',
+];
+
+/** 是否含长度 >= 5 的键盘相邻序列（正/反向） */
+function hasKeyboardRun(s) {
+  // 数字夹在键盘序列中间很常见（1qaz2wsx / zaq12wsx），剥掉数字再比一次
+  const stripped = s.replace(/\d+/g, '');
+  for (const row of KEYBOARD_ROWS) {
+    const lower = row.toLowerCase();
+    for (let len = 5; len <= lower.length; len++) {
+      for (let i = 0; i + len <= lower.length; i++) {
+        const chunk = lower.slice(i, i + len);
+        if (s.includes(chunk) || stripped.includes(chunk)) return true;
+        const rev = [...chunk].reverse().join('');
+        if (s.includes(rev) || stripped.includes(rev)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * 是否为「短片段重复 >= 2 次」构成
+ * Aa1!Aa1!Aa1! / Passw0rdPassw0rd / abcabcabc123 的有效熵远低于其长度，
+ * 且是口令生成器最常见产物之一
+ */
+function isRepeatingChunk(password) {
+  const s = password.toLowerCase();
+  const n = s.length;
+  // 片段长度 3..n/2：短于 3 的"重复"误伤太高（aAaA / 1212 之类）
+  for (let len = 3; len <= Math.floor(n / 2); len++) {
+    const chunk = s.slice(0, len);
+    if (s.split(chunk).length - 1 >= 2) return true;
+  }
+  return false;
+}
+
 /**
  * 密码强度校验（长度之外的第二道关）
  * @returns {{ok: boolean, reason?: string}}
  */
 export function checkPasswordStrength(password) {
   if (typeof password !== 'string') return { ok: false, reason: 'WEAK_PASSWORD' };
+  // 前后空格必须拒绝：用户以为设的是 Aa1!xyz，实际存的是带空格版本，
+  // 登录时少打一个空格就进不去——既混淆又让"看似安全"的密码实际不可用
+  if (password !== password.trim()) return { ok: false, reason: 'WEAK_PASSWORD' };
   if (password.length < MIN_PASSWORD_LENGTH) return { ok: false, reason: 'WEAK_PASSWORD' };
   if (password.length > MAX_PASSWORD_LENGTH) return { ok: false, reason: 'WEAK_PASSWORD' };
   if (COMMON_PASSWORDS.has(password.toLowerCase())) {
@@ -125,6 +170,14 @@ export function checkPasswordStrength(password) {
     return { ok: false, reason: 'WEAK_PASSWORD_COMMON' };
   }
   if (isSequentialPattern(password)) {
+    return { ok: false, reason: 'WEAK_PASSWORD_PATTERN' };
+  }
+  // 键盘相邻序列（asdfghjkl / 1qaz2wsx / qwertyuiop …）
+  if (hasKeyboardRun(lower)) {
+    return { ok: false, reason: 'WEAK_PASSWORD_PATTERN' };
+  }
+  // 短片段重复构成（Aa1!Aa1!Aa1! / Passw0rdPassw0rd）
+  if (isRepeatingChunk(lower)) {
     return { ok: false, reason: 'WEAK_PASSWORD_PATTERN' };
   }
   // 字符类别：字母 + 数字/符号至少两类（纯字母的随机串也偏弱）

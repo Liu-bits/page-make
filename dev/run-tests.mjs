@@ -506,5 +506,36 @@ await test('长度边界：<8 拒、>72 拒', async () => {
   assert(checkPasswordStrength('Ab1#efgh').ok, '8 位混合应通过');
 });
 
+await test('键盘相邻序列被拒（asdf/1qaz/zxcv/对角线）', async () => {
+  const { checkPasswordStrength } = await import('../backend/lib/password.js');
+  for (const pw of ['Qwertyuiop12345', 'Asdfghjkl123', '1qaz2wsx3edc', '!QAZ2wsx#EDC',
+    'Qazwsxedc12345', 'Mnbvcxz123', 'Zxcvbnm12345', 'Zaq12wsx34rfv', '1q2w3e4r5t6y']) {
+    assert(!checkPasswordStrength(pw).ok, `${pw} 应被判为键盘弱模式`);
+  }
+});
+
+await test('短片段重复被拒（有效熵远低于长度）', async () => {
+  const { checkPasswordStrength } = await import('../backend/lib/password.js');
+  for (const pw of ['Aa1!Aa1!Aa1!', 'Passw0rdPassw0rd', 'abcabcabc123', 'Xy9#Xy9#Xy9#',
+    'Ab1!Ab1!Ab1!Ab1!']) {
+    assert(!checkPasswordStrength(pw).ok, `${pw} 应被判为重复弱模式`);
+  }
+});
+
+await test('前后空格被拒（避免"看似安全"实际不可用）', async () => {
+  const { checkPasswordStrength } = await import('../backend/lib/password.js');
+  assert(!checkPasswordStrength('   Aa1!xyz   ').ok, '前后带空格应拒');
+  assert(!checkPasswordStrength('Aa1!xyz   ').ok, '尾部带空格应拒');
+  assert(!checkPasswordStrength('   Aa1!xyz').ok, '首部带空格应拒');
+});
+
+await test('加固后不误伤正常强密码', async () => {
+  const { checkPasswordStrength } = await import('../backend/lib/password.js');
+  for (const pw of ['Test#Passw0rd1', 'Adm1n#Secure99', 'Xk7#mQ2vLp9!', 'Tr0ub4dor&3x',
+    'correct-horse-Battery9', 'MyP@ss2024w0rd', 'Vh8#nLp2Kd4x', 'Battery9Staple!']) {
+    assert(checkPasswordStrength(pw).ok, `${pw} 不应被误伤`);
+  }
+});
+
 console.log(`\n结果：${passed} 通过，${failed} 失败\n`);
 process.exit(failed > 0 ? 1 : 0);
