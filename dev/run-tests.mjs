@@ -126,6 +126,47 @@ await test('损坏的 zip 抛 BAD_ZIP', async () => {
   assertEqual(error.code, 'BAD_ZIP');
 });
 
+await test('zip 炸弹：解压总量超限抛 TOO_LARGE', async () => {
+  // 306KB 的包解压出 300MB 的历史漏洞：现在必须在解压过程中被拦截
+  const big = new Uint8Array(40 * 1024 * 1024); // 40MB > ZIP_MAX_TOTAL_BYTES(32MB)
+  const zip = buildZip([
+    ['index.html', '<h1>bomb</h1>'],
+    ['big1.bin', big, { deflate: true }],
+  ]);
+  let error;
+  try {
+    await unzip(zip);
+  } catch (e) {
+    error = e;
+  }
+  assert(error instanceof ZipError, '应为 ZipError');
+  assertEqual(error.code, 'TOO_LARGE');
+});
+
+await test('zip 炸弹：条目数超限抛 TOO_LARGE', async () => {
+  const entries = [];
+  for (let i = 0; i < 600; i++) entries.push([`f${i}.txt`, 'x']);
+  let error;
+  try {
+    await unzip(buildZip(entries));
+  } catch (e) {
+    error = e;
+  }
+  assert(error instanceof ZipError, '应为 ZipError');
+  assertEqual(error.code, 'TOO_LARGE');
+});
+
+await test('zip 正常体积仍可解压（不误伤）', async () => {
+  const payload = new Uint8Array(200 * 1024); // 200KB，远低于上限
+  const zip = buildZip([
+    ['index.html', '<h1>ok</h1>'],
+    ['data.bin', payload, { deflate: true }],
+  ]);
+  const files = await unzip(zip);
+  assertEqual(files.size, 2);
+  assertEqual(files.get('data.bin').length, payload.length);
+});
+
 // ---------------------------------------------------------------------------
 console.log('\n[2] 入口查找');
 

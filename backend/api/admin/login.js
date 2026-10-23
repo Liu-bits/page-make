@@ -18,9 +18,7 @@ export async function onRequest(context) {
   const password = typeof body?.password === 'string' ? body.password : '';
   if (!password) return fail('BAD_REQUEST', 400);
 
-  const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    || request.headers.get('x-real-ip') || 'local';
-  if (loginRateLimited(ip)) return fail('TOO_MANY_ATTEMPTS', 429);
+  if (loginRateLimited(request)) return fail('TOO_MANY_ATTEMPTS', 429);
 
   const kv = getKV(context.env);
   if (!(await verifyAdminPassword(kv, password))) {

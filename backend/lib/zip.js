@@ -1,6 +1,7 @@
 // 纯 JS ZIP 解析（边缘函数环境：无 node Buffer、无第三方库）
 // 支持 stored(0) / deflate(8)；deflate 用运行时 DecompressionStream('deflate-raw')
 // 自动过滤 __MACOSX / .DS_Store / 隐藏文件
+import { ZIP_MAX_TOTAL_BYTES, ZIP_MAX_ENTRIES } from './state.js';
 
 export class ZipError extends Error {
   constructor(code, message) {
@@ -66,13 +67,20 @@ export async function unzip(buffer) {
   const count = view.getUint16(eocd + 10, true);
   let offset = view.getUint32(eocd + 16, true);
 
+  // 条目数上限：防止「海量小文件」耗尽内存与磁盘 inode
+  if (count > ZIP_MAX_ENTRIES) {
+    throw new ZipError('TOO_LARGE', `ZIP 条目过多（${count} > ${ZIP_MAX_ENTRIES}）`);
+  }
+
   const files = new Map();
+  let totalBytes = 0;
   for (let i = 0; i < count; i++) {
     if (view.getUint32(offset, true) !== 0x02014b50) {
       throw new ZipError('BAD_ZIP', '中央目录签名异常');
     }
     const method = view.getUint16(offset + 10, true);
     const compressedSize = view.getUint32(offset + 20, true);
+    const declaredSize = view.getUint32(offset + 24, true);
     const flags = view.getUint16(offset + 8, true);
     const nameLen = view.getUint16(offset + 28, true);
     const extraLen = view.getUint16(offset + 30, true);
@@ -82,6 +90,11 @@ export async function unzip(buffer) {
     offset += 46 + nameLen + extraLen + commentLen;
 
     if (name.endsWith('/') || shouldSkip(name)) continue;
+
+    // 解压前先按中央目录声明的原始大小拦截：避免为单个超大条目分配内存
+    if (declaredSize > ZIP_MAX_TOTAL_BYTES) {
+      throw new ZipError('TOO_LARGE', `ZIP 单条目过大：${name}`);
+    }
 
     if (view.getUint32(localOffset, true) !== 0x04034b50) {
       throw new ZipError('BAD_ZIP', '本地头签名异常');
@@ -99,6 +112,13 @@ export async function unzip(buffer) {
     } else {
       throw new ZipError('STORAGE_ERROR', `不支持的压缩方式：${method}`);
     }
+
+    // 解压总量上限：边解压边累计，超限立即中止（而非解压完再判断）
+    totalBytes += data.length;
+    if (totalBytes > ZIP_MAX_TOTAL_BYTES) {
+      throw new ZipError('TOO_LARGE', `ZIP 解压后体积过大（> ${ZIP_MAX_TOTAL_BYTES} 字节）`);
+    }
+
     files.set(name, data);
   }
   return files;

@@ -5,20 +5,19 @@ import path from 'node:path';
 import { kvGet, kvPut, kvDel, keys, nowSeconds } from './kv.js';
 import { fail } from './responses.js';
 import { hashPassword, verifyPassword } from './password.js';
+import { rateLimited, clientIp } from './ratelimit.js';
 
 const ADMIN_PASSWORD_KEY = 'config_admin_password';
 const ADMIN_SESSION_PREFIX = 'admin_session_';
 const ADMIN_SESSION_TTL = 24 * 3600; // 24 小时
 
-// 登录限速：每 IP 每分钟 5 次（内存计数，容器重启清零即可）
-const rateBucket = new Map();
-export function loginRateLimited(ip) {
-  const now = Date.now();
-  const windowStart = now - 60_000;
-  const hits = (rateBucket.get(ip) || []).filter((t) => t > windowStart);
-  hits.push(now);
-  rateBucket.set(ip, hits);
-  return hits.length > 5;
+// 登录限速：每 IP 每分钟 5 次（复用通用限流器，容器重启清零即可）
+const ADMIN_LOGIN_LIMIT = 5;
+const ADMIN_LOGIN_WINDOW_MS = 60_000;
+
+/** 后台登录限流：按 IP 每 60 秒最多 5 次（防暴力破解管理员密码） */
+export function loginRateLimited(request) {
+  return rateLimited(`admin-login:${clientIp(request)}`, ADMIN_LOGIN_LIMIT, ADMIN_LOGIN_WINDOW_MS);
 }
 
 /** 管理员密码记录（首次访问时初始化为默认密码 123456 的 PBKDF2 哈希） */

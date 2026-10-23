@@ -186,12 +186,12 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 80 项，提交前必须全绿）
+## 5. 测试体系（共 85 项，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
-| `node dev/run-tests.mjs` | 23 | 单元测试（含 JWKS 三级加载：种子有效性/live 优先写缓存/实时失败回退） |
-| `node dev/test-server.mjs` | 34 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR） |
+| `node dev/run-tests.mjs` | 26 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护：总量/条目数上限） |
+| `node dev/test-server.mjs` | 36 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 zip 炸弹端到端、反馈限流、删号 KV 残留断言） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 5 | CSS/JS 引用全模式回归（粘贴完整/片段/子目录/PHP/explorer publish） |
 | `node dev/test-admin.mjs` | 10 | 后台（登录/哈希存储/测试账号权益/封禁下架+禁登/解封恢复/删号） |
@@ -208,7 +208,7 @@ E:/Page-make/
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
-| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 80 项）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
+| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 85 项）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
 | keepalive.yaml | 每 10 分钟 | 探 `${PAGEMAKE_URL}/healthz`，**必须带 UA**（`-A "PageMake-Keepalive/1.0"`），并回显 /api/config 的 jwks 诊断 |
 | jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子并提交（境内拉不到 Google，只能靠 runner） |
 
@@ -262,9 +262,16 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
 **其他后端坑**：
 - `x-forwarded-proto` 可能是逗号分隔多值（"https, https"）→ 取第一个值，否则 URL 非法 500
 - kvPut 直传对象会失败 → 已加自动 JSON 序列化；索引 key 后缀必须 decodeKey 后再查
-  （双重编码 bug 出过两次：projects 列表 + banUser/unbanUser）
+  （双重编码 bug 出过**三**次：projects 列表 + banUser/unbanUser + **auth/delete.js 漏 decodeKey**
+  → 删号只删了 user_ 记录，site_/project_/uproject_/meta_ 全残留，且 `/p/<id>` 公开链接
+  继续 200 可访问；测试盲区：当时只断言 user_ 文件消失，没断言 KV 残留，现已补齐断言）
 - Dockerfile 里 server.mjs 在 /app/ 根目录，`resolve(__dirname,'..')` 会指向 / →
   ROOT 按 backend/ 实际位置自动探测（兼容两种布局）
+ - ZIP 解压必须设「解压后总量」与「条目数」双上限：init 只校验压缩包 ≤ 5MB，
+   306KB 的包能解出 300MB 打满容器持久卷（全站无法建站）→ lib/zip.js 已加实时拦截
+   （ZIP_MAX_TOTAL_BYTES=32MB / ZIP_MAX_ENTRIES=500，超限抛 TOO_LARGE）
+ - 未登录可写的接口（feedback 等）必须加 IP 限流：否则脚本可无限刷量打满 KV →
+   lib/ratelimit.js 通用滑动窗口（admin 登录与 feedback 共用，每 IP 每分钟 5 次）
 - JWKS：Node fetch 无默认超时，境内连 googleapis 挂 75s+ → 三级加载（live 5s →
   DATA_DIR 磁盘缓存 → 内置种子）；种子由 CI/runner 刷新，**沙箱自己拉不到 Google**
 - Dockerfile 的 `data/` ignore 只匹配根级，`backend/data/` 种子不受影响

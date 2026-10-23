@@ -36,6 +36,10 @@ export const PASTE_MAX_BYTES = 300 * 1024;
 // 项目模式（虚拟文件管理器）：单文件上限（与 iOS 端 file_too_large_single 提示一致）
 export const FILE_MAX_BYTES = 900 * 1024;
 
+// ZIP 解压防护：压缩包本身 ≤ 5MB，但解压后可能膨胀数百倍（zip 炸弹）
+// 这里对「解压总量」与「条目数」单独设限，超限即拒绝，避免打满容器磁盘导致全站不可用
+export const ZIP_MAX_TOTAL_BYTES = 32 * 1024 * 1024;
+export const ZIP_MAX_ENTRIES = 500;
 // 游客链接有效期：10 分钟自动失效（游客=快速试用；登录后创建的链接长期有效）
 export const GUEST_LINK_TTL_SECONDS = 10 * 60;
 

@@ -218,6 +218,48 @@ await test('完整上传流程：init → chunk → finish → 轮询 → ready'
   assert(status === 'ready', `状态应为 ready，实际 ${status}`);
 });
 
+// zip 炸弹防护：306KB 的包可解压出 300MB，直接写满容器持久卷会让全站无法建站
+await test('zip 炸弹：解压超限 → 项目 failed(TOO_LARGE) 且不写盘', async () => {
+  const big = new Uint8Array(40 * 1024 * 1024); // 解压后 40MB > 32MB 上限
+  const zip = buildZip([
+    ['index.html', '<h1>bomb</h1>'],
+    ['big.bin', big, { deflate: true }],
+  ]);
+
+  const initRes = await fetch(`${BASE}/api/upload/init`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: [{ name: 'bomb.zip', size: zip.length }] }),
+  });
+  const init = await initRes.json();
+  assert(init.ok && init.uploadId, 'init 应成功（压缩包本身小于 5MB 上限）');
+
+  await fetch(`${BASE}/api/upload/chunk`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      uploadId: init.uploadId, fileIndex: 0, chunkIndex: 0, data: zip.toString('base64'),
+    }),
+  });
+  const finish = await (await fetch(`${BASE}/api/upload/finish`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uploadId: init.uploadId }),
+  })).json();
+  assert(finish.ok && finish.projectId, 'finish 应返回 projectId');
+
+  let json = null;
+  for (let i = 0; i < 60; i++) {
+    await sleep(200);
+    json = await (await fetch(`${BASE}/api/projects/${finish.projectId}/status`, { headers: AUTH })).json();
+    if (json.status !== 'processing') break;
+  }
+  assertEqual(json.status, 'failed', 'zip 炸弹应被判为 failed');
+  assertEqual(json.errorCode, 'TOO_LARGE', '错误码应为 TOO_LARGE');
+  assert(!fs.existsSync(path.join(dataDir, `site_${kvKeys.project(finish.projectId).slice('project_'.length)}_`)),
+    '超限内容不得写入磁盘');
+});
+
 await test('公开访问：入口 HTML 与静态资源', async () => {
   assert(projectId, '需要先完成上传');
 
@@ -362,6 +404,34 @@ await test('粘贴代码创建：参数校验', async () => {
     body: JSON.stringify({ provider: 'edgeone', html: '   ' }),
   });
   assertEqual((await noHtml.json()).error, 'BAD_REQUEST', '空 HTML 应报 BAD_REQUEST');
+});
+
+// 反馈接口防刷：未登录可提交，但必须限流，否则脚本可无限灌入打满 KV
+await test('反馈：可提交，且超限返回 429', async () => {
+  const first = await (await fetch(`${BASE}/api/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'feedback', message: '第一条反馈' }),
+  })).json();
+  assert(first.ok, '正常反馈应被接收');
+
+  let limited = 0;
+  for (let i = 0; i < 10; i++) {
+    const res = await fetch(`${BASE}/api/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'feedback', message: `刷量 ${i}` }),
+    });
+    if (res.status === 429) limited++;
+  }
+  assert(limited > 0, '超过每 IP 每分钟 5 次后应返回 429');
+
+  const empty = await (await fetch(`${BASE}/api/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: '   ' }),
+  })).json();
+  assertEqual(empty.error, 'BAD_REQUEST', '空 message 应报 BAD_REQUEST');
 });
 
 await test('Google 登录：非法 token 拒绝 + 参数校验', async () => {
@@ -717,6 +787,31 @@ await test('账号删除：删除项目与用户 → 会话失效', async () => 
   // 用户记录应从 KV（磁盘）中消失（DEV_NO_AUTH 下令牌校验被跳过，直接查存储验证）
   const userFile = path.join(dataDir, kvKeys.user(reg.userId));
   assert(!fs.existsSync(userFile), '用户记录应已删除');
+
+  // 项目相关 KV 也必须全部清除（site_ 文件 / project_ 记录 / uproject_ 索引 / meta_ 元信息）
+  // 历史 bug：这里只校验了 user_ 记录，导致索引 key 未 decodeKey 时删除静默失败，
+  // 数据残留且 /p/<id> 公开链接继续可访问——用户以为删号成功，内容却仍在公网
+  const leftovers = [];
+  for (const name of fs.readdirSync(dataDir)) {
+    if (name.startsWith(`site_${kvKeys.project(created.project.id).slice('project_'.length)}`)) {
+      leftovers.push(name);
+    }
+  }
+  assertEqual(leftovers.length, 0, `site_ 文件应全部删除，实际残留：${leftovers.join(',')}`);
+
+  const indexPrefix = kvKeys.userProject(reg.userId, '');
+  const indexLeftovers = fs.readdirSync(dataDir).filter((n) => n.startsWith(indexPrefix));
+  assertEqual(indexLeftovers.length, 0, `uproject_ 索引应全部删除，实际残留：${indexLeftovers.join(',')}`);
+
+  const projectFile = path.join(dataDir, kvKeys.project(created.project.id));
+  assert(!fs.existsSync(projectFile), 'project_ 记录应已删除');
+
+  const metaFile = path.join(dataDir, kvKeys.siteMeta(created.project.id));
+  assert(!fs.existsSync(metaFile), 'meta_ 元信息应已删除');
+
+  // 公开链接必须失效（隐私硬性要求：删号后内容不得再被任何人访问）
+  const pub = await fetch(`${BASE}/p/${created.project.id}`);
+  assertEqual(pub.status, 404, '删号后公开链接应 404');
 
   // 重新注册同一邮箱应成功（数据已清空）
   const reReg = await (await fetch(`${BASE}/api/auth/register`, {

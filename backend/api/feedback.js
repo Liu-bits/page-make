@@ -4,6 +4,13 @@
 import { getKV, keys, nowSeconds } from '../lib/kv.js';
 import { requireAuth } from '../lib/session.js';
 import { ok, fail } from '../lib/responses.js';
+import { rateLimited, clientIp } from '../lib/ratelimit.js';
+
+// 限流：每 IP 每分钟 5 次（未登录可提交，需防脚本刷量打满 KV）
+const RATE_LIMIT = 5;
+const RATE_WINDOW_MS = 60_000;
+// 单条反馈长度上限：防止超长文本撑爆 KV 单值与后台渲染
+const MAX_MESSAGE_LENGTH = 2000;
 
 export async function onRequest(context) {
   const { request } = context;
@@ -17,8 +24,14 @@ export async function onRequest(context) {
   }
   const message = String(body?.message || '').trim();
   if (!message) return fail('BAD_REQUEST', 400);
+  if (message.length > MAX_MESSAGE_LENGTH) return fail('BAD_REQUEST', 400);
 
   const type = body?.type === 'report' ? 'report' : 'feedback';
+
+  // 限流（按 IP）
+  if (rateLimited(`feedback:${clientIp(request)}`, RATE_LIMIT, RATE_WINDOW_MS)) {
+    return fail('TOO_MANY_REQUESTS', 429);
+  }
 
   // 可选登录态：带上则记录 userId
   let userId = null;
