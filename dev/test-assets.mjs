@@ -65,7 +65,7 @@ async function login() {
   const res = await fetch(`${BASE}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: `assets-${Date.now()}-${Math.random().toString(36).slice(2)}@t.com`, password: 'test-password-123' }),
+  body: JSON.stringify({ email: `assets-${Date.now()}-${Math.random().toString(36).slice(2)}@t.com`, password: 'Test#Passw0rd1' }),
   });
   assert(res.ok, `注册失败 HTTP ${res.status}`);
   const body = await res.json();
@@ -144,6 +144,75 @@ await test('粘贴：子目录引用 css/style.css → 精确命中', async () =
   const css = await fetch(`${BASE}/p/${id}/css/style.css`);
   assertEqual(css.status, 200, 'css/style.css 应 200');
   assert((await css.text()).includes('color: green'), '内容应一致');
+});
+
+// ③-b 相对路径写法（曾断链）：`../style.css` 原样存成文件名，
+// 而浏览器请求 /p/<id>/../style.css 会被 URL 规范化成 /p/style.css → 404
+await test('粘贴：../style.css 与 /style.css → 归一后仍可访问', async () => {
+  const { token } = await login();
+
+  const a = await paste(token, {
+    name: 'parent',
+    html: '<html><head><link rel="stylesheet" href="../style.css"><script src="../app.js"></script></head><body><h1>x</h1></body></html>',
+    css: 'h1 { color: red; }',
+    js: "console.log('a')",
+  });
+  assertEqual(a.status, 200, '粘贴应成功');
+  const pathsA = a.body.project.files.map((f) => f.path);
+  assert(pathsA.includes('style.css'), `CSS 应归一为 style.css，实际 ${pathsA.join(',')}`);
+  assert(pathsA.includes('app.js'), `JS 应归一为 app.js，实际 ${pathsA.join(',')}`);
+  assert(!pathsA.some((p) => p.includes('..')), '不得出现含 .. 的路径');
+  assertEqual((await fetch(`${BASE}/p/${a.body.project.id}/style.css`)).status, 200, 'style.css 应 200');
+  assertEqual((await fetch(`${BASE}/p/${a.body.project.id}/app.js`)).status, 200, 'app.js 应 200');
+
+  const b = await paste(token, {
+    name: 'root-abs',
+    html: '<html><head><link rel="stylesheet" href="/style.css"></head><body><h1>x</h1></body></html>',
+    css: 'h1 { color: blue; }',
+  });
+  assertEqual(b.status, 200, '粘贴应成功');
+  assert(b.body.project.files.map((f) => f.path).includes('style.css'), '/style.css 应归一为 style.css');
+  assertEqual((await fetch(`${BASE}/p/${b.body.project.id}/style.css`)).status, 200, '/style.css 归一后应 200');
+});
+
+// ③-c 引用带查询串 / type 属性 / 多属性（曾因正则缺陷匹配不到 → 重复注入 + 断链）
+await test('粘贴：带查询串与 type 属性的引用 → 不重复注入且可访问', async () => {
+  const { token } = await login();
+  const { status, body } = await paste(token, {
+    name: 'query',
+    html: '<html><head>'
+      + '<script type="text/javascript" src="app.js?v=9"></script>'
+      + '<link rel="stylesheet" type="text/css" href="style.css?v=123">'
+      + '</head><body><h1>x</h1></body></html>',
+    css: 'h1 { color: red; }',
+    js: "console.log('q')",
+  });
+  assertEqual(status, 200, '粘贴应成功');
+  const paths = body.project.files.map((f) => f.path);
+  assert(paths.includes('style.css'), `应存 style.css，实际 ${paths.join(',')}`);
+  assert(paths.includes('app.js'), `应存 app.js，实际 ${paths.join(',')}`);
+  assert(!paths.includes('script.js'), '不得因误判而重复注入 script.js');
+  assertEqual((await fetch(`${BASE}/p/${body.project.id}/app.js`)).status, 200, 'app.js?v=9 应 200');
+  assertEqual((await fetch(`${BASE}/p/${body.project.id}/style.css`)).status, 200, 'style.css?v=123 应 200');
+});
+
+// ③-d 外链 / data URI 不得被当成本地文件路径
+await test('粘贴：外链与 data URI 引用被忽略', async () => {
+  const { token } = await login();
+  const { status, body } = await paste(token, {
+    name: 'external',
+    html: '<html><head>'
+      + '<link rel="stylesheet" href="https://cdn.example.com/a.css">'
+      + '<link rel="stylesheet" href="//cdn.example.com/b.css">'
+      + '<link rel="stylesheet" href="data:text/css,h1{}">'
+      + '</head><body><h1>x</h1></body></html>',
+    css: 'h1 { color: red; }',
+  });
+  assertEqual(status, 200, '粘贴应成功');
+  const paths = body.project.files.map((f) => f.path);
+  assert(!paths.some((p) => p.includes('://') || p.startsWith('//') || p.startsWith('data:')),
+    `外链不得入库，实际 ${paths.join(',')}`);
+  assert(paths.includes('style.css'), '无本地引用时应注入默认 style.css');
 });
 
 // ④ PHP 粘贴 → 执行

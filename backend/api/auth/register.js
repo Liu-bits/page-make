@@ -4,8 +4,13 @@ import { getKV, kvGet, kvPut, keys, nowSeconds, appendLog } from '../../lib/kv.j
 import { createSession } from '../../lib/session.js';
 import { ok, fail } from '../../lib/responses.js';
 import {
-  hashPassword, userIdFromEmail, EMAIL_RE, MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH,
+  hashPassword, userIdFromEmail, EMAIL_RE, checkPasswordStrength,
 } from '../../lib/password.js';
+import { rateLimited, clientIp } from '../../lib/ratelimit.js';
+
+// 注册限速：每 IP 每小时 20 次（防批量注册/邮箱枚举；正常用户远达不到）
+const REGISTER_LIMIT = 20;
+const REGISTER_WINDOW_MS = 60 * 60 * 1000;
 
 export async function onRequest(context) {
   const { request } = context;
@@ -22,9 +27,15 @@ export async function onRequest(context) {
   const password = typeof body?.password === 'string' ? body.password : '';
 
   if (!EMAIL_RE.test(email)) return fail('INVALID_EMAIL', 400);
-  if (password.length < MIN_PASSWORD_LENGTH || password.length > MAX_PASSWORD_LENGTH) {
-    return fail('WEAK_PASSWORD', 400);
+
+  // 限速（按 IP）：防批量注册与邮箱枚举
+  if (rateLimited(`register:${clientIp(request)}`, REGISTER_LIMIT, REGISTER_WINDOW_MS)) {
+    return fail('TOO_MANY_ATTEMPTS', 429);
   }
+
+  // 密码强度：长度 + 常见弱口令 + 连续序列 + 字符类别
+  const strength = checkPasswordStrength(password);
+  if (!strength.ok) return fail(strength.reason, 400);
 
   const kv = getKV(context.env);
   const userId = await userIdFromEmail(email);

@@ -85,7 +85,7 @@ const overview = (token) => json(fetch(`${BASE}/api/admin/overview`, {
   headers: { 'X-Admin-Token': token },
 }));
 
-async function register(email, password = 'test-password-123') {
+async function register(email, password = 'Test#Passw0rd1') {
   const { status, body } = await json(fetch(`${BASE}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -139,15 +139,15 @@ const testEmail = `tester-${Date.now()}@test.local`;
 let testToken = '';
 
 await test('创建测试账号（指定邮箱+密码）', async () => {
-  const { status, body } = await adminAction(adminToken, { action: 'createTestAccount', email: testEmail, password: 'test-pass-123' });
+  const { status, body } = await adminAction(adminToken, { action: 'createTestAccount', email: testEmail, password: 'Test#Passw0rd1' });
   assertEqual(status, 200, `创建应 200，实际 ${status} ${JSON.stringify(body)}`);
   assert(body.created === true);
-  const dup = await adminAction(adminToken, { action: 'createTestAccount', email: testEmail, password: 'test-pass-123' });
+  const dup = await adminAction(adminToken, { action: 'createTestAccount', email: testEmail, password: 'Test#Passw0rd1' });
   assertEqual(dup.status, 409, '重复邮箱应 409 USER_EXISTS');
 });
 
 await test('测试账号可走邮箱密码登录', async () => {
-  const { status, body } = await passwordLogin(testEmail, 'test-pass-123');
+  const { status, body } = await passwordLogin(testEmail, 'Test#Passw0rd1');
   assertEqual(status, 200, `登录应 200，实际 ${status} ${JSON.stringify(body)}`);
   assert(body.token, '应返回会话 token');
   testToken = body.token;
@@ -189,7 +189,7 @@ await test('封号：项目公开页 403 下架 + 登录返回 BANNED', async ()
   assertEqual(me.status, 403, '封禁后旧会话调用 API 应 403');
   assertEqual(me.body.error, 'BANNED', '错误码应为 BANNED');
   // 重新登录被拒
-  const relogin = await passwordLogin(victimEmail, 'test-password-123');
+  const relogin = await passwordLogin(victimEmail, 'Test#Passw0rd1');
   assertEqual(relogin.status, 403, `封禁中重新登录应 403，实际 ${relogin.status}`);
   assertEqual(relogin.body.error, 'BANNED', '登录错误码应为 BANNED');
 });
@@ -204,7 +204,7 @@ await test('解封：项目恢复上架 + 可重新登录', async () => {
 
   const page = await fetch(`${BASE}/p/${victimProjectId}`);
   assertEqual(page.status, 200, '解封后项目应恢复 200');
-  const relogin = await passwordLogin(victimEmail, 'test-password-123');
+  const relogin = await passwordLogin(victimEmail, 'Test#Passw0rd1');
   assertEqual(relogin.status, 200, '解封后应能重新登录');
 });
 
@@ -217,7 +217,7 @@ await test('删除被封账号：用户记录/项目/会话全部清除', async 
   assertEqual(del.status, 200, `删除应 200，实际 ${del.status} ${JSON.stringify(del.body)}`);
   const ov = await overview(adminToken);
   assert(!ov.body.users.some((u) => u.userId === v.userId), '用户应已不存在');
-  const relogin = await passwordLogin(delEmail, 'test-password-123');
+  const relogin = await passwordLogin(delEmail, 'Test#Passw0rd1');
   assertEqual(relogin.status, 401, '删除后原密码登录应 401');
 });
 
@@ -227,7 +227,7 @@ await test('删除测试账号：deleteTestAccount 生效', async () => {
   assert(testUser, 'overview 应列出测试账号');
   const del = await adminAction(adminToken, { action: 'deleteTestAccount', userId: testUser.userId });
   assertEqual(del.status, 200, '删除测试账号应 200');
-  const relogin = await passwordLogin(testEmail, 'test-pass-123');
+  const relogin = await passwordLogin(testEmail, 'Test#Passw0rd1');
   assertEqual(relogin.status, 401, '删除后测试账号应无法登录');
   // 普通用户不能被 deleteTestAccount 删除
   const normal = await register(`normal2-${Date.now()}@t.com`);

@@ -6,6 +6,7 @@ import { requireAuth, isTestUser } from '../../lib/session.js';
 import { kvPut, kvListAll, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
 import { PROVIDERS, PASTE_MAX_BYTES, STATUS, GUEST_LINK_TTL_SECONDS } from '../../lib/state.js';
+import { normalizeRelPath } from '../../lib/paths.js';
 import { analyzeHtml } from '../../lib/diagnostics.js';
 import { deploySite } from '../../lib/deploy/index.js';
 
@@ -23,15 +24,39 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;');
 }
 
+// 非本地引用（外链 / data URI / 协议相对）：不应被当成本地文件路径
+const NON_LOCAL_RE = /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i;
+
 /**
  * 从 HTML 中找出 CSS/JS 的引用文件名（跟随用户写的 <link href> / <script src>）
  * 找不到时用默认名（style.css / script.js）
+ *
+ * 必须规范化：用户常写 `../style.css`、`./css/style.css`、`/style.css`，
+ * 原样存成文件名会导致「存的是 ../style.css、浏览器请求被 URL 规范化成
+ * /p/<id>/style.css」→ 404 断链。这里统一折叠成项目内相对路径。
+ *
+ * 匹配方式：先抓该标签的目标属性值，再按扩展名筛选。
+ * 不能用 `<script[^>]+src=["']([^"']+\.js)["']` 这类正则——`type="text/javascript"`
+ * 会抢先匹配，且 `app.js?v=9`（.js 后带查询串）匹配不到，两者都会导致引用断链。
  */
 function findAssetPath(html, tag, attr, ext, fallback) {
-  const re = new RegExp(`<${tag}[^>]+${attr}=["']([^"']+\\.${ext})["']`, 'i');
-  const match = html.match(re);
-  if (!match) return fallback;
-  return match[1].replace(/^\.\//, '').replace(/^\//, '');
+  const tagRe = new RegExp(`<${tag}\\b[^>]*>`, 'gi');
+  const attrRe = new RegExp(`${attr}\\s*=\\s*["']([^"']*)["']`, 'i');
+  const extRe = new RegExp(`\\.${ext}$`, 'i');
+  let tagMatch;
+  while ((tagMatch = tagRe.exec(html)) !== null) {
+    const attrMatch = tagMatch[0].match(attrRe);
+    if (!attrMatch) continue;
+    const raw = attrMatch[1].trim();
+    if (!raw) continue;
+    // 跳过外链 / data: / 锚点：否则会把 https://cdn.../a.css 存成垃圾路径
+    if (NON_LOCAL_RE.test(raw) || raw.startsWith('//')) continue;
+    // 按「剥掉查询串/锚点后的扩展名」判断，兼容 style.css?v=1
+    if (!extRe.test(raw.split(/[?#]/)[0])) continue;
+    const normalized = normalizeRelPath(raw);
+    if (normalized) return normalized;
+  }
+  return fallback;
 }
 
 /**
@@ -44,8 +69,11 @@ function buildHtml(html, css, js, name) {
   const hasStructure = /<html[\s>]/i.test(html);
   const cssPath = findAssetPath(html, 'link', 'href', 'css', 'style.css');
   const jsPath = findAssetPath(html, 'script', 'src', 'js', 'script.js');
-  const hasCssRef = cssPath !== 'style.css' || /style\.css/i.test(html);
-  const hasJsRef = jsPath !== 'script.js' || /script\.js/i.test(html);
+  // 「是否已引用」必须按 HTML 里是否真有对应标签判断，不能按路径是否等于默认名：
+  // 用户写 `<script src="app.js?v=9">` 时规范化后是 app.js（≠ 默认名 script.js），
+  // 旧逻辑会误判为「没引用过」而重复注入一个 script.js，导致用户引用的 app.js 404
+  const hasCssRef = findAssetPath(html, 'link', 'href', 'css', '') !== '';
+  const hasJsRef = findAssetPath(html, 'script', 'src', 'js', '') !== '';
 
   const cssLink = `<link rel="stylesheet" href="${cssPath}">`;
   const jsTag = `<script src="${jsPath}"></script>`;

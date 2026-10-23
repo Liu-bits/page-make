@@ -211,7 +211,7 @@ await test('回归：登录用户项目无 expiresAt（链接长期有效）', a
   const reg = await fetch(`${BASE}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password: 'test-password-123' }),
+  body: JSON.stringify({ email, password: 'Test#Passw0rd1' }),
   });
   assertEqual(reg.status, 200, '注册应成功');
   const auth = await reg.json();

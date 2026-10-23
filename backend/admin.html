@@ -51,6 +51,11 @@
 
   <!-- 主界面 -->
   <div id="mainView" style="display:none">
+    <!-- 默认密码警示横幅：后台公网可达，仍在用 123456 等于门户大开 -->
+    <div id="pwdBanner" class="card" style="display:none;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;margin-bottom:12px">
+      <strong>安全提醒：</strong>您正在使用出厂默认密码 <code>123456</code>，后台地址公网可达，任何人猜到即可查看全部用户数据。
+      <button class="sm" style="margin-left:8px" onclick="changePwd()">立即修改</button>
+    </div>
     <div style="display:flex;justify-content:space-between;align-items:center">
       <h1>Page-make 管理后台</h1>
       <div>
@@ -133,6 +138,8 @@ async function login() {
     const j = await r.json();
     if (!j.ok) throw new Error(j.error === 'WRONG_PASSWORD' ? '密码错误' : j.error === 'TOO_MANY_ATTEMPTS' ? '尝试太频繁，稍后再试' : j.error);
     token = j.token; sessionStorage.setItem('adminToken', token);
+    // 仍是默认密码则显示强制改密横幅
+    if (j.mustChangePassword) document.getElementById('pwdBanner').style.display = 'block';
     enter();
   } catch (e) {
     const m = document.getElementById('loginMsg');
@@ -259,11 +266,24 @@ function delFeedback(id) {
 }
 
 function changePwd() {
-  const p = prompt('新的管理员密码（至少 6 位）：');
+  const p = prompt('新的管理员密码（至少 8 位，需含字母 + 数字或符号，不能用 12345678 / aaaaaaaa 这类弱口令）：');
   if (!p) return;
   api(API.action, { action: 'setPassword', newPassword: p })
-    .then(() => msg('密码已修改，下次登录生效'))
-    .catch(e => msg(e.message === 'WEAK_PASSWORD' ? '密码太短（至少 6 位）' : e.message, true));
+    .then(() => {
+      document.getElementById('pwdBanner').style.display = 'none';
+      msg('密码已修改，下次登录生效');
+    })
+    .catch(e => msg(weakPwdHint(e.message), true));
+}
+
+// 弱密码错误码 → 人话
+function weakPwdHint(code) {
+  return {
+    WEAK_PASSWORD: '密码太短（至少 8 位）',
+    WEAK_PASSWORD_COMMON: '这是常见弱口令，请换一个',
+    WEAK_PASSWORD_PATTERN: '不能是 aaaaaaa / 12345678 这类连续或重复字符',
+    WEAK_PASSWORD_SIMPLE: '需同时包含字母和数字/符号',
+  }[code] || code;
 }
 
 if (token) enter();

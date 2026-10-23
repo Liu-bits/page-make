@@ -450,6 +450,33 @@ await test('Google 登录：非法 token 拒绝 + 参数校验', async () => {
   assertEqual(missing.error, 'BAD_REQUEST', '缺 idToken 应报 BAD_REQUEST');
 });
 
+// 密码安全：弱口令一律拒绝（长度够也不放行）
+await test('密码安全：弱口令一律拒绝，合法密码可注册', async () => {
+  // 1) 弱口令一律拒绝（长度够也不放行）
+  const weak = ['12345678', 'aaaaaaaa', 'password', '11111111', 'qwerty123',
+    'abcdefgh', 'onlyletters', 'letmein1'];
+  for (const [i, pw] of weak.entries()) {
+    const res = await fetch(`${BASE}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: `weak-${Date.now()}-${i}@t.local`, password: pw }),
+    });
+    const json = await res.json();
+    assert(!json.ok, `弱口令 ${pw} 应被拒绝`);
+    assert(json.error.startsWith('WEAK_PASSWORD'), `弱口令 ${pw} 应返回 WEAK_PASSWORD* 错误码`);
+  }
+
+  // 2) 合法密码可通过
+  const okEmail = `strong-${Date.now()}@t.local`;
+  const strong = 'Str0ng#Pass99';
+  const reg = await (await fetch(`${BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: okEmail, password: strong }),
+  })).json();
+  assert(reg.ok, `合法密码应注册成功：${JSON.stringify(reg)}`);
+});
+
 await test('邮箱密码：注册 → 登录 → 错误密码', async () => {
   const email = `user${Date.now()}@example.com`;
   const password = 'secret-pass-123';
@@ -754,7 +781,7 @@ await test('账号删除：删除项目与用户 → 会话失效', async () => 
   const reg = await (await fetch(`${BASE}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password: 'password123' }),
+  body: JSON.stringify({ email, password: 'Test#Passw0rd1' }),
   })).json();
   assert(reg.ok, `注册应成功：${JSON.stringify(reg)}`);
   // DEV_NO_AUTH 下用 X-Test-User 指定身份；真实 token 一并携带（生产环境走令牌）
@@ -817,7 +844,7 @@ await test('账号删除：删除项目与用户 → 会话失效', async () => 
   const reReg = await (await fetch(`${BASE}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password: 'password123' }),
+  body: JSON.stringify({ email, password: 'Test#Passw0rd1' }),
   })).json();
   assert(reReg.ok, '删除后同邮箱应可重新注册');
 });
@@ -899,6 +926,31 @@ await test('服务重启后数据仍在（磁盘 KV 持久化）', async () => {
   } finally {
     server2.kill();
   }
+});
+
+// ---------------------------------------------------------------------------
+// 登录限速放在最后：本套件所有用例共用同一 IP，先跑会占用错误密码配额影响后续用例
+await test('登录限速：连续错误密码触发 429（防暴力破解）', async () => {
+  const email = `ratelimit-${Date.now()}@t.local`;
+  const reg = await (await fetch(`${BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'Str0ng#Pass99' }),
+  })).json();
+  assert(reg.ok, `注册应成功：${JSON.stringify(reg)}`);
+
+  let limited = 0;
+  let unauthorized = 0;
+  for (let i = 0; i < 14; i++) {
+    const res = await fetch(`${BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: `wrong-${i}-pass` }),
+    });
+    if (res.status === 429) limited++;
+    else if (res.status === 401) unauthorized++;
+  }
+  assert(limited > 0, `连续错误密码应触发 429，实际 401=${unauthorized} 429=${limited}`);
 });
 
 // ---------------------------------------------------------------------------

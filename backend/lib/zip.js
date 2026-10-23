@@ -2,6 +2,7 @@
 // 支持 stored(0) / deflate(8)；deflate 用运行时 DecompressionStream('deflate-raw')
 // 自动过滤 __MACOSX / .DS_Store / 隐藏文件
 import { ZIP_MAX_TOTAL_BYTES, ZIP_MAX_ENTRIES } from './state.js';
+import { normalizeRelPath } from './paths.js';
 
 export class ZipError extends Error {
   constructor(code, message) {
@@ -19,7 +20,9 @@ function shouldSkip(name) {
 }
 
 function normalizePath(name) {
-  return name.replace(/\\/g, '/').replace(/^\.\//, '');
+  // 折叠 . / .. 并统一斜杠：ZIP 条目名可能含 `sub/../../evil.css`，
+  // 原样入库会污染 KV key 与 PHP 物化路径（路径穿越）
+  return normalizeRelPath(name);
 }
 
 function decodeName(bytes, flags) {

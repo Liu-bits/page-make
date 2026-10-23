@@ -176,6 +176,10 @@
 "password_rule" = "密码仅用于本 App，与邮箱密码无关；v1 不发送验证邮件";
 "error_invalid_email" = "邮箱格式不正确";
 "error_weak_password" = "密码至少 8 位";
+"error_weak_password_common" = "这个密码太常见了，换一个更独特的";
+"error_weak_password_pattern" = "不能用 aaaaaaa / 12345678 这类重复或连续字符";
+"error_weak_password_simple" = "请混合使用字母和数字或符号";
+"error_too_many_attempts" = "尝试次数过多，请稍后再试";
 "error_email_taken" = "该邮箱已注册，请直接登录";
 "error_invalid_credentials" = "邮箱或密码错误";
 

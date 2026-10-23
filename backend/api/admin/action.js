@@ -14,7 +14,7 @@ import { decodeKey } from '../../lib/base64.js';
 import { ok, fail } from '../../lib/responses.js';
 import { requireAdmin, changeAdminPassword } from '../../lib/admin.js';
 import { BAN_LEVELS } from '../../lib/state.js';
-import { hashPassword, userIdFromEmail, EMAIL_RE, MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from '../../lib/password.js';
+import { hashPassword, userIdFromEmail, EMAIL_RE, checkPasswordStrength } from '../../lib/password.js';
 
 /** 遍历某用户的全部项目（uproject 索引的 value 段是 hex 编码的项目 ID，需 decodeKey 还原） */
 async function forEachUserProject(kv, userId, fn) {
@@ -107,11 +107,8 @@ async function deleteUserAccount(kv, { userId, requireTest = false }) {
 async function createTestAccount(kv, { email, password }) {
   const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
   if (!EMAIL_RE.test(cleanEmail)) return fail('BAD_REQUEST', 400);
-  if (typeof password !== 'string'
-    || password.length < MIN_PASSWORD_LENGTH
-    || password.length > MAX_PASSWORD_LENGTH) {
-    return fail('WEAK_PASSWORD', 400);
-  }
+  const strength = checkPasswordStrength(password);
+  if (!strength.ok) return fail(strength.reason, 400);
   const userId = await userIdFromEmail(cleanEmail);
   if (await kvGet(kv, keys.user(userId))) return fail('USER_EXISTS', 409);
 
@@ -179,7 +176,8 @@ export async function onRequest(context) {
         await changeAdminPassword(kv, body.newPassword);
         return ok({ changed: true });
       } catch (error) {
-        if (error.message === 'WEAK_PASSWORD') return fail('WEAK_PASSWORD', 400);
+        // 强度校验失败（WEAK_PASSWORD / _COMMON / _PATTERN / _SIMPLE）原样回传错误码
+        if (error.message.startsWith('WEAK_PASSWORD')) return fail(error.message, 400);
         return fail('STORAGE_ERROR', 500);
       }
     }

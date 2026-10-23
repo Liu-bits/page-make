@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { kvGet, kvPut, kvDel, keys, nowSeconds } from './kv.js';
 import { fail } from './responses.js';
-import { hashPassword, verifyPassword } from './password.js';
+import { hashPassword, verifyPassword, checkPasswordStrength } from './password.js';
 import { rateLimited, clientIp } from './ratelimit.js';
 
 const ADMIN_PASSWORD_KEY = 'config_admin_password';
@@ -34,10 +34,19 @@ export async function verifyAdminPassword(kv, password) {
   return verifyPassword(password, record);
 }
 
+/**
+ * 是否仍在使用出厂默认密码（123456）
+ * 后台 /admin 公网可达，默认密码等于把全部用户数据敞开的门，登录时必须强制提醒改密
+ */
+export async function isDefaultAdminPassword(kv) {
+  const record = await getPasswordRecord(kv);
+  return verifyPassword('123456', record);
+}
+
 export async function changeAdminPassword(kv, newPassword) {
-  if (typeof newPassword !== 'string' || newPassword.length < 6 || newPassword.length > 72) {
-    throw new Error('WEAK_PASSWORD');
-  }
+  // 后台密码同样走强度校验（最低 8 位，原 6 位偏弱）
+  const strength = checkPasswordStrength(newPassword);
+  if (!strength.ok) throw new Error(strength.reason);
   const record = await hashPassword(newPassword);
   await kvPut(kv, keys.config(ADMIN_PASSWORD_KEY), record);
 }

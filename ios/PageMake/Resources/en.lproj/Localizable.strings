@@ -176,6 +176,10 @@
 "password_rule" = "Only used by Page-make — not your email password. No verification email in v1.";
 "error_invalid_email" = "Invalid email address";
 "error_weak_password" = "Password must be at least 8 characters";
+"error_weak_password_common" = "This password is too common — pick a different one";
+"error_weak_password_pattern" = "Avoid repeated or sequential characters like aaaaaaa or 12345678";
+"error_weak_password_simple" = "Mix letters with numbers or symbols";
+"error_too_many_attempts" = "Too many attempts — try again in a minute";
 "error_email_taken" = "Email already registered — log in instead";
 "error_invalid_credentials" = "Wrong email or password";
 

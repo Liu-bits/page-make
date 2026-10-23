@@ -474,5 +474,37 @@ await test('实时拉取成功 → 优先 live 并写入磁盘缓存', async () 
 });
 
 // ---------------------------------------------------------------------------
+console.log('\n[11] 密码强度校验');
+
+await test('常见弱口令一律拒绝（长度够也不放行）', async () => {
+  const { checkPasswordStrength } = await import('../backend/lib/password.js');
+  for (const pw of ['12345678', '123456789', 'password', 'password1', 'aaaaaaaa',
+    '11111111', 'qwerty123', 'abc12345', 'letmein1', 'pagemake1']) {
+    assert(!checkPasswordStrength(pw).ok, `${pw} 应被判为弱密码`);
+  }
+});
+
+await test('重复/连续序列被拒', async () => {
+  const { checkPasswordStrength } = await import('../backend/lib/password.js');
+  for (const pw of ['qqqqqqqq', 'zzzzzzzz', 'abcdefgh', '12345678', '87654321']) {
+    assert(!checkPasswordStrength(pw).ok, `${pw} 应被判为序列弱模式`);
+  }
+});
+
+await test('纯字母/纯数字被拒，混合字符才放行', async () => {
+  const { checkPasswordStrength } = await import('../backend/lib/password.js');
+  assert(!checkPasswordStrength('onlyletters').ok, '纯字母应拒');
+  assert(!checkPasswordStrength('1234567890').ok, '纯数字应拒');
+  assert(checkPasswordStrength('hello2024world').ok, '字母+数字应通过');
+  assert(checkPasswordStrength('Str0ng#Pass').ok, '字母+符号应通过');
+});
+
+await test('长度边界：<8 拒、>72 拒', async () => {
+  const { checkPasswordStrength } = await import('../backend/lib/password.js');
+  assert(!checkPasswordStrength('Ab1#').ok, '过短应拒');
+  assert(!checkPasswordStrength('A'.repeat(73) + '1').ok, '超长应拒');
+  assert(checkPasswordStrength('Ab1#efgh').ok, '8 位混合应通过');
+});
+
 console.log(`\n结果：${passed} 通过，${failed} 失败\n`);
 process.exit(failed > 0 ? 1 : 0);

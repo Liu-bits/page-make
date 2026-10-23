@@ -3,7 +3,7 @@
 // 安全：每 IP 每分钟最多 5 次；密码 PBKDF2 哈希存储（初始 123456，登录后台后请立即修改）
 import { getKV } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
-import { verifyAdminPassword, createAdminSession, loginRateLimited } from '../../lib/admin.js';
+import { verifyAdminPassword, createAdminSession, loginRateLimited, isDefaultAdminPassword } from '../../lib/admin.js';
 
 export async function onRequest(context) {
   const { request } = context;
@@ -26,5 +26,7 @@ export async function onRequest(context) {
   }
 
   const token = await createAdminSession(kv);
-  return ok({ token, expiresIn: 24 * 3600 });
+  // 仍是出厂默认密码时告知前端弹强制改密横幅（后台公网可达，默认密码风险极高）
+  const mustChangePassword = await isDefaultAdminPassword(kv);
+  return ok({ token, expiresIn: 24 * 3600, mustChangePassword });
 }
