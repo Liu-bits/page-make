@@ -1,5 +1,39 @@
 import SwiftUI
 
+/// 非阻塞错误横幅：网络/服务错误显示在内容上方，不抢占 presentation，
+/// 因而不会与 sheet、alert、navigationDestination 互相卡死。
+struct ErrorBanner: View {
+    let message: String
+    var actionTitle: String? = nil
+    var action: (() -> Void)? = nil
+    var onDismiss: (() -> Void)? = nil
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.footnote)
+                .lineLimit(3)
+            Spacer(minLength: 4)
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .font(.footnote.bold())
+            }
+            if let onDismiss {
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                }
+                .accessibilityLabel(L10n.string("done"))
+            }
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
+    }
+}
+
 /// 通用小组件：AlertItem、状态徽章、主按钮
 struct AlertItem: Identifiable {
     let id = UUID()

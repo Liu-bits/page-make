@@ -4,8 +4,6 @@ import Foundation
 /// 上传服务：分片上传 + 状态轮询（每 2 秒）
 @MainActor
 final class UploadService: ObservableObject {
-    static let shared = UploadService()
-
     enum ItemStatus: Equatable {
         case uploading
         case processing
@@ -33,7 +31,7 @@ final class UploadService: ObservableObject {
     private let api = APIClient.shared
     private var tasks: [UUID: Task<Void, Never>] = [:]
 
-    private init() {}
+    init() {}
 
     func upload(files: [PickedFile], provider: HostProvider) {
         let displayName = files.count == 1

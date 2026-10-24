@@ -5,8 +5,9 @@ import Combine
 struct UploadQueueView: View {
     let source: CreateSource
     let provider: HostProvider
+    var onCreateFinished: (() -> Void)? = nil
 
-    @StateObject private var uploadService = UploadService.shared
+    @StateObject private var uploadService = UploadService()
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var didStart = false
@@ -60,6 +61,8 @@ struct UploadQueueView: View {
                 createdProject = project
                 Task {
                     await appState.projectDidBecomeReady(project)
+                    // 创建成功后主动关闭入口 sheet 并让列表页刷新，不等用户手动点完成。
+                    onCreateFinished?()
                 }
             }
             .navigationDestination(item: $createdProject) { project in

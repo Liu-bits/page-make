@@ -119,9 +119,9 @@ export function rewriteLocalRefs(html) {
     tagReFor(tag),
     (tagText) => tagText.replace(attrReFullFor(attr), (whole, prefix, quote, value) => {
       const normalized = localAssetRef(value, ext);
-      // 已是规范形式（或非本地引用）就不动，减少无意义的 HTML 改动
-      if (!normalized || normalized === value.trim()) return whole;
-      return `${prefix}${quote}${normalized}${quote}`;
+      const target = normalized;
+      if (!target || target === value.trim()) return whole;
+      return `${prefix}${quote}${target}${quote}`;
     })
   );
 
@@ -130,12 +130,15 @@ export function rewriteLocalRefs(html) {
     tagReFor(tag),
     (tagText) => tagText.replace(attrReFullFor(attr), (whole, prefix, quote, value) => {
       const normalized = anyLocalRef(value);
-      if (!normalized || normalized === value.trim()) return whole;
-      return `${prefix}${quote}${normalized}${quote}`;
+      const target = normalized;
+      if (!target || target === value.trim()) return whole;
+      return `${prefix}${quote}${target}${quote}`;
     })
   );
 
-  let out = rewrite(rewrite(html, 'link', 'href', 'css'), 'script', 'src', 'js');
+  // link[href] 交给下面的通用规则处理，否则同一标签先被 CSS 专用规则
+  // 加上项目前缀，再被通用规则加一次，最终出现 `/p/<id>/p/<id>/...`。
+  let out = rewrite(html, 'script', 'src', 'js');
   for (const [tag, attr] of [
     ['img', 'src'], ['source', 'src'], ['iframe', 'src'], ['audio', 'src'],
     ['video', 'src'], ['video', 'poster'], ['track', 'src'], ['embed', 'src'],
@@ -152,7 +155,8 @@ export function rewriteLocalRefs(html) {
       const m = cand.match(/^(\s*)(\S+)(\s.*)?$/);
       if (!m) return cand;
       const normalized = anyLocalRef(m[2]);
-      return `${m[1]}${normalized || m[2]}${m[3] || ''}`;
+      const target = normalized;
+      return `${m[1]}${target || m[2]}${m[3] || ''}`;
     });
     const joined = parts.join(',');
     return joined === v ? w : `${p}${q}${joined}${q}`;
@@ -162,7 +166,8 @@ export function rewriteLocalRefs(html) {
       const m = cand.match(/^(\s*)(\S+)(\s.*)?$/);
       if (!m) return cand;
       const normalized = anyLocalRef(m[2]);
-      return `${m[1]}${normalized || m[2]}${m[3] || ''}`;
+      const target = normalized;
+      return `${m[1]}${target || m[2]}${m[3] || ''}`;
     });
     const joined = parts.join(',');
     return joined === v ? w : `${p}${q}${joined}${q}`;
@@ -178,6 +183,35 @@ export function rewriteLocalRefs(html) {
       return rewritten === value ? whole : `${prefix}${quote}${rewritten}${quote}`;
     });
   return out;
+}
+
+/**
+ * 给公开页面注入项目根 `<base>`。
+ *
+ * 公开入口是 `/p/<项目ID>`（无尾斜杠），浏览器会把最后一段当成文件名：
+ * `<link href="style.css">` 会请求 `/p/style.css`，而不是
+ * `/p/<项目ID>/style.css`。注入 `<base href="/p/<项目ID>/">` 后，HTML、CSS、
+ * 图片、站内链接以及 JS 里的相对 fetch 都以项目目录为基准解析。
+ *
+ * 用户显式写了 `<base>` 时不覆盖其意图，只补缺失场景。
+ */
+export function injectPublicBase(html, basePath) {
+  const source = String(html ?? '');
+  const base = normalizePublicBase(basePath);
+  if (!base || /<base\b/i.test(source)) return source;
+
+  const href = `${base}/`;
+  const tag = `<base href="${href}">`;
+  if (/<head\b[^>]*>/i.test(source)) {
+    return source.replace(/<head\b[^>]*>/i, (head) => `${head}\n${tag}`);
+  }
+  if (/<html\b[^>]*>/i.test(source)) {
+    return source.replace(/<html\b[^>]*>/i, (htmlTag) => `${htmlTag}\n<head>${tag}</head>`);
+  }
+  if (/<body\b[^>]*>/i.test(source)) {
+    return source.replace(/<body\b[^>]*>/i, (bodyTag) => `<head>${tag}</head>\n${bodyTag}`);
+  }
+  return `${tag}\n${source}`;
 }
 
 /**
@@ -246,6 +280,17 @@ export function rewriteCssRefs(css) {
     const pathLiteral = `${quote}${value}${quote}`;
     return whole.slice(0, whole.length - pathLiteral.length) + `${quote}${normalized}${quote}`;
   });
+}
+
+/**
+ * 公开入口前缀：项目入口是不带尾斜杠的 `/p/<id>`，浏览器会把它当成文件路径，
+ * 因而 `style.css` 实际被解析为 `/p/style.css`。下发时统一写成站点绝对路径，
+ * 才能不受入口 URL 形态影响。
+ */
+function normalizePublicBase(basePath) {
+  const base = String(basePath ?? '').trim().replace(/\/+$/, '');
+  if (!base || !base.startsWith('/')) return '';
+  return base;
 }
 
 /**

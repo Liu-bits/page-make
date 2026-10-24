@@ -73,6 +73,8 @@ export async function onRequest(context) {
     // （入口页 `/p/<id>` 无尾斜杠，`../x` 会被解析到站点外）
     if (/\.html?$/i.test(entry)) {
       const raw = files.get(entry);
+      // 存储侧只保留项目内相对路径；`<base>` 由公开路由在下发时统一注入，
+      // 避免发布一次后把项目 ID 写进可编辑源码。
       const rewritten = rewriteLocalRefs(new TextDecoder().decode(raw));
       if (rewritten !== new TextDecoder().decode(raw)) {
         const bytes = new TextEncoder().encode(rewritten);

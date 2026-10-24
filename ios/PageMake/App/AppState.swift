@@ -9,10 +9,14 @@ final class AppState: ObservableObject {
     @Published var isLoadingProjects = false
     @Published var authError: String?
     @Published var banInfo: BanInfo?
+    /// 启动恢复会话时拉取项目失败：用于列表页非阻塞提示 + 重试，不弹全局弹窗
+    @Published var projectsLoadError: String?
 
     private let auth = AuthService()
     private let googleAuth = GoogleAuthService()
     private let api = APIClient.shared
+    /// 首开恢复会话已发起拉取时，列表页 onAppear 不应再并发发同一请求。
+    private var isRestoringProjects = false
 
     var isLoggedIn: Bool {
         guard let session else { return false }
@@ -42,7 +46,8 @@ final class AppState: ObservableObject {
         }
         session = restored
         api.setToken(token)
-        Task { await loadProjects() }
+        isRestoringProjects = true
+        Task { await loadProjects(isInitialRestore: true) }
         maybeSilentRefresh()
     }
 
@@ -98,6 +103,8 @@ final class AppState: ObservableObject {
         api.setToken(nil)
         session = nil
         projects = []
+        projectsLoadError = nil
+        isRestoringProjects = false
         banInfo = nil
     }
 
@@ -261,22 +268,52 @@ final class AppState: ObservableObject {
 
     // MARK: - 项目
 
-    func loadProjects() async {
+    func loadProjects(isInitialRestore: Bool = false) async {
         guard isLoggedIn else { return }
+        if isInitialRestore, isRestoringProjects, isLoadingProjects {
+            // 冷启动时 restoreSession 和 ProjectListView.onAppear 会先后触发；
+            // 同一份列表没必要并发请求两次（尤其会放大限速/网关抖动）。
+            return
+        }
+        isRestoringProjects = isInitialRestore
         isLoadingProjects = true
-        defer { isLoadingProjects = false }
+        defer {
+            isLoadingProjects = false
+            isRestoringProjects = false
+        }
         do {
             let list = try await api.listProjects()
             projects = list.sorted { ($0.createdAt) > ($1.createdAt) }
+            projectsLoadError = nil
         } catch let error as APIError {
             if case .banned(let ban) = error {
                 banInfo = ban
+            } else if case .http(let status, _) = error, status == 401 {
+                // 服务端会话失效：清理本地凭证并回登录页，避免停在空列表反复报错。
+                let message = L10n.string("session_expired")
+                signOut()
+                // signOut 会清理登录态；横幅挂在 RootView，不会和登录 sheet 抢 presentation。
+                authError = message
+            } else if isInitialRestore {
+                // 首开恢复旧会话时网络失败是常见冷启动抖动：保留页面可用、
+                // 在列表内显示“重试”，绝不能用全局 alert 拦截所有按钮。
+                projectsLoadError = error.errorDescription
             } else {
                 authError = error.errorDescription
             }
         } catch {
-            authError = L10n.string("error_network")
+            if isInitialRestore {
+                projectsLoadError = L10n.string("error_network")
+            } else {
+                authError = L10n.string("error_network")
+            }
         }
+    }
+
+    func retryLoadProjects() async {
+        projectsLoadError = nil
+        isRestoringProjects = false
+        await loadProjects(isInitialRestore: true)
     }
 
     @discardableResult

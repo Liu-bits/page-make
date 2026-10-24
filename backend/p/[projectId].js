@@ -3,6 +3,7 @@
 import { getKV, kvGet, keys, nowSeconds } from '../lib/kv.js';
 import { contentTypeFor, htmlPage } from '../lib/responses.js';
 import { STATUS } from '../lib/state.js';
+import { injectPublicBase, rewriteLocalRefs } from '../lib/paths.js';
 
 const ID_RE = /^[a-f0-9]{32}$/;
 
@@ -36,9 +37,22 @@ export async function onRequest(context) {
   const bytes = await kv.get(keys.siteFile(id, entry), { type: 'arrayBuffer' });
   if (!bytes) return htmlPage(404, 'notFound', request);
 
-  return new Response(bytes, {
+  const type = contentTypeFor(entry);
+  // 入口 URL 没有尾斜杠，相对资源会被浏览器解析到 /p/ 根。注入项目级
+  // <base> 是唯一能同时覆盖 HTML/CSS/JS/图片与运行时 fetch 的统一下发兜底。
+  let body = bytes;
+  if (/^text\/html/i.test(type)) {
+    let html = new TextDecoder().decode(bytes);
+    // 存储层只保存项目内相对路径。下发时先归一历史数据里的 `../`、`./`
+    // 等写法，再统一注入项目根 <base>；不能同时改写成 `/p/<id>/...`，
+    // 否则路径被加两次前缀，且用户后续编辑时会把部署 ID 写回源码。
+    html = rewriteLocalRefs(html);
+    body = injectPublicBase(html, `/p/${id}`);
+  }
+
+  return new Response(body, {
     headers: {
-      'Content-Type': contentTypeFor(entry),
+      'Content-Type': type,
       'Cache-Control': 'public, max-age=60',
     },
   });

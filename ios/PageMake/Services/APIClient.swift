@@ -45,42 +45,75 @@ final class APIClient {
         method: String = "GET",
         body: Data? = nil,
         contentType: String? = "application/json",
-        requiresAuth: Bool = true
+        requiresAuth: Bool = true,
+        maxAttempts: Int? = nil
     ) async throws -> Data {
         guard let url = URL(string: path, relativeTo: baseURL) else {
             throw APIError.invalidURL
         }
-        var req = URLRequest(url: url)
-        req.httpMethod = method
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let body {
-            req.httpBody = body
-            if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
-        }
-        if requiresAuth, let token {
-            // 自定义头：ModelScope 网关会拦截 Authorization（误判为 SDK Token）
-            req.setValue(token, forHTTPHeaderField: "X-Pagemake-Token")
-        }
+        // 读请求允许短暂重试：ModelScope 冷启动时网关会先返回 502/503，
+        // 首开直接弹“网络出错”其实是可恢复的启动抖动。写请求绝不自动重试，
+        // 避免重复创建项目或重复上传分片。
+        let attempts = max(1, maxAttempts ?? ((method == "GET" || method == "HEAD") ? 3 : 1))
+        var lastError: Error = APIError.network
 
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await URLSession.shared.data(for: req)
-        } catch {
-            throw APIError.network
-        }
-        guard let http = response as? HTTPURLResponse else { throw APIError.network }
+        for attempt in 1...attempts {
+            if Task.isCancelled { throw CancellationError() }
+            var req = URLRequest(url: url)
+            req.httpMethod = method
+            req.timeoutInterval = 25
+            req.setValue("application/json", forHTTPHeaderField: "Accept")
+            if let body {
+                req.httpBody = body
+                if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
+            }
+            if requiresAuth, let token {
+                // 自定义头：ModelScope 网关会拦截 Authorization（误判为 SDK Token）
+                req.setValue(token, forHTTPHeaderField: "X-Pagemake-Token")
+            }
 
-        if http.statusCode == 403,
-           let payload = try? decoder.decode(ErrorPayload.self, from: data),
-           payload.error == "BANNED",
-           let ban = payload.ban {
-            throw APIError.banned(ban: ban)
+            let data: Data
+            let response: URLResponse
+            do {
+                (data, response) = try await URLSession.shared.data(for: req)
+            } catch {
+                lastError = error
+                if attempt < attempts {
+                    try? await Task.sleep(nanoseconds: UInt64(attempt) * 700_000_000)
+                    continue
+                }
+                throw APIError.network
+            }
+            guard let http = response as? HTTPURLResponse else {
+                lastError = APIError.network
+                if attempt < attempts {
+                    try? await Task.sleep(nanoseconds: UInt64(attempt) * 700_000_000)
+                    continue
+                }
+                throw APIError.network
+            }
+
+            if http.statusCode == 403,
+               let payload = try? decoder.decode(ErrorPayload.self, from: data),
+               payload.error == "BANNED",
+               let ban = payload.ban {
+                throw APIError.banned(ban: ban)
+            }
+
+            if (500...599).contains(http.statusCode), attempt < attempts {
+                let payload = try? decoder.decode(ErrorPayload.self, from: data)
+                lastError = APIError.http(status: http.statusCode, code: payload?.errorCode ?? payload?.error)
+                try? await Task.sleep(nanoseconds: UInt64(attempt) * 900_000_000)
+                continue
+            }
+
+            guard (200..<300).contains(http.statusCode) else {
+                let payload = try? decoder.decode(ErrorPayload.self, from: data)
+                throw APIError.http(status: http.statusCode, code: payload?.errorCode ?? payload?.error)
+            }
+            return data
         }
-        guard (200..<300).contains(http.statusCode) else {
-            let payload = try? decoder.decode(ErrorPayload.self, from: data)
-            throw APIError.http(status: http.statusCode, code: payload?.errorCode ?? payload?.error)
-        }
-        return data
+        throw lastError
     }
 
     // MARK: - 鉴权

@@ -72,6 +72,8 @@ export async function onRequest(context) {
   const type = contentTypeFor(actualPath);
   let body = bytes;
   if (/^text\/css/i.test(type)) {
+    // CSS 内引用保持项目内相对路径，解析基准是样式表自身的
+    // `/p/<id>/style.css`；不要写死部署 ID，避免源码与项目绑定。
     body = rewriteCssRefs(new TextDecoder().decode(bytes));
   }
 

@@ -196,7 +196,9 @@ E:/Page-make/
 | `node dev/test-assets.mjs` | 25 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
 | `node dev/test-admin.mjs` | 10 | 后台（登录/哈希存储/测试账号权益/封禁下架+禁登/解封恢复/删号） |
 
-> Node 用 managed 绝对路径运行。测试脚本坑：`fail()` 的 error 字段是错误码字符串本身；
+> Node 优先用 `mcp__codex_app__load_workspace_dependencies` 返回的运行时绝对路径；
+> AGENTS 里旧版 `C:/Users/liu20/.workbuddy-ai/.../node.exe` 可能已不存在。
+> 测试脚本坑：`fail()` 的 error 字段是错误码字符串本身；
 > DiskKV 文件名 = `encodeKey(keys.project(id))`；DEV_NO_AUTH 下测试身份用 `X-Test-User` 头。
 
 
@@ -290,6 +292,11 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
   必须 `rewriteLocalRefs` 同步改写，且四条链路都要覆盖：粘贴 / ZIP 上传 / 项目模式 publish /
   测试盲区：旧用例只断言「资源 200」没断言「served HTML 里的引用字符串」，所以漏了一整轮；
   现在两条都断言。
+- **`<base>` 与绝对路径不能同时下发**：公开 HTML 现在只做
+  `rewriteLocalRefs(html)` + `injectPublicBase(html, "/p/<id>")`；不能再把引用改写成
+  `/p/<id>/style.css`。两者叠加会让路径语义混乱，并在项目编辑/重复发布时污染源码。
+  测试必须用 WHATWG `URL` 按 `<base href="/p/<id>/">` 实际解析 `style.css` / `script.js`，
+  同时断言下发 HTML 仍保留相对引用；只直接请求 `/p/<id>/style.css` 会漏掉真实浏览器断链。
 - **静态诊断要与服务端用同一套路径归一**：diagnostics.js 曾只剥 `./` 和首部 `/`，
   没折叠 `..` → 文件存在却误报「引用了 ../style.css，但文件其实在 style.css」。
   诊断给用户看的是假告警，改 `normalizeRelPath` 后消掉。

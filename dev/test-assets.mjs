@@ -132,14 +132,22 @@ await test('粘贴：完整 HTML 引用 style.css / script.js → 资源可访�
   const page = await fetch(`${BASE}/p/${id}`);
   assertEqual(page.status, 200, '入口应 200');
   const text = await page.text();
+  // 入口 URL 是 `/p/<id>`（无尾斜杠）。浏览器必须靠 <base> 才能把
+  // `style.css` 解析到 `/p/<id>/style.css`，而不是 `/p/style.css`。
+  assert(text.includes(`<base href="/p/${id}/">`), `入口应注入项目级 <base>，实际：${text.slice(0, 240)}`);
   assert(text.includes('href="style.css"'), 'HTML 应保留 style.css 引用');
   assert(text.includes('src="script.js"'), 'HTML 应保留 script.js 引用');
 
-  const css = await fetch(`${BASE}/p/${id}/style.css`);
+  const cssURL = new URL('style.css', new URL(`/p/${id}/`, BASE));
+  const jsURL = new URL('script.js', new URL(`/p/${id}/`, BASE));
+  assertEqual(cssURL.pathname, `/p/${id}/style.css`, '浏览器解析 style.css 的路径应正确');
+  assertEqual(jsURL.pathname, `/p/${id}/script.js`, '浏览器解析 script.js 的路径应正确');
+
+  const css = await fetch(cssURL);
   assertEqual(css.status, 200, 'style.css 应 200');
   assert((await css.text()).includes('color: red'), 'CSS 内容应一致');
 
-  const js = await fetch(`${BASE}/p/${id}/script.js`);
+  const js = await fetch(jsURL);
   assertEqual(js.status, 200, 'script.js 应 200');
   assert((await js.text()).includes('console.log'), 'JS 内容应一致');
 });

@@ -4,28 +4,25 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var appState: AppState
 
-    /// 单一 sheet 状态：避免“关闭一个 sheet 的同时打开另一个”导致 SwiftUI
-    /// 在转场中丢弃 presentation（表现为点了创建没反应或偶发闪退）。
+    /// 两个互斥 presentation：
+    /// - 入口选择与设置只负责选择；
+    /// - 创建队列单独承载，入口必须先真正 dismiss 再打开。
+    /// 之前用一个 `.sheet(item:)` 在同一帧替换内容，部分 iOS 版本会把
+    /// 第二次 presentation 吞掉，表现为“所有按钮都没反应”。
     enum ActiveSheet: Identifiable {
         case filePicker
-        case create(CreateSource)
         case settings
 
         var id: String {
             switch self {
             case .filePicker: return "filePicker"
-            case .create(let source):
-                switch source {
-                case .files: return "create-files"
-                case .paste: return "create-paste"
-                case .explorer: return "create-explorer"
-                }
             case .settings: return "settings"
             }
         }
     }
 
     @State private var activeSheet: ActiveSheet?
+    @State private var createSource: CreateSource?
     @State private var explorerProject: Project?
 
     var body: some View {
@@ -43,25 +40,28 @@ struct RootView: View {
                 FilePickerView { source in
                     handlePicked(source)
                 }
-            case .create(let source):
-                CreateFlowView(source: source)
             case .settings:
                 SettingsView()
             }
         }
-        .alert(
-            L10n.string("alert_error"),
-            isPresented: Binding(
-                get: { appState.authError != nil },
-                set: { if !$0 { appState.authError = nil } }
-            )
-        ) {
-            Button(L10n.string("done"), role: .cancel) {}
-        } message: {
-            if let message = appState.authError, !message.isEmpty {
-                Text(message)
-            } else {
-                Text(L10n.string("error_generic"))
+        .sheet(isPresented: Binding(
+            get: { createSource != nil },
+            set: { if !$0 { createSource = nil } }
+        )) {
+            if let source = createSource {
+                CreateFlowView(source: source) {
+                    createSource = nil
+                }
+            }
+        }
+        // 不用全局 alert 展示网络状态：alert 一旦与 sheet 同帧出现，
+        // SwiftUI 会把 presentation 锁死，所有按钮看似“失灵”。全局错误改为
+        // 顶部非阻塞横幅，用户可继续操作并在需要时重试。
+        .overlay(alignment: .top) {
+            if activeSheet == nil, createSource == nil, let message = appState.authError {
+                ErrorBanner(message: message) {
+                    appState.authError = nil
+                }
             }
         }
     }
@@ -85,20 +85,22 @@ struct RootView: View {
     }
 
     private func handlePicked(_ source: CreateSource) {
+        // 先 dismiss 入口 sheet，避免一个 presentation 在转场中被另一个覆盖。
+        activeSheet = nil
         if case .explorer(let name) = source {
-            activeSheet = nil
             Task {
                 if let project = await appState.createExplorerProject(name: name) {
-                    // 等 sheet 关闭动画结束后再压导航栈，避免同一帧切换两个
-                    // presentation 引发 SwiftUI 状态冲突。
-                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    try? await Task.sleep(nanoseconds: 450_000_000)
                     explorerProject = project
                 }
             }
             return
         }
-        // 用新的 create 状态替换 filePicker：先赋值，SwiftUI 会在同一次更新中
-        // 完成 sheet 内容切换，不再依赖“关闭后再置 pendingSource”的竞态。
-        activeSheet = .create(source)
+        // 等 dismiss 转场结束再打开创建队列；两个 sheet 状态各自独立，
+        // 不会再因 item id 在同一帧变化而丢失。
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            createSource = source
+        }
     }
 }

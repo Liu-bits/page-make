@@ -4,10 +4,12 @@
 "app_projects" = "我的项目";
 "cancel" = "取消";
 "done" = "完成";
+"retry" = "重试";
 "send" = "发送";
 "alert_error" = "出错了";
 "error_generic" = "服务出错了，稍后重试";
 "error_network" = "网络出错，请检查网络后重试";
+"session_expired" = "登录已过期，请重新登录";
 "login_canceled" = "已取消登录";
 "login_guest" = "以游客身份继续";
 "guest_login_hint" = "免费 Apple ID 无法使用 Apple 登录，游客身份可完整测试所有功能";

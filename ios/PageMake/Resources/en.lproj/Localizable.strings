@@ -4,10 +4,12 @@
 "app_projects" = "My Projects";
 "cancel" = "Cancel";
 "done" = "Done";
+"retry" = "Retry";
 "send" = "Send";
 "alert_error" = "Something went wrong";
 "error_generic" = "Service error, please try again later";
 "error_network" = "Network error, please check your connection";
+"session_expired" = "Your session has expired. Please sign in again";
 "login_canceled" = "Sign-in cancelled";
 "login_guest" = "Continue as guest";
 "guest_login_hint" = "Free Apple IDs cannot use Sign in with Apple — guest mode supports all features";

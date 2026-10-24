@@ -10,7 +10,6 @@ struct ProjectListView: View {
     @State private var searchText = ""
     @State private var sortOrder: SortOrder = .newest
     @State private var renameTarget: Project?
-    @State private var renameText = ""
 
     enum SortOrder: String, CaseIterable {
         case newest, oldest, name, size
@@ -40,6 +39,18 @@ struct ProjectListView: View {
 
     var body: some View {
         content
+            .overlay(alignment: .top) {
+                if let message = appState.projectsLoadError {
+                    ErrorBanner(
+                        message: message,
+                        actionTitle: L10n.string("retry")
+                    ) {
+                        Task { await appState.retryLoadProjects() }
+                    } onDismiss: {
+                        appState.projectsLoadError = nil
+                    }
+                }
+            }
             .navigationTitle(L10n.string("app_projects"))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -70,11 +81,11 @@ struct ProjectListView: View {
             }
             .onAppear {
                 if appState.isLoggedIn {
-                    Task { await appState.loadProjects() }
+                    Task { await appState.loadProjects(isInitialRestore: true) }
                 }
             }
             .refreshable {
-                await appState.loadProjects()
+                await appState.retryLoadProjects()
             }
             .searchable(text: $searchText, prompt: L10n.string("search_projects"))
             .sheet(isPresented: $showPasswordAuth, onDismiss: {
@@ -85,33 +96,21 @@ struct ProjectListView: View {
                 PasswordAuthView()
                     .environmentObject(appState)
             }
-            .alert(
-                L10n.string("rename_title"),
-                isPresented: Binding(
-                    get: { renameTarget != nil },
-                    set: { if !$0 { renameTarget = nil } }
-                )
-            ) {
-                TextField(L10n.string("rename_placeholder"), text: $renameText)
-                Button(L10n.string("cancel"), role: .cancel) { renameTarget = nil }
-                Button(L10n.string("confirm")) {
-                    guard let target = renameTarget else { return }
-                    let name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    renameTarget = nil
-                    guard !name.isEmpty, name != target.name else { return }
-                    Task {
-                        if let error = await appState.renameProject(target.id, name: name) {
-                            alertItem = AlertItem(message: error)
-                        }
-                    }
-                }
-            }
             .alert(item: $alertItem) { item in
                 Alert(
                     title: Text(L10n.string(item.titleKey)),
                     message: Text(item.message),
                     dismissButton: .default(Text(L10n.string("done")))
                 )
+            }
+            .sheet(item: $renameTarget) { target in
+                RenameProjectSheet(project: target) { name in
+                    Task {
+                        if let error = await appState.renameProject(target.id, name: name) {
+                            alertItem = AlertItem(message: error)
+                        }
+                    }
+                }
             }
     }
 
@@ -241,7 +240,6 @@ struct ProjectListView: View {
                             Label(L10n.string("delete_project"), systemImage: "trash")
                         }
                         Button {
-                            renameText = project.name
                             renameTarget = project
                         } label: {
                             Label(L10n.string("rename"), systemImage: "pencil")
@@ -287,5 +285,53 @@ struct ProjectListView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+}
+
+/// 项目重命名 sheet：原实现用 `.alert` 内嵌 TextField，iOS 27 上
+/// alert 与列表 sheet/导航同时切换时会丢失输入焦点或直接不弹出。
+struct RenameProjectSheet: View {
+    let project: Project
+    let onRename: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String
+
+    init(project: Project, onRename: @escaping (String) -> Void) {
+        self.project = project
+        self.onRename = onRename
+        _text = State(initialValue: project.name)
+    }
+
+    private var normalizedName: String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(L10n.string("rename_placeholder"), text: $text)
+                        .autocorrectionDisabled()
+                }
+            }
+            .navigationTitle(L10n.string("rename_title"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.string("cancel")) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.string("confirm")) {
+                        let name = normalizedName
+                        dismiss()
+                        if !name.isEmpty, name != project.name {
+                            onRename(name)
+                        }
+                    }
+                    .disabled(normalizedName.isEmpty || normalizedName == project.name)
+                }
+            }
+        }
     }
 }
