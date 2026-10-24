@@ -55,7 +55,7 @@ for (const key of ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'al
   delete spawnEnv[key];
 }
 
-const server = spawn(process.execPath, [path.resolve('docker/server.mjs')], {
+let server = spawn(process.execPath, [path.resolve('docker/server.mjs')], {
   env: spawnEnv,
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -216,6 +216,117 @@ await test('完整上传流程：init → chunk → finish → 轮询 → ready'
     if (status === 'failed') throw new Error(`处理失败：${json.errorCode}`);
   }
   assert(status === 'ready', `状态应为 ready，实际 ${status}`);
+});
+
+await test('ZIP 上传：.php 文件被跳过，不会落库或公开下载', async () => {
+  const zip = buildZip([
+    ['index.html', '<html><body><h1>safe</h1></body></html>'],
+    ['legacy.php', '<?php echo "MUST_NOT_LEAK"; ?>'],
+    ['nested/admin.php', '<?php echo "MUST_NOT_LEAK_NESTED"; ?>'],
+  ]);
+  const init = await (await fetch(`${BASE}/api/upload/init`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: [{ name: 'legacy.zip', size: zip.length }] }),
+  })).json();
+  assert(init.ok && init.uploadId, 'init 应成功');
+  await fetch(`${BASE}/api/upload/chunk`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      uploadId: init.uploadId, fileIndex: 0, chunkIndex: 0, data: zip.toString('base64'),
+    }),
+  });
+  const finish = await (await fetch(`${BASE}/api/upload/finish`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uploadId: init.uploadId }),
+  })).json();
+  assert(finish.ok && finish.projectId, 'finish 应成功');
+
+  let project;
+  for (let i = 0; i < 60; i++) {
+    await sleep(200);
+    project = await (await fetch(`${BASE}/api/projects/${finish.projectId}/status`, { headers: AUTH })).json();
+    if (project.status === 'ready' || project.status === 'failed') break;
+  }
+  assertEqual(project?.status, 'ready', `ZIP 应处理成功：${JSON.stringify(project)}`);
+  const detail = await (await fetch(`${BASE}/api/projects/${finish.projectId}`, { headers: AUTH })).json();
+  const fullProject = detail.project;
+  assert(fullProject && Array.isArray(fullProject.files), '项目详情应包含文件清单');
+  assert(!fullProject.files.some((file) => /\.php$/i.test(file.path)), '项目清单不得包含 .php');
+  assertEqual((await fetch(`${BASE}/p/${finish.projectId}/legacy.php`)).status, 404, '.php 不得公开下载');
+  assertEqual((await fetch(`${BASE}/p/${finish.projectId}/nested/admin.php`)).status, 404, '嵌套 .php 不得公开下载');
+});
+
+await test('历史项目：.php 入口不公开，重新发布后修复为 HTML 入口', async () => {
+  const created = await (await fetch(`${BASE}/api/projects/explorer`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'legacy-entry' }),
+  })).json();
+  assert(created.ok && created.project?.id, '创建项目应成功');
+  const id = created.project.id;
+
+  // DiskKV 的 key 即文件名；测试直接改临时数据目录，模拟升级前的历史项目。
+  const phpSource = '<?php echo "HISTORIC_PHP_SOURCE";';
+  const safeHtml = '<html><body><h1>HISTORIC_SAFE_PAGE</h1></body></html>';
+  fs.writeFileSync(path.join(dataDir, kvKeys.siteFile(id, 'index.php')), phpSource);
+  fs.writeFileSync(path.join(dataDir, kvKeys.siteFile(id, 'index.html')), safeHtml);
+  // 服务启动时扫描磁盘建立索引，运行中直接写文件不会自动进索引，需重启模拟真实升级。
+  fs.writeFileSync(path.join(dataDir, kvKeys.project(id)), JSON.stringify({
+    ...created.project,
+    entryPath: 'index.php',
+    status: 'ready',
+    files: [
+      { path: 'index.php', size: Buffer.byteLength(phpSource) },
+      { path: 'index.html', size: Buffer.byteLength(safeHtml) },
+    ],
+  }));
+  server.kill();
+  await new Promise((resolve) => server.once('exit', resolve));
+  server = spawn(process.execPath, [path.resolve('docker/server.mjs')], {
+    env: spawnEnv,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  server.stderr.on('data', (d) => process.stderr.write(`[server] ${d}`));
+  server.stdout.on('data', (d) => process.stdout.write(`[server] ${d}`));
+  await waitForServer();
+
+  // 修复前：旧 entryPath 指向 PHP，公开入口必须 404，且绝不能下发源码。
+  const legacyPage = await fetch(`${BASE}/p/${id}`);
+  assertEqual(legacyPage.status, 404, '历史 .php 入口应 404');
+  assert(!(await legacyPage.text()).includes('HISTORIC_PHP_SOURCE'), '不得泄露 PHP 源码');
+  assertEqual((await fetch(`${BASE}/p/${id}/index.php`)).status, 404, '.php 资源也不得公开下载');
+  assertEqual(
+    (await fetch(`${BASE}/api/projects/${id}/files?path=index.php`, { headers: AUTH })).status,
+    400,
+    '历史 .php 也不得通过文件接口读取'
+  );
+
+  // 重新发布：忽略历史 PHP 入口，自动选中项目内唯一 HTML 并修复链接。
+  const published = await (await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'publish' }),
+  })).json();
+  assert(published.ok, `历史项目重新发布应成功：${JSON.stringify(published)}`);
+  assertEqual(published.project.entryPath, 'index.html', '入口应修复为 index.html');
+  assert(!published.project.files.some((file) => /\.php$/i.test(file.path)), '文件清单不得暴露历史 PHP');
+
+  const fixedPage = await fetch(`${BASE}/p/${id}`);
+  assertEqual(fixedPage.status, 200, '修复后入口应可访问');
+  const fixedHtml = await fixedPage.text();
+  assert(fixedHtml.includes('HISTORIC_SAFE_PAGE'), '应返回 HTML 内容');
+  assert(!fixedHtml.includes('HISTORIC_PHP_SOURCE'), '不得泄露 PHP 源码');
+
+  // 刷新链接也必须重新校验入口，不能把 entryPath 退回历史 PHP。
+  const refreshed = await (await fetch(`${BASE}/api/projects/${id}/refresh`, {
+    method: 'POST',
+    headers: AUTH,
+  })).json();
+  assert(refreshed.ok, `刷新应成功：${JSON.stringify(refreshed)}`);
+  assertEqual(refreshed.project.entryPath, 'index.html', '刷新后入口应保持 index.html');
 });
 
 // zip 炸弹防护：306KB 的包可解压出 300MB，直接写满容器持久卷会让全站无法建站
@@ -738,42 +849,32 @@ await test('项目模式：publish 生成链接 → 公开访问生效', async (
   assertEqual(await css.text(), 'h1{color:red}', 'CSS 内容应一致');
 });
 
-await test('项目模式：PHP 文件创建 → publish → 入口路由到 PHP 运行时', async () => {
-  // php-cgi 可用则断言执行结果；不可用（本机/CI 未装）则断言优雅降级提示页
+await test('项目模式：PHP 文件被拒绝（已移除 PHP 运行时）', async () => {
   const add = await (await fetch(`${BASE}/api/projects/${explorerId}/files`, {
     method: 'POST',
     headers: { ...AUTH, 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: 'api.php', content: textToBase64('<?php echo "PHP_OK_12345";') }),
   })).json();
-  assert(add.ok, `添加 api.php 应成功：${JSON.stringify(add)}`);
-  assertEqual(add.project.fileCount, 3, '文件数应为 3（index.html + css/style.css + api.php）');
-
-  const page = await fetch(`${BASE}/p/${explorerId}/api.php`);
-  const text = await page.text();
-  if (page.status === 503) {
-    assert(text.includes('PHP'), '无 php-cgi 时应返回优雅降级提示页');
-  } else {
-    assertEqual(page.status, 200, '有 php-cgi 时应执行成功');
-    assert(text.includes('PHP_OK_12345'), `应包含 PHP 输出，实际：${text.slice(0, 200)}`);
-  }
+  assertEqual(add.error, 'BAD_REQUEST', '添加 .php 应被拒绝');
 });
 
-await test('粘贴：纯 PHP 创建 → 入口 index.php → 公开访问走 PHP 路由', async () => {
+await test('粘贴：PHP 字段被忽略 → 仍按 HTML 建站', async () => {
   const res = await (await fetch(`${BASE}/api/projects/paste`, {
     method: 'POST',
     headers: { ...AUTH, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ php: '<?php echo "PASTE_PHP_67890";', name: '纯PHP' }),
+    body: JSON.stringify({ html: '<p>only html</p>', php: '<?php echo "PASTE_PHP_67890";', name: '忽略PHP' }),
   })).json();
-  assert(res.ok, `纯 PHP 粘贴应成功：${JSON.stringify(res)}`);
-  assertEqual(res.project.entryPath, 'index.php', '纯 PHP 粘贴入口应为 index.php');
+  assert(res.ok, `HTML 粘贴应成功：${JSON.stringify(res)}`);
+  assertEqual(res.project.entryPath, 'index.html', '入口必须是 index.html');
+  assert(!res.project.files.some((f) => f.path.endsWith('.php')), '不得生成 PHP 文件');
 
-  // 粘贴空内容（无 html 无 php）应拒绝
+  // 粘贴空 HTML 应拒绝（PHP 不再作为入口）
   const empty = await (await fetch(`${BASE}/api/projects/paste`, {
     method: 'POST',
     headers: { ...AUTH, 'Content-Type': 'application/json' },
     body: JSON.stringify({ html: '  ', php: '' }),
   })).json();
-  assertEqual(empty.error, 'BAD_REQUEST', '空 HTML + 空 PHP 应报 BAD_REQUEST');
+  assertEqual(empty.error, 'BAD_REQUEST', '空 HTML 应报 BAD_REQUEST');
 });
 
 await test('账号删除：删除项目与用户 → 会话失效', async () => {

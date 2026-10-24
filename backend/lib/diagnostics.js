@@ -14,12 +14,7 @@ export function findEntry(files) {
   // 再任意 html
   const anyHtml = names.find((n) => /\.html?$/i.test(n));
   if (anyHtml) return anyHtml;
-  // PHP 兜底：index.php → 根目录 php → 任意 php（容器装有 php-cgi 时可执行）
-  const rootPhpIndex = names.find((n) => n.toLowerCase() === 'index.php');
-  if (rootPhpIndex) return rootPhpIndex;
-  const rootPhp = names.find((n) => !n.includes('/') && /\.php$/i.test(n));
-  if (rootPhp) return rootPhp;
-  return names.find((n) => /\.php$/i.test(n)) || null;
+  return null;
 }
 
 const REF_RE = /(?:src|href)\s*=\s*["']([^"']+)["']/gi;

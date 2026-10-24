@@ -1,9 +1,8 @@
-// GET /p/:projectId/... — 公开访问项目内资源（catch-all 动态路由；.php 交给 PHP 运行时执行）
+// GET /p/:projectId/... — 公开访问项目内资源（catch-all 动态路由）
 // 新手宽容：精确路径 404 时按"文件名"在项目内做唯一匹配兜底（引用写错目录也能正常显示）
 import { getKV, kvGet, kvListAll, keys, nowSeconds, pathFromSiteKey } from '../../lib/kv.js';
 import { contentTypeFor, htmlPage } from '../../lib/responses.js';
 import { STATUS } from '../../lib/state.js';
-import { runPhp } from '../../lib/php.js';
 import { rewriteCssRefs } from '../../lib/paths.js';
 
 const ID_RE = /^[a-f0-9]{32}$/;
@@ -33,11 +32,6 @@ export async function onRequest(context) {
     return htmlPage(410, 'expired', request);
   }
 
-  // .php → 交给 PHP 运行时执行
-  if (/\.php$/i.test(rel)) {
-    return runPhp({ kv, project, rel, request });
-  }
-
   // 新手宽容：引用可能带 URL 编码（中文文件名）→ 先解码再找
   let relPath = rel;
   try {
@@ -46,6 +40,9 @@ export async function onRequest(context) {
   } catch {
     // 非法编码保持原样
   }
+
+  // PHP 已移除；历史项目里的 .php 文件也不允许被当作静态源码下载。
+  if (/\.php$/i.test(relPath)) return htmlPage(404, 'notFound', request);
 
   // 1. 精确匹配
   let bytes = await kv.get(keys.siteFile(id, relPath), { type: 'arrayBuffer' });

@@ -1,7 +1,7 @@
 // =============================================================================
 // CSS/JS 引用全模式复现（本地容器 · 真实 HTTP）
 // 覆盖：① 粘贴-完整 HTML 引用 style.css/script.js ② 粘贴-片段自动注入
-//       ③ 粘贴-PHP ④ 探索器发布三文件 ⑤ 上传 zip 管线
+//       ③ PHP 已移除 ④ 探索器发布三文件 ⑤ 上传 zip 管线
 // 运行：node dev/test-assets.mjs
 // =============================================================================
 import { spawn } from 'node:child_process';
@@ -361,21 +361,12 @@ await test('粘贴：外链与 data URI 引用被忽略', async () => {
   assert(paths.includes('style.css'), '无本地引用时应注入默认 style.css');
 });
 
-// ④ PHP 粘贴 → 执行
-await test('粘贴：纯 PHP → 入口执行输出', async () => {
+// ④ PHP 粘贴 → 必须拒绝（PHP 已移除）
+await test('粘贴：PHP 字段不再生成可执行入口', async () => {
   const { token } = await login();
   const { status, body } = await paste(token, { name: 'php', php: '<?php echo "PHP-OK:" . (2 + 3); ?>' });
-  assertEqual(status, 200, '粘贴应成功');
-  const id = body.project.id;
-  const page = await fetch(`${BASE}/p/${id}`);
-  const text = await page.text();
-  if (page.status === 503) {
-    console.log('    （本地未装 PHP，返回 503 提示页——链路正确）');
-    assert(text.includes('PHP'), '503 页应为 PHP 提示');
-    return;
-  }
-  assertEqual(page.status, 200, 'PHP 入口应 200');
-  assert(text.includes('PHP-OK:5'), `PHP 应输出 PHP-OK:5，实际：${text.slice(0, 80)}`);
+  assertEqual(status, 400, '只有 PHP 字段时应拒绝');
+  assertEqual(body.error, 'BAD_REQUEST', '错误码应为 BAD_REQUEST');
 });
 
 // ⑤ 探索器模式发布 → 资源可访问
@@ -583,7 +574,7 @@ await test('HTML 其他引用标签归一（img/iframe/source/a/form/srcset）',
   <a href="../about.html">关于</a>
   <iframe src="../frame.html"></iframe>
   <source src="../v.mp4" type="video/mp4">
-  <form action="../submit.php"></form>
+  <form action="../submit.html"></form>
   <div style="background:url(../img/bg.png)">x</div>
 </body></html>`;
   const { status, body } = await paste(token, { name: 'tags', html, css: 'h1{color:red}', js: '' });
@@ -595,7 +586,7 @@ await test('HTML 其他引用标签归一（img/iframe/source/a/form/srcset）',
   assert(served.includes('href="about.html"'), 'a href 应归一');
   assert(served.includes('src="frame.html"'), 'iframe src 应归一');
   assert(served.includes('src="v.mp4"'), 'source src 应归一');
-  assert(served.includes('action="submit.php"'), 'form action 应归一');
+  assert(served.includes('action="submit.html"'), 'form action 应归一');
   assert(served.includes('url(img/bg.png)'), '内联 style 的 url() 应归一');
   assert(!served.includes('../'), `不得残留 ../ 引用，实际：${served.slice(0, 600)}`);
 });

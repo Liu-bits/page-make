@@ -26,7 +26,7 @@ enum FileValidationError: LocalizedError, Equatable {
 /// 选文件页本地校验：后缀 + 总大小（5MB）
 enum FileValidator {
     static let maxTotalBytes: Int64 = 5 * 1024 * 1024
-    static let allowedExtensions: Set<String> = ["zip", "html", "css", "js", "php"]
+    static let allowedExtensions: Set<String> = ["zip", "html", "css", "js"]
 
     static func validate(_ files: [PickedFile]) -> Result<[PickedFile], FileValidationError> {
         guard !files.isEmpty else { return .failure(.emptySelection) }

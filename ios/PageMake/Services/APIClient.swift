@@ -183,7 +183,6 @@ final class APIClient {
         html: String,
         css: String,
         js: String,
-        php: String,
         name: String
     ) async throws -> Project {
         let body = try encoder.encode(PasteRequest(
@@ -191,7 +190,6 @@ final class APIClient {
             html: html,
             css: css,
             js: js,
-            php: php,
             name: name
         ))
         let data = try await request("/api/projects/paste", method: "POST", body: body)
@@ -203,7 +201,6 @@ final class APIClient {
         let html: String
         let css: String
         let js: String
-        let php: String
         let name: String
     }
 

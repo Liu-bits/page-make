@@ -1,7 +1,8 @@
 // POST /api/projects/:id/refresh — 刷新链接（从存储取回文件重新部署）
 // 重新部署 → 更新 expiresAt → 返回新链接
-import { getOwnedProject, readSiteFiles, syncProjectFiles } from '../../../lib/project.js';
+import { getOwnedProject, readSiteFiles } from '../../../lib/project.js';
 import { deploySite } from '../../../lib/deploy/index.js';
+import { findEntry } from '../../../lib/diagnostics.js';
 import { appendLog, nowSeconds, kvPut, keys } from '../../../lib/kv.js';
 import { ok, fail } from '../../../lib/responses.js';
 import { STATUS, GUEST_LINK_TTL_SECONDS } from '../../../lib/state.js';
@@ -21,18 +22,29 @@ export async function onRequest(context) {
       return fail('STORAGE_ERROR', 500, { message: '项目文件不存在，无法刷新' });
     }
 
+    // 历史项目的 entryPath 可能是已下线的 .php；刷新时重新选择 HTML 入口。
+    const entry = project.entryPath
+      && /\.html?$/i.test(project.entryPath)
+      && files.has(project.entryPath)
+      ? project.entryPath
+      : findEntry(files);
+    if (!entry) {
+      return fail('NO_ENTRY', 400, { message: '项目中没有可发布的 HTML 文件，无法刷新' });
+    }
+
     const deploy = await deploySite({
       kv,
       env: context.env,
       provider: project.provider,
       projectId: project.id,
       files,
-      entryPath: project.entryPath,
+      entryPath: entry,
       name: project.name,
     });
 
     project.status = STATUS.READY;
     project.errorCode = null;
+    project.entryPath = entry;
     // 游客链接重新计时 10 分钟（登录用户长期有效，随部署 TTL）
     project.expiresAt = user.userId.startsWith('guest_')
       ? nowSeconds() + GUEST_LINK_TTL_SECONDS

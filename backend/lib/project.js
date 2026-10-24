@@ -4,6 +4,8 @@ import { requireAuth } from './session.js';
 import { fail } from './responses.js';
 import { ERR } from './state.js';
 
+const PHP_FILE_RE = /\.php$/i;
+
 /**
  * 读取项目并校验归属
  * @returns {Promise<{project, kv, user}|{error: Response}>}
@@ -25,19 +27,23 @@ export async function readSiteFiles(kv, projectId) {
   const files = new Map();
   for (const key of keyList) {
     const path = pathFromSiteKey(key);
+    // PHP 已移除：历史项目中的 .php 文件不再参与发布、刷新或文件清单。
+    if (PHP_FILE_RE.test(path)) continue;
     const bytes = await kv.get(key, { type: 'arrayBuffer' });
     if (bytes) files.set(path, new Uint8Array(bytes));
   }
   return files;
 }
 
-// 更新项目记录中的文件清单（重算 fileCount / size；updatedAt 作为 PHP 物化缓存的版本戳）
+// 更新项目记录中的文件清单（重算 fileCount / size / updatedAt）
 export async function syncProjectFiles(kv, project) {
   const keyList = await kvListAll(kv, keys.sitePrefix(project.id));
   const files = [];
   let total = 0;
   for (const key of keyList) {
     const path = pathFromSiteKey(key);
+    // 保留磁盘上的历史文件不主动删除，但不再向客户端暴露。
+    if (PHP_FILE_RE.test(path)) continue;
     const bytes = await kv.get(key, { type: 'arrayBuffer' });
     const size = bytes ? bytes.byteLength : 0;
     files.push({ path, size });
@@ -46,6 +52,8 @@ export async function syncProjectFiles(kv, project) {
   project.files = files;
   project.fileCount = files.length;
   project.size = total;
+  // 历史 PHP 入口在重新发布/刷新时必须失效，避免继续生成 404 链接。
+  if (project.entryPath && PHP_FILE_RE.test(project.entryPath)) project.entryPath = null;
   project.updatedAt = nowSeconds();
   await kvPut(kv, keys.project(project.id), project);
   return project;

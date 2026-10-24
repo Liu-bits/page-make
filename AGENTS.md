@@ -64,7 +64,7 @@ E:/Page-make/
 ├── AGENTS.md                # 本文件
 ├── Have-not.md              # 已知限制/未做功能（过审披露用）
 ├── README.md                # 项目说明 + 上线清单
-├── Dockerfile               # node:22-alpine + php83-cgi，PORT=7860，ENTRYPOINT=server.mjs
+├── Dockerfile               # node:22-alpine，PORT=7860，ENTRYPOINT=server.mjs
 ├── PageMake-unsigned.ipa    # 本地 IPA 副本（gitignore，旧版正常，以 CI artifact 为准）
 ├── backend/                 # 后端全部代码（容器与 CI 测试共用同一份）
 │   ├── index.js             #   EdgeOne 风格 handler（路由表在文件头部注释）
@@ -89,8 +89,7 @@ E:/Page-make/
 │   │   ├── jwks.js          #     JWKS 三级加载器（live 5s → 磁盘缓存 → 内置种子）
 │   │   ├── google-auth.js / apple-auth.js   # 登录验签
 │   │   ├── project.js       #     项目 CRUD + syncProjectFiles + deploySite(local 分支)
-│   │   ├── process.js       #     ZIP 处理 + 上传管线
-│   │   ├── php.js           #     php-cgi 执行（open_basedir 隔离 / 10s 超时 / 2MB 输出）
+│   │   ├── process.js       #     ZIP 处理 + 上传管线（过滤 PHP）
 │   │   ├── diagnostics.js   #     静态诊断（HTML 引用资源缺失检测）
 │   │   ├── zip.js / base64.js / responses.js / admin.js
 │   │   └── deploy/          #     edgeone / cloudflare（兼容旧客户端保留，当前只用 local）
@@ -109,7 +108,7 @@ E:/Page-make/
 │   │                        #   (上传+粘贴+模板) / ExplorerView(虚拟文件夹) / PreviewView /
 │   │                        #   WebView / QRCodeView / BannedView / PasswordAuthView /
 │   │                        #   SettingsView(统计/删账号/游客提示) / UploadQueueView 等 19 个
-│   ├── Resources/           #   Documents/(中英 .txt) + en/zh-Hans.lproj（各 204 键，0 重复）
+│   ├── Resources/           #   Documents/(中英 .txt) + en/zh-Hans.lproj（各 206 键，0 重复）
 │   ├── PageMake.entitlements  # applesignin（免费 Apple ID 用不了，游客登录兜底）
 │   └── PrivacyInfo.xcprivacy  # 隐私清单（过审）
 ├── ios/project.yml          # XcodeGen 描述（改工程结构改这里，勿直接改 xcodeproj）
@@ -140,16 +139,15 @@ E:/Page-make/
 - 上传 ZIP：分片 600KB × N（base64 后约 800KB/片），项目总上限 5MB；异步处理 + 轮询
 - 粘贴代码：HTML 必填 + CSS/JS 可选（合计 300KB）；css/js 文件名自动跟随 HTML 的
   link href / script src；HTML 片段自动包裹完整文档；三套内置模板（主页/落地页/博客）
-- 项目模式（Explorer）：虚拟文件夹资源管理器，单文件 900KB / 总 5MB；html/css/js/php
+- 项目模式（Explorer）：虚拟文件夹资源管理器，单文件 900KB / 总 5MB；仅 html/css/js
   白名单；路径安全（禁 `..`、`\`、控制字符）；publish 时 index.html 优先选入口 + 静态诊断
 
 **公开页与服务端**
 - `/p/<id>` 长期有效（登录用户）；游客 10 分钟；到期 410 中文过期页
 - 宽容识别：静态 404 时按 basename（忽略目录/大小写）在项目内唯一匹配自动返回
 - 静态诊断：HTML 引用的资源缺失 → 「引用了 x，其实在 y」提示
-- PHP 执行：php-cgi，env 透传方法/查询/POST body；disable_functions 进程族、
-  open_basedir=项目根、10s 超时、2MB 输出上限；未装 PHP → 503 优雅提示
-- 入口选择统一：index.html → html → index.php → php（publish/findEntry/上传管线一致）
+- PHP / C++：均不支持；ZIP 中的 `.php` 会跳过，项目模式拒绝 `.php`，公开路由对历史 `.php` 返回 404
+- 入口选择统一：index.html → 任意 html（publish/findEntry/上传管线一致）
 - 刷新链接（refresh.js，成功/失败均持久化 kvPut——曾有不写回的存量 bug）
 - 反馈接口（App 内反馈 = 封禁申诉入口）；用量统计 /api/stats；账号删除（过审项）
 
@@ -166,7 +164,7 @@ E:/Page-make/
 - 项目列表搜索 + 排序（最新/最旧/名称/大小）+ 滑动重命名
 - 二维码分享（CoreImage CIFilter.qrCodeGenerator + ShareLink）
 - WebView 预览（reloadToken、轮询 150 次上限、runtimeErrors 去重上限 50）
-- 中英本地化（各 204 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
+- 中英本地化（各 206 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
 - 隐私政策/用户协议 App 内展示（Documents 双语文档，文件名后缀区分语言）
 
 ### 4.2 业务常量（backend/lib/state.js，与 iOS 端保持一致）
@@ -186,14 +184,14 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 115 项，提交前必须全绿）
+## 5. 测试体系（共 117 项，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
 | `node dev/run-tests.mjs` | 39 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护、密码强度校验【leetspeak 变形/反向键盘对角线】、MIME 类型映射） |
-| `node dev/test-server.mjs` | 38 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 zip 炸弹端到端、反馈限流、删号 KV 残留断言、弱口令拒绝、登录 429 限速） |
+| `node dev/test-server.mjs` | 40 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 ZIP PHP 过滤、历史 PHP 入口 404、zip 炸弹端到端、反馈限流、删号 KV 残留断言、弱口令拒绝、登录 429 限速） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
-| `node dev/test-assets.mjs` | 20 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
+| `node dev/test-assets.mjs` | 20 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
 | `node dev/test-admin.mjs` | 10 | 后台（登录/哈希存储/测试账号权益/封禁下架+禁登/解封恢复/删号） |
 
 > Node 用 managed 绝对路径运行。测试脚本坑：`fail()` 的 error 字段是错误码字符串本身；
@@ -208,7 +206,7 @@ E:/Page-make/
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
-| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 103 项）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
+| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 117 项）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
 | keepalive.yaml | 每 10 分钟 | 探 `${PAGEMAKE_URL}/healthz`，**必须带 UA**（`-A "PageMake-Keepalive/1.0"`），并回显 /api/config 的 jwks 诊断 |
 | jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子并提交（境内拉不到 Google，只能靠 runner） |
 
@@ -288,7 +286,6 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
   只把**存储路径**归一（`normalizeRelPath`）而不改**下发 HTML 里的引用字符串** = 没修：
   实测存储是 style.css、`/p/<id>/style.css` 也 200，但页面引用仍是 `../style.css`。
   必须 `rewriteLocalRefs` 同步改写，且四条链路都要覆盖：粘贴 / ZIP 上传 / 项目模式 publish /
-  PHP 输出（PHP 那条仅当 `Content-Type: text/html` 才改写，否则会破坏 JSON/图片响应）。
   测试盲区：旧用例只断言「资源 200」没断言「served HTML 里的引用字符串」，所以漏了一整轮；
   现在两条都断言。
 - **静态诊断要与服务端用同一套路径归一**：diagnostics.js 曾只剥 `./` 和首部 `/`，
@@ -343,7 +340,7 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
 1. **10-16** 第一版（iOS + EdgeOne Functions）；转容器化（ModelScope 创空间方案 B）；
    CI 自动部署配通；登录修复（补 applesignin entitlement + ad-hoc 签名）
 2. **10-17** 粘贴代码建站；游客登录（免费 Apple ID 兜底）；Google 登录 + 邮箱密码；
-   网关三坑规避（UA/X-Pagemake-Token/POST+action）；Liquid Glass；PHP 全线支持；
+   网关三坑规避（UA/X-Pagemake-Token/POST+action）；Liquid Glass；
    项目模式（虚拟文件夹）；平铺文件宽容识别；游客 10 分钟试用 + 后台合规；
    JWKS 三级加载修复境内 Google 登录（线上实证 google=seed/apple=live）
 3. **管理后台三件套**：测试账号（豁免大小上限）/ 封禁全登录入口拦截 / 删号强制下线；

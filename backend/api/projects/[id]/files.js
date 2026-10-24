@@ -1,7 +1,7 @@
 // GET    /api/projects/:id/files?path=... — 读取文件内容（base64，编辑器用）
 // POST   /api/projects/:id/files — 创建/覆盖文件（body: { path, content(base64) }）
 // DELETE /api/projects/:id/files — 删除文件（body: { path }）
-// 说明：项目模式支持 .html / .css / .js / .php；路径可带子文件夹（虚拟文件夹，如 css/style.css）
+// 说明：项目模式支持 .html / .css / .js；路径可带子文件夹（虚拟文件夹，如 css/style.css）
 import { getOwnedProject, syncProjectFiles } from '../../../lib/project.js';
 import { isTestUser } from '../../../lib/session.js';
 import { keys, kvDel } from '../../../lib/kv.js';
@@ -9,8 +9,8 @@ import { base64ToBytes, bytesToBase64 } from '../../../lib/base64.js';
 import { ok, fail } from '../../../lib/responses.js';
 import { STATUS, FILE_MAX_BYTES, MAX_TOTAL_BYTES } from '../../../lib/state.js';
 
-// 支持的文件类型（.htm 视同 .html；.php 由容器 PHP 运行时执行）
-const FILE_EXT_RE = /\.(html?|css|js|php)$/i;
+// 支持的文件类型（.htm 视同 .html）
+const FILE_EXT_RE = /\.(html?|css|js)$/i;
 
 // 路径安全：禁止 ..、反斜杠、控制字符、首尾斜杠、超长
 function validPath(path) {
@@ -35,7 +35,10 @@ export async function onRequest(context) {
   // ---- 读取文件内容（编辑器载入） ----
   if (request.method === 'GET') {
     const path = new URL(request.url).searchParams.get('path') || '';
-    if (!validPath(path) || !FILE_EXT_RE.test(path)) return fail('BAD_REQUEST', 400);
+    // 历史 .php 文件不再暴露，即使磁盘上仍保留也不允许通过编辑器读取。
+    if (!validPath(path) || !FILE_EXT_RE.test(path) || /\.php$/i.test(path)) {
+      return fail('BAD_REQUEST', 400);
+    }
     const bytes = await kv.get(keys.siteFile(project.id, path), { type: 'arrayBuffer' });
     if (!bytes) return fail('NOT_FOUND', 404);
     return ok({ path, content: bytesToBase64(new Uint8Array(bytes)) });

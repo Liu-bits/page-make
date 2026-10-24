@@ -1,6 +1,7 @@
 # Page-make
 
-静态网页托管工具：用户上传 zip 或单个 HTML/CSS/JS 文件，后台自动解压、找入口、诊断、生成可公开访问的链接。
+静态网页托管工具：用户上传 ZIP、粘贴 HTML/CSS/JS，或使用项目模式管理虚拟文件，
+后台自动解压、找入口、诊断并生成可公开访问的链接。仅支持静态网页，不支持 PHP 或 C++。
 
 - **iOS**：SwiftUI 纯原生实现 + AuthenticationServices（Sign in with Apple）
 - **后端**：Node 22 容器（Docker），部署在 **ModelScope 创空间**（免费 CPU 空间，无按次调用限额）

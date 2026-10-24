@@ -45,27 +45,25 @@ export async function onRequest(context) {
     return ok({ project });
   }
 
-  // 项目模式：统一生成公开链接（至少需要一个 HTML 或 PHP 文件作为入口）
+  // 项目模式：统一生成公开链接（至少需要一个 HTML 文件作为入口）
   if (action === 'publish') {
     const files = await readSiteFiles(kv, project.id);
     if (files.size === 0) return fail('NO_ENTRY', 400);
 
-    // 入口选择：沿用已设入口 → index.html → 第一个 .html → index.php → 第一个 .php
+    // 入口选择：沿用已设 HTML 入口 → index.html → 第一个 HTML。
+    // 历史项目的 entryPath 可能是 index.php；不能继续沿用，否则发布会生成必然 404 的链接。
     let entry =
-      project.entryPath && files.has(project.entryPath) ? project.entryPath : null;
+      project.entryPath
+        && /\.html?$/i.test(project.entryPath)
+        && files.has(project.entryPath)
+        ? project.entryPath
+        : null;
     if (!entry) {
       if (files.has('index.html')) {
         entry = 'index.html';
       } else {
         const htmlPaths = [...files.keys()].filter((p) => /\.html?$/i.test(p)).sort();
-        if (htmlPaths.length) {
-          entry = htmlPaths[0];
-        } else if (files.has('index.php')) {
-          entry = 'index.php';
-        } else {
-          const phpPaths = [...files.keys()].filter((p) => /\.php$/i.test(p)).sort();
-          entry = phpPaths[0] || null;
-        }
+        if (htmlPaths.length) entry = htmlPaths[0];
       }
     }
     if (!entry) return fail('NO_ENTRY', 400);
@@ -94,13 +92,9 @@ export async function onRequest(context) {
       await kv.put(keys.siteFile(project.id, path), bytes);
     }
 
-    // 静态诊断（仅 HTML 入口；PHP 入口为服务端动态内容，静态检查不适用）
-    if (/\.html?$/i.test(entry)) {
-      const html = new TextDecoder().decode(files.get(entry));
-      project.diagnostics = analyzeHtml(html, files);
-    } else {
-      project.diagnostics = [];
-    }
+    // 静态诊断
+    const html = new TextDecoder().decode(files.get(entry));
+    project.diagnostics = analyzeHtml(html, files);
     project.entryPath = entry;
     project.status = STATUS.READY;
     project.url = projectPublicUrl(new URL(request.url).origin, project.id);

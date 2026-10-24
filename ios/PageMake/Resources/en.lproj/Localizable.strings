@@ -48,9 +48,9 @@
 // MARK: - File picker
 "pick_files_title" = "Select Files";
 "pick_files_action" = "Select Files";
-"pick_files_hint" = "Supports .zip, .html, .css, .js, .php. Multiple selection, 5MB total max";
+"pick_files_hint" = "Supports .zip, .html, .css, .js. Multiple selection, 5MB total max";
 "validation_empty" = "Please select at least one file";
-"validation_extension" = "Unsupported file type: .%@ (only .zip, .html, .css, .js, .php)";
+"validation_extension" = "Unsupported file type: .%@ (only .zip, .html, .css, .js)";
 "validation_too_large" = "Total size %.1f MB exceeds the 5MB limit";
 
 // MARK: - Provider selection
@@ -157,11 +157,10 @@
 "paste_html" = "HTML";
 "paste_css" = "CSS";
 "paste_js" = "JavaScript";
-"paste_php" = "PHP";
 "paste_html_placeholder" = "Paste your HTML here…";
 "paste_create" = "Create page";
 "paste_html_required" = "Please paste HTML first";
-"paste_content_required" = "Please paste HTML or PHP first";
+"paste_content_required" = "Please paste HTML first";
 "paste_too_large" = "Code exceeds the 300KB limit";
 "paste_project_name" = "Pasted page";
 "paste_size" = "Entered %@ KB / 300 KB limit";
@@ -212,11 +211,10 @@
 // MARK: - Paste code (placeholders)
 "paste_css_placeholder" = "Optional: saved as the file you link (e.g. style.css)";
 "paste_js_placeholder" = "Optional: saved as the file you reference (e.g. app.js)";
-"paste_php_placeholder" = "Optional: saved as index.php and executed (container needs PHP)";
 
 // MARK: - Project mode (explorer)
 "mode_explorer" = "Project Mode";
-"explorer_intro" = "Start from blank: create virtual folders and files (html / css / js / php), edit online, then publish one public link";
+"explorer_intro" = "Start from blank: create virtual folders and files (html / css / js), edit online, then publish one public link";
 "explorer_name_placeholder" = "Project name";
 "explorer_default_name" = "Untitled Project";
 "explorer_create" = "Create Blank Project";
@@ -225,8 +223,8 @@
 "explorer_empty_folder" = "This folder is empty";
 "explorer_new_file" = "New File";
 "explorer_new_file_placeholder" = "index.html or css/style.css";
-"explorer_new_file_hint" = "Paths with / create virtual folders automatically; .html is appended by default; .html / .css / .js / .php are supported";
-"explorer_bad_name" = "Invalid name: only .html / .css / .js / .php files, without special characters";
+"explorer_new_file_hint" = "Paths with / create virtual folders automatically; .html is appended by default; .html / .css / .js are supported";
+"explorer_bad_name" = "Invalid name: only .html / .css / .js files, without special characters";
 "explorer_exists_overwrite" = "A file with this name exists — creating will overwrite it";
 "explorer_create_file" = "Create";
 "explorer_entry_badge" = "Entry";
@@ -236,7 +234,7 @@
 "explorer_publishing" = "Publishing…";
 "explorer_publish_done" = "Link ready! Copy it or scan the QR code to share";
 "explorer_issues_title" = "%d minor issue(s) found (page still works — worth a look)";
-"explorer_need_entry" = "No HTML or PHP file yet: create an index.html (or index.php) first, then publish";
+"explorer_need_entry" = "No HTML file yet: create an index.html first, then publish";
 "explorer_delete_file_title" = "Delete this file?";
 "explorer_delete_file_message" = "The published page will no longer include this file.";
 "explorer_save" = "Save";
@@ -248,7 +246,6 @@
 "explorer_root" = "Root";
 "explorer_css_starter" = "/* Write your styles here */";
 "explorer_html_starter" = "Edit this page below";
-"explorer_php_starter" = "Write your PHP here";
 
 // MARK: - Account deletion (App Store 5.1.1(v))
 "delete_account" = "Delete Account";

@@ -93,9 +93,12 @@ export async function processUpload(args) {
     for (const [name, bytes] of assembled) {
       if (name.toLowerCase().endsWith('.zip')) {
         for (const [path, data] of await unzip(bytes)) {
+          // PHP 已移除：ZIP 内脚本既不执行，也不作为静态文件落库/下载。
+          if (/\.php$/i.test(path)) continue;
           files.set(path, data);
         }
       } else {
+        if (/\.php$/i.test(name)) continue;
         files.set(name, bytes);
       }
     }
@@ -112,11 +115,9 @@ export async function processUpload(args) {
       files.set(entryPath, new TextEncoder().encode(autoPreviewHtml(upload.files[0]?.name || 'preview')));
     }
 
-    // 4. 静态诊断（PHP 入口为服务端动态内容，静态检查不适用）
+    // 4. 静态诊断
     const entryBytes = files.get(entryPath);
-    const diagnostics = /\.html?$/i.test(entryPath)
-      ? analyzeHtml(new TextDecoder().decode(entryBytes), files)
-      : [];
+    const diagnostics = analyzeHtml(new TextDecoder().decode(entryBytes), files);
 
     // 5. 部署
     const deploy = await deploySite({

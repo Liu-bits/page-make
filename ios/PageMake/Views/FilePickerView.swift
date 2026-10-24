@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// 创建入口：上传文件 / 直接粘贴代码（两种方式二选一）
+/// 创建入口：上传文件 / 粘贴代码 / 项目模式
 struct FilePickerView: View {
     let onPick: (CreateSource) -> Void
 
@@ -21,20 +21,19 @@ struct FilePickerView: View {
     @State private var html = ""
     @State private var css = ""
     @State private var js = ""
-    @State private var php = ""
 
     private static let pasteLimitBytes = 300 * 1024
 
     private static let supportedTypes: [UTType] = {
         var types: [UTType] = []
-        for ext in ["zip", "html", "css", "js", "php"] {
+        for ext in ["zip", "html", "css", "js"] {
             if let type = UTType(filenameExtension: ext) { types.append(type) }
         }
         return types
     }()
 
     private var pasteContent: PasteContent {
-        PasteContent(html: html, css: css, js: js, php: php)
+        PasteContent(html: html, css: css, js: js)
     }
 
     var body: some View {
@@ -165,12 +164,6 @@ struct FilePickerView: View {
                     title: L10n.string("paste_js"),
                     text: $js,
                     placeholder: L10n.string("paste_js_placeholder"),
-                    minHeight: 120
-                )
-                editor(
-                    title: L10n.string("paste_php"),
-                    text: $php,
-                    placeholder: L10n.string("paste_php_placeholder"),
                     minHeight: 120
                 )
 

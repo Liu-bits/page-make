@@ -3,7 +3,7 @@
 //       API 直接传的 path。此前未统一处理，导致两类问题：
 //       ① CSS/JS 断链：HTML 写 `../style.css` 时该字符串被原样存成文件名，
 //          而浏览器请求 `/p/<id>/../style.css` 会被 URL 规范化成 `/p/style.css` → 404；
-//       ② 路径穿越：ZIP 内 `sub/../../evil.css` 原样进入 KV key 与 PHP 物化路径。
+//       ② 路径穿越：ZIP 内 `sub/../../evil.css` 原样进入 KV key。
 // 统一在这里规范化 + 校验，各调用方只认「规范后的安全相对路径」。
 
 /** 反斜杠统一为正斜杠（Windows 打包的 zip 常见） */
@@ -109,7 +109,7 @@ export function findLocalAsset(html, tag, attr, ext) {
  *   iframe[src]   内嵌页
  *   audio/video/track[src]、video[poster]
  *   img[srcset]   响应式图片（逗号分隔多个候选）
- *   a[href]       站内跳转（.html/.php 等；外链与锚点不动）
+ *   a[href]       站内跳转（.html 等；外链与锚点不动）
  *   form[action]  表单提交
  * 早期只归一 link/script，导致 img/iframe/source 等仍 404、内页链接
  * 跳到站点外——与 CSS/JS 断链同一症状但漏了半边，这里补齐。

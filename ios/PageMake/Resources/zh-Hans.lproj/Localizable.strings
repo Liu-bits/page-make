@@ -48,9 +48,9 @@
 // MARK: - 选文件
 "pick_files_title" = "选择文件";
 "pick_files_action" = "选择文件";
-"pick_files_hint" = "支持 .zip、.html、.css、.js、.php，可多选，总大小不超过 5MB";
+"pick_files_hint" = "支持 .zip、.html、.css、.js，可多选，总大小不超过 5MB";
 "validation_empty" = "请先选择文件";
-"validation_extension" = "不支持的文件类型：.%@（仅支持 .zip、.html、.css、.js、.php）";
+"validation_extension" = "不支持的文件类型：.%@（仅支持 .zip、.html、.css、.js）";
 "validation_too_large" = "文件总大小 %.1f MB，超过 5MB 上限";
 
 // MARK: - 线路选择
@@ -157,11 +157,10 @@
 "paste_html" = "HTML";
 "paste_css" = "CSS";
 "paste_js" = "JavaScript";
-"paste_php" = "PHP";
 "paste_html_placeholder" = "在这里粘贴 HTML 代码…";
 "paste_create" = "创建网页";
 "paste_html_required" = "请先粘贴 HTML 代码";
-"paste_content_required" = "请先粘贴 HTML 或 PHP 代码";
+"paste_content_required" = "请先粘贴 HTML 代码";
 "paste_too_large" = "代码超过 300KB 上限，请精简后再试";
 "paste_project_name" = "粘贴的网页";
 "paste_size" = "已输入 %@ KB / 上限 300 KB";
@@ -212,11 +211,10 @@
 // MARK: - 粘贴代码（占位符）
 "paste_css_placeholder" = "可选：保存为你在 <link> 里引用的文件名（如 style.css）";
 "paste_js_placeholder" = "可选：保存为你在 <script> 里引用的文件名（如 app.js）";
-"paste_php_placeholder" = "可选：保存为 index.php 并执行（容器需支持 PHP）";
 
 // MARK: - 项目模式
 "mode_explorer" = "项目模式";
-"explorer_intro" = "从空白开始：创建虚拟文件夹和文件（支持 html / css / js / php），在线编辑，最后统一生成公开链接";
+"explorer_intro" = "从空白开始：创建虚拟文件夹和文件（支持 html / css / js），在线编辑，最后统一生成公开链接";
 "explorer_name_placeholder" = "项目名称";
 "explorer_default_name" = "未命名项目";
 "explorer_create" = "创建空白项目";
@@ -225,8 +223,8 @@
 "explorer_empty_folder" = "这个文件夹是空的";
 "explorer_new_file" = "新建文件";
 "explorer_new_file_placeholder" = "index.html 或 css/style.css";
-"explorer_new_file_hint" = "输入带 / 的路径会自动创建虚拟文件夹；不写后缀时默认补 .html；支持 .html / .css / .js / .php";
-"explorer_bad_name" = "文件名不合法：仅支持 .html / .css / .js / .php，且不能包含特殊字符";
+"explorer_new_file_hint" = "输入带 / 的路径会自动创建虚拟文件夹；不写后缀时默认补 .html；支持 .html / .css / .js";
+"explorer_bad_name" = "文件名不合法：仅支持 .html / .css / .js，且不能包含特殊字符";
 "explorer_exists_overwrite" = "同名文件已存在，创建将覆盖其内容";
 "explorer_create_file" = "创建";
 "explorer_entry_badge" = "入口";
@@ -236,7 +234,7 @@
 "explorer_publishing" = "正在生成链接…";
 "explorer_publish_done" = "链接已生成！复制链接或扫二维码，分享给朋友吧";
 "explorer_issues_title" = "发现 %d 个小问题（页面仍可访问，建议看看）";
-"explorer_need_entry" = "还没有 HTML 或 PHP 文件：先新建一个 index.html（或 index.php），再生成链接";
+"explorer_need_entry" = "还没有 HTML 文件：先新建一个 index.html，再生成链接";
 "explorer_delete_file_title" = "删除这个文件？";
 "explorer_delete_file_message" = "删除后公开页面将不再包含这个文件。";
 "explorer_save" = "保存";
@@ -248,7 +246,6 @@
 "explorer_root" = "根目录";
 "explorer_css_starter" = "/* 在这里写样式 */";
 "explorer_html_starter" = "在下方编辑这个页面";
-"explorer_php_starter" = "在这里写 PHP";
 
 // MARK: - 账号删除（App Store 5.1.1(v)）
 "delete_account" = "删除账号";

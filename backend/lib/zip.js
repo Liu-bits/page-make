@@ -21,7 +21,7 @@ function shouldSkip(name) {
 
 function normalizePath(name) {
   // 折叠 . / .. 并统一斜杠：ZIP 条目名可能含 `sub/../../evil.css`，
-  // 原样入库会污染 KV key 与 PHP 物化路径（路径穿越）
+  // 原样入库会污染 KV key（路径穿越）
   return normalizeRelPath(name);
 }
 

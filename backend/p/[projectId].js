@@ -1,9 +1,8 @@
 // GET /p/:projectId — 公开访问（任何人可访问，无需登录）
-// 项目被 ban → 「该内容已被下架」；链接过期 → 过期提示页；入口为 .php → 交给 PHP 运行时执行
+// 项目被 ban → 「该内容已被下架」；链接过期 → 过期提示页
 import { getKV, kvGet, keys, nowSeconds } from '../lib/kv.js';
 import { contentTypeFor, htmlPage } from '../lib/responses.js';
 import { STATUS } from '../lib/state.js';
-import { runPhp } from '../lib/php.js';
 
 const ID_RE = /^[a-f0-9]{32}$/;
 
@@ -31,11 +30,8 @@ export async function onRequest(context) {
   }
 
   const entry = project.entryPath || 'index.html';
-
-  // 入口是 PHP → 交给 PHP 运行时执行（POST/GET/查询串透传）
-  if (/\.php$/i.test(entry)) {
-    return runPhp({ kv, project, rel: entry, request });
-  }
+  // PHP 已移除；旧项目的 index.php 不能作为静态源码下发。
+  if (/\.php$/i.test(entry)) return htmlPage(404, 'notFound', request);
 
   const bytes = await kv.get(keys.siteFile(id, entry), { type: 'arrayBuffer' });
   if (!bytes) return htmlPage(404, 'notFound', request);
