@@ -167,8 +167,10 @@ struct AddFileSheet: View {
             }
             .sheet(isPresented: $showPicker) {
                 DocumentPicker(types: Self.supportedTypes, allowsMultipleSelection: false) { urls in
-                    if let url = urls.first {
-                        Task { await uploadFile(url) }
+                    Task { @MainActor in
+                        if let url = urls.first {
+                            await uploadFile(url)
+                        }
                     }
                 }
             }

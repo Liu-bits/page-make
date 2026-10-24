@@ -66,7 +66,11 @@ struct FilePickerView: View {
             }
             .sheet(isPresented: $showPicker) {
                 DocumentPicker(types: Self.supportedTypes) { urls in
-                    handlePicked(urls)
+                    // UIKit delegate 回调不保证主线程；直接改 @State 会触发
+                    // “Publishing changes from background threads” 甚至崩溃。
+                    Task { @MainActor in
+                        handlePicked(urls)
+                    }
                 }
             }
             .alert(item: $alertItem) { item in
@@ -336,7 +340,13 @@ struct DocumentPicker: UIViewControllerRepresentable {
         }
 
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            onPick(urls)
+            if Thread.isMainThread {
+                onPick(urls)
+            } else {
+                DispatchQueue.main.async { [onPick] in
+                    onPick(urls)
+                }
+            }
         }
 
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {}

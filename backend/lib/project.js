@@ -3,6 +3,7 @@ import { kvGet, kvPut, kvDel, kvListAll, keys, pathFromSiteKey, nowSeconds } fro
 import { requireAuth } from './session.js';
 import { fail } from './responses.js';
 import { ERR } from './state.js';
+import { isValidRelPath } from './paths.js';
 
 const PHP_FILE_RE = /\.php$/i;
 
@@ -52,11 +53,44 @@ export async function syncProjectFiles(kv, project) {
   project.files = files;
   project.fileCount = files.length;
   project.size = total;
+  // 文件夹既可能来自文件路径推导，也可能由用户显式创建（空文件夹）。
+  // 持久化后刷新/重新打开项目仍能看到空目录，行为更接近桌面资源管理器。
+  project.folders = normalizeFolders(project.folders, files.map((file) => file.path));
   // 历史 PHP 入口在重新发布/刷新时必须失效，避免继续生成 404 链接。
   if (project.entryPath && PHP_FILE_RE.test(project.entryPath)) project.entryPath = null;
   project.updatedAt = nowSeconds();
   await kvPut(kv, keys.project(project.id), project);
   return project;
+}
+
+/**
+ * 归一文件夹清单：
+ * - 去掉非法、重复项
+ * - 自动补齐文件的父目录（如 css/theme/style.css → css、css/theme）
+ * - 排序保证接口输出稳定
+ */
+export function normalizeFolders(explicitFolders, filePaths = []) {
+  const result = new Set();
+  const add = (path) => {
+    if (!isValidRelPath(path)) return;
+    const parts = path.split('/');
+    let current = '';
+    for (const part of parts) {
+      if (!part || part === '.' || part === '..') return;
+      current = current ? `${current}/${part}` : part;
+      result.add(current);
+    }
+  };
+  if (Array.isArray(explicitFolders)) {
+    for (const folder of explicitFolders) {
+      if (typeof folder === 'string') add(folder);
+    }
+  }
+  for (const filePath of filePaths) {
+    if (typeof filePath !== 'string' || !filePath.includes('/')) continue;
+    add(filePath.split('/').slice(0, -1).join('/'));
+  }
+  return [...result].sort((a, b) => a.localeCompare(b));
 }
 
 // 删除项目：文件 + 元信息 + 记录 + 索引

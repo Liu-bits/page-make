@@ -1,7 +1,7 @@
 // =============================================================================
 // CSS/JS 引用全模式复现（本地容器 · 真实 HTTP）
 // 覆盖：① 粘贴-完整 HTML 引用 style.css/script.js ② 粘贴-片段自动注入
-//       ③ PHP 已移除 ④ 探索器发布三文件 ⑤ 上传 zip 管线
+//       ③ 内置模板逐字回归 ④ 探索器发布三文件 ⑤ 上传 zip 管线
 // 运行：node dev/test-assets.mjs
 // =============================================================================
 import { spawn } from 'node:child_process';
@@ -87,6 +87,10 @@ async function paste(token, body) {
 await waitForServer();
 console.log('\n[CSS/JS 引用全模式复现]');
 
+// 一次注册、全程复用：资源回归包含 20+ 个创建场景，逐项注册会触发
+// 服务端登录限速（429），那是安全特性生效，不是资源链路失败。
+const { token: sharedToken } = await login();
+
 // ⓿ 诊断路径归一：必须与 normalizeRelPath 一致，否则文件存在却误报「引用缺失」
 await test('诊断：../style.css、/style.css 不再误报缺失', async () => {
   const files = new Map([['index.html', new Uint8Array(0)], ['style.css', new Uint8Array(1)]]);
@@ -108,7 +112,7 @@ await test('诊断：../style.css、/style.css 不再误报缺失', async () => 
 
 // ① 完整 HTML（自带模板形态：link + script 标签都在）
 await test('粘贴：完整 HTML 引用 style.css / script.js → 资源可访问', async () => {
-  const { token } = await login();
+  const token = sharedToken;
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -142,7 +146,7 @@ await test('粘贴：完整 HTML 引用 style.css / script.js → 资源可访�
 
 // ② 片段（无 html 结构）→ 自动包裹 + 注入引用
 await test('粘贴：HTML 片段 → 自动注入 link/script 且资源可访问', async () => {
-  const { token } = await login();
+  const token = sharedToken;
   const { status, body } = await paste(token, { name: 'frag', html: '<h1>片段</h1>', css: 'h1{color:blue}', js: 'var a=1' });
   assertEqual(status, 200, '粘贴应成功');
   const id = body.project.id;
@@ -156,9 +160,130 @@ await test('粘贴：HTML 片段 → 自动注入 link/script 且资源可访问
   assertEqual(js.status, 200, 'script.js 应 200');
 });
 
+// ②-b 完整文档缺少 </head>：link 必须仍位于 head 内，不能拼到 <html> 外
+await test('粘贴：完整 HTML 缺少 </head> → CSS 注入 head 内', async () => {
+  const token = sharedToken;
+  const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>没有 head 结束标签</title>
+<body><h1>仍然要有样式</h1></body>
+</html>`;
+  const { status, body } = await paste(token, {
+    name: 'no-head-close',
+    html,
+    css: 'h1 { color: rgb(12, 34, 56); }',
+  });
+  assertEqual(status, 200, '粘贴应成功');
+  const served = await (await fetch(`${BASE}/p/${body.project.id}`)).text();
+  const headStart = served.toLowerCase().indexOf('<head');
+  const headEnd = served.toLowerCase().indexOf('</head>');
+  const linkAt = served.indexOf('href="style.css"');
+  const bodyAt = served.toLowerCase().indexOf('<body');
+  assert(headEnd >= 0, `应自动补上 </head>，实际：${served.slice(0, 240)}`);
+  assert(headStart >= 0 && linkAt > headStart && linkAt < headEnd,
+    `link 必须位于 head 内，实际：${served.slice(0, 240)}`);
+  assert(bodyAt < 0 || linkAt < bodyAt, 'link 不能落在 body 之后');
+  const css = await fetch(`${BASE}/p/${body.project.id}/style.css`);
+  assertEqual(css.status, 200, 'style.css 应 200');
+  assert((await css.text()).includes('rgb(12, 34, 56)'), 'CSS 内容应一致');
+});
+
+// ②-b2 有 <head> 且缺少 </head>：不能把第二个 <head> 插进已有的 head
+await test('粘贴：已有 <head> 但缺少 </head> → 不产生嵌套 head', async () => {
+  const token = sharedToken;
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+<body><p>没有 head 结束标签</p></body>
+</html>`;
+  const { status, body } = await paste(token, {
+    name: 'unclosed-head',
+    html,
+    css: 'p { color: rgb(45, 67, 89); }',
+  });
+  assertEqual(status, 200, '粘贴应成功');
+  const served = await (await fetch(`${BASE}/p/${body.project.id}`)).text();
+  assertEqual((served.match(/<head(?:\s|>)/gi) || []).length, 1, '不能出现嵌套 head');
+  assertEqual((served.match(/<\/head>/gi) || []).length, 1, '应恰好补一个 </head>');
+  assert(served.includes('href="style.css"'), '应自动注入 style.css');
+  assertEqual((await fetch(`${BASE}/p/${body.project.id}/style.css`)).status, 200, 'style.css 应 200');
+});
+
+// ②-b3 只有 <body>：补出的 head 必须在 body 外，不能插入 body 内部
+await test('粘贴：只有 <body> → 自动补 head 且样式生效', async () => {
+  const token = sharedToken;
+  const { status, body } = await paste(token, {
+    name: 'only-body',
+    html: '<body><p>只有 body</p></body>',
+    css: 'p { color: rgb(21, 43, 65); }',
+  });
+  assertEqual(status, 200, '粘贴应成功');
+  const served = await (await fetch(`${BASE}/p/${body.project.id}`)).text();
+  const headAt = served.toLowerCase().indexOf('<head>');
+  const bodyAt = served.toLowerCase().indexOf('<body>');
+  assert(headAt >= 0 && headAt < bodyAt, 'head 必须在 body 前');
+  assert(served.includes('href="style.css"'), '应自动注入 style.css');
+  assertEqual((await fetch(`${BASE}/p/${body.project.id}/style.css`)).status, 200, 'style.css 应 200');
+});
+
+// ②-c 没有手写 link 时也必须自动绑定用户填写的 CSS（不能只入库不引用）
+await test('粘贴：HTML 未写 link → 自动注入并生效', async () => {
+  const token = sharedToken;
+  const html = '<!DOCTYPE html><html><head><title>无引用</title></head><body><p>自动绑定</p></body></html>';
+  const { status, body } = await paste(token, {
+    name: 'auto-link',
+    html,
+    css: 'p { color: rgb(9, 87, 65); }',
+  });
+  assertEqual(status, 200, '粘贴应成功');
+  const served = await (await fetch(`${BASE}/p/${body.project.id}`)).text();
+  assert(served.includes('href="style.css"'), '没有 link 时必须自动注入 style.css');
+  const css = await fetch(`${BASE}/p/${body.project.id}/style.css`);
+  assertEqual(css.status, 200, '自动绑定的 style.css 应 200');
+  assert((await css.text()).includes('rgb(9, 87, 65)'), 'CSS 内容应一致');
+});
+
+// ②-d 三套内置模板逐字回归：模板里明确写了 <link>，必须一一可访问
+await test('粘贴：三套内置模板逐字创建 → HTML/CSS/JS 全部可访问', async () => {
+  const fs = await import('node:fs/promises');
+  const source = await fs.readFile('ios/PageMake/Models/PasteTemplates.swift', 'utf8');
+  // 三套模板按源码顺序配对；js 允许为空，不能用非空正则一次性匹配
+  const htmls = [...source.matchAll(/html: """\r?\n([\s\S]*?)\r?\n"""/g)].map((m) => m[1]);
+  const cssList = [...source.matchAll(/css: """\r?\n([\s\S]*?)\r?\n"""/g)].map((m) => m[1]);
+  const jsList = [...source.matchAll(/js: """\r?\n([\s\S]*?)\r?\n"""/g)].map((m) => m[1]);
+  assertEqual(htmls.length, 3, '应解析出三套模板 HTML');
+  assertEqual(cssList.length, 3, '应解析出三套模板 CSS');
+  assertEqual(jsList.length, 2, '应有模板包含 JS（博客模板为空）');
+  const blocks = htmls.map((html, index) => [html, cssList[index], jsList[index] ?? '']);
+  for (const [index, block] of blocks.entries()) {
+    const [html, css, js] = block;
+    const token = sharedToken;
+    const { status, body } = await paste(token, {
+      name: `builtin-${index + 1}`,
+      html,
+      css,
+      js,
+    });
+    assertEqual(status, 200, `模板 ${index + 1} 应创建成功`);
+    assert(body.project.files.some((file) => file.path === 'style.css'), `模板 ${index + 1} 应包含 style.css`);
+    const served = await (await fetch(`${BASE}/p/${body.project.id}`)).text();
+    assert(served.includes('href="style.css"'), `模板 ${index + 1} 的 HTML 应引用 style.css`);
+    const cssRes = await fetch(`${BASE}/p/${body.project.id}/style.css`);
+    assertEqual(cssRes.status, 200, `模板 ${index + 1} 的 style.css 应 200`);
+    assert((await cssRes.text()).includes(css.trim().split('\n')[0].trim()), `模板 ${index + 1} 的 CSS 内容应一致`);
+    if (js.trim()) {
+      const jsRes = await fetch(`${BASE}/p/${body.project.id}/script.js`);
+      assertEqual(jsRes.status, 200, `模板 ${index + 1} 的 script.js 应 200`);
+    }
+  }
+});
+
 // ③ 子目录引用 css/style.css
 await test('粘贴：子目录引用 css/style.css → 精确命中', async () => {
-  const { token } = await login();
+  const token = sharedToken;
   const html = `<html><head><link rel="stylesheet" href="css/style.css"></head><body><h1>x</h1></body></html>`;
   const { status, body } = await paste(token, { name: 'sub', html, css: 'h1 { color: green; }' });
   assertEqual(status, 200, '粘贴应成功');
@@ -174,7 +299,7 @@ await test('粘贴：子目录引用 css/style.css → 精确命中', async () =
 // 入口页是 /p/<id>（无尾斜杠），若 HTML 仍写 ../style.css，浏览器会解析成
 // https://host/style.css 跳出 /p/ 前缀 → 404。只修存储名是半截修复。
 await test('粘贴：../style.css 与 /style.css → 归一后仍可访问', async () => {
-  const { token } = await login();
+  const token = sharedToken;
 
   const a = await paste(token, {
     name: 'parent',
@@ -210,7 +335,7 @@ await test('粘贴：../style.css 与 /style.css → 归一后仍可访问', asy
 
 // ③-b2 查询串形态的归一：引用字符串也要跟着归一，否则浏览器仍请求不到
 await test('粘贴：../a.css?v=1 → 引用与存储同时归一', async () => {
-  const { token } = await login();
+  const token = sharedToken;
   const { status, body } = await paste(token, {
     name: 'query-parent',
     html: '<html><head><link rel="stylesheet" href="../style.css?v=1"></head><body><h1>x</h1></body></html>',
@@ -227,7 +352,7 @@ await test('粘贴：../a.css?v=1 → 引用与存储同时归一', async () => 
 
 // ③-b3 外链与 data URI 不得被改写（用户的远程引用必须原样保留）
 await test('粘贴：外链引用字符串保持原样', async () => {
-  const { token } = await login();
+  const token = sharedToken;
   const html = '<html><head>'
     + '<link rel="stylesheet" href="https://cdn.example.com/a.css">'
     + '<script src="//cdn.example.com/b.js"></script>'
@@ -252,7 +377,7 @@ await test('粘贴：外链引用字符串保持原样', async () => {
 // （粘贴链路已修，这里覆盖上传链路，防止只修一半）
 await test('ZIP 上传：HTML 内 ../style.css → 引用改写且可访问', async () => {
   const { buildZip } = await import('./make-zip.mjs');
-  const { token } = await login();
+  const token = sharedToken;
   const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
   const zip = buildZip([
     ['index.html', '<html><head><link rel="stylesheet" href="../style.css"></head><body><h1>zip</h1></body></html>'],
@@ -299,7 +424,7 @@ await test('ZIP 上传：HTML 内 ../style.css → 引用改写且可访问', as
 
 // ③-f 项目模式 publish：用户手写 ../style.css 引用时同步归一
 await test('探索器：HTML 写 ../style.css → publish 归一且可访问', async () => {
-  const { token } = await login();
+  const token = sharedToken;
   const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
   const created = await (await fetch(`${BASE}/api/projects/explorer`, {
     method: 'POST', headers: H, body: JSON.stringify({ name: 'expro-parent' }),
@@ -323,7 +448,7 @@ await test('探索器：HTML 写 ../style.css → publish 归一且可访问', a
 
 // ③-c 引用带查询串 / type 属性 / 多属性（曾因正则缺陷匹配不到 → 重复注入 + 断链）
 await test('粘贴：带查询串与 type 属性的引用 → 不重复注入且可访问', async () => {
-  const { token } = await login();
+  const token = sharedToken;
   const { status, body } = await paste(token, {
     name: 'query',
     html: '<html><head>'
@@ -344,7 +469,7 @@ await test('粘贴：带查询串与 type 属性的引用 → 不重复注入且
 
 // ③-d 外链 / data URI 不得被当成本地文件路径
 await test('粘贴：外链与 data URI 引用被忽略', async () => {
-  const { token } = await login();
+  const token = sharedToken;
   const { status, body } = await paste(token, {
     name: 'external',
     html: '<html><head>'
@@ -363,7 +488,7 @@ await test('粘贴：外链与 data URI 引用被忽略', async () => {
 
 // ④ PHP 粘贴 → 必须拒绝（PHP 已移除）
 await test('粘贴：PHP 字段不再生成可执行入口', async () => {
-  const { token } = await login();
+  const token = sharedToken;
   const { status, body } = await paste(token, { name: 'php', php: '<?php echo "PHP-OK:" . (2 + 3); ?>' });
   assertEqual(status, 400, '只有 PHP 字段时应拒绝');
   assertEqual(body.error, 'BAD_REQUEST', '错误码应为 BAD_REQUEST');
@@ -371,7 +496,7 @@ await test('粘贴：PHP 字段不再生成可执行入口', async () => {
 
 // ⑤ 探索器模式发布 → 资源可访问
 await test('探索器：三文件 publish → HTML/CSS/JS 全部可访问', async () => {
-  const { token } = await login();
+  const token = sharedToken;
   const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
   const created = await (await fetch(`${BASE}/api/projects/explorer`, {
     method: 'POST', headers: H, body: JSON.stringify({ name: 'expro' }),
@@ -402,7 +527,7 @@ await test('探索器：三文件 publish → HTML/CSS/JS 全部可访问', asyn
 // style.css 以 /p/<id>/style.css 引入，其中 url(../img/bg.png) 会被浏览器
 // 解析到 /p/ 前缀之外 → 404，症状是背景图/字体不显示，排查时容易误判成断链。
 await test('粘贴：CSS 内部 url() 引用归一后可访问', async () => {
-  const { token } = await login();
+  const token = sharedToken;
   const css = [
     '.hero { background-image: url(../img/bg.png); }',
     '.logo { background: url("img/logo.png") no-repeat; }',
@@ -495,7 +620,7 @@ await test('CSS 引用归一：注释与 content 字符串保持原样', async (
 // （HTML 侧归一覆盖不到 CSS 文件内容，上传管线必须单独处理）
 await test('上传 ZIP：CSS 内部 url() 归一后可访问', async () => {
   const { buildZip } = await import('./make-zip.mjs');
-  const { token } = await login();
+  const token = sharedToken;
   const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
   const zip = buildZip([
     ['index.html', '<html><head><link rel="stylesheet" href="../style.css"></head><body><h1>zip</h1></body></html>'],
@@ -541,7 +666,7 @@ await test('上传 ZIP：CSS 内部 url() 归一后可访问', async () => {
 
 // ⑥-c 项目模式 publish：编辑器里 CSS 的 url() 引用同样归一
 await test('探索器：CSS 内 url(../img/x.png) → publish 归一', async () => {
-  const { token } = await login();
+  const token = sharedToken;
   const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
   const created = await (await fetch(`${BASE}/api/projects/explorer`, {
     method: 'POST', headers: H, body: JSON.stringify({ name: 'cssurl-expro' }),
@@ -566,7 +691,7 @@ await test('探索器：CSS 内 url(../img/x.png) → publish 归一', async () 
 // img/iframe/source/a/form 等全部漏掉——用户写 ../img/a.png 时图片 404、
 // 内页链接跳到站点外，与 CSS/JS 断链同一症状但漏了半边
 await test('HTML 其他引用标签归一（img/iframe/source/a/form/srcset）', async () => {
-  const { token } = await login();
+    const token = sharedToken;
   const html = `<html><head><link rel="stylesheet" href="../style.css"></head>
 <body>
   <img src="../img/a.png" alt="a">
@@ -593,7 +718,7 @@ await test('HTML 其他引用标签归一（img/iframe/source/a/form/srcset）',
 
 // ⑦-b 外链与 data URI 必须原样保留（不能被当成本地引用改写）
 await test('外链与 data URI 引用保持原样', async () => {
-  const { token } = await login();
+  const token = sharedToken;
   const html = `<html><head><link rel="stylesheet" href="https://cdn.example.com/s.css"></head>
 <body>
   <img src="https://cdn.example.com/a.png" alt="ext">

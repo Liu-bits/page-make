@@ -795,6 +795,114 @@ await test('项目模式：创建虚拟文件夹内文件（index.html + css/sty
   })).json();
   assert(add2.ok, `添加 css/style.css 应成功：${JSON.stringify(add2)}`);
   assertEqual(add2.project.fileCount, 2, '文件数应为 2');
+  assert(add2.project.folders.includes('css'), '文件路径的父目录应持久化为文件夹');
+});
+
+await test('项目模式：空文件夹可创建、重命名并删除', async () => {
+  const request = async (body) => (await fetch(`${BASE}/api/projects/${explorerId}/files`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })).json();
+  const created = await request({ action: 'createFolder', path: 'assets/images' });
+  assert(created.ok, `创建文件夹应成功：${JSON.stringify(created)}`);
+  assert(created.project.folders.includes('assets'), '应保留父文件夹 assets');
+  assert(created.project.folders.includes('assets/images'), '应保留空文件夹 assets/images');
+
+  const renamed = await request({ action: 'rename', from: 'assets', to: 'static' });
+  assert(renamed.ok, `重命名文件夹应成功：${JSON.stringify(renamed)}`);
+  assert(renamed.project.folders.includes('static/images'), '子文件夹应随父目录迁移');
+  assert(!renamed.project.folders.includes('assets'), '旧文件夹不应残留');
+
+  const removed = await request({ action: 'removeFolder', path: 'static' });
+  assert(removed.ok, `删除文件夹应成功：${JSON.stringify(removed)}`);
+  assert(!removed.project.folders.some((folder) => folder === 'static' || folder.startsWith('static/')),
+    '删除文件夹后其子树不应残留');
+});
+
+await test('项目模式：文件可重命名且内容保留', async () => {
+  const request = async (body) => (await fetch(`${BASE}/api/projects/${explorerId}/files`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })).json();
+  const renamed = await request({ action: 'rename', from: 'css/style.css', to: 'css/theme.css' });
+  assert(renamed.ok, `重命名文件应成功：${JSON.stringify(renamed)}`);
+  assert(renamed.project.files.some((file) => file.path === 'css/theme.css'), '应出现新路径');
+  assert(!renamed.project.files.some((file) => file.path === 'css/style.css'), '旧路径应消失');
+  const content = await (await fetch(`${BASE}/api/projects/${explorerId}/files?path=css%2Ftheme.css`, {
+    headers: AUTH,
+  })).json();
+  assertEqual(base64ToText(content.content), 'h1{color:red}', '重命名后内容应保留');
+});
+
+await test('项目模式：重命名含文件的文件夹后目录与入口同步迁移', async () => {
+  const create = await (await fetch(`${BASE}/api/projects/explorer`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'rename-folder-files' }),
+  })).json();
+  const id = create.project.id;
+  const request = async (body) => (await fetch(`${BASE}/api/projects/${id}/files`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })).json();
+
+  assert((await request({ action: 'createFolder', path: 'pages' })).ok, '创建 pages 应成功');
+  assert((await request({
+    path: 'pages/about.html',
+    content: textToBase64('<html><body>about</body></html>'),
+  })).ok, '创建 pages/about.html 应成功');
+  assert((await request({
+    path: 'pages/detail.html',
+    content: textToBase64('<html><body>detail</body></html>'),
+  })).ok, '创建 pages/detail.html 应成功');
+
+  const renamed = await request({ action: 'rename', from: 'pages', to: 'content' });
+  assert(renamed.ok, `重命名文件夹应成功：${JSON.stringify(renamed)}`);
+  assert(renamed.project.files.some((file) => file.path === 'content/about.html'),
+    '文件应迁移到 content/about.html');
+  assert(!renamed.project.files.some((file) => file.path.startsWith('pages/')),
+    '旧 pages 路径不应残留');
+  assert(renamed.project.folders.includes('content'), '新文件夹 content 应保留');
+  assert(!renamed.project.folders.includes('pages'), '旧文件夹 pages 不应残留');
+  assertEqual(renamed.project.entryPath, 'content/about.html', '入口应随文件夹迁移');
+});
+
+await test('项目模式：新建 HTML 起始模板引用 style.css', async () => {
+  const source = await (await import('node:fs/promises')).readFile('ios/PageMake/Views/ExplorerView.swift', 'utf8');
+  assert(source.includes('<link rel="stylesheet" href="\\(cssHref)">'),
+    '资源管理器 HTML 起始模板必须显式引用 style.css');
+});
+
+await test('项目模式：重命名冲突与非法目标被拒绝', async () => {
+  const request = async (body) => (await fetch(`${BASE}/api/projects/${explorerId}/files`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })).json();
+
+  const create = async (path, content) => request({
+    path,
+    content: textToBase64(content),
+  });
+  assert((await create('about.html', '<p>about</p>')).ok, '应能创建 about.html');
+  assert((await create('assets/app.js', 'console.log(1)')).ok, '应能创建 assets/app.js');
+
+  const folderOnFile = await request({ action: 'createFolder', path: 'about.html' });
+  assertEqual(folderOnFile.error, 'CONFLICT', '不能在文件路径上创建文件夹');
+  const fileUnderFile = await request({ action: 'createFolder', path: 'about.html/nested' });
+  assertEqual(fileUnderFile.error, 'CONFLICT', '不能在文件下创建子目录');
+
+  const folderCollision = await request({ action: 'rename', from: 'assets', to: 'css' });
+  assertEqual(folderCollision.error, 'CONFLICT', '文件夹不能重命名为已有目录');
+
+  const fileCollision = await request({ action: 'rename', from: 'about.html', to: 'index.html' });
+  assertEqual(fileCollision.error, 'CONFLICT', '文件不能覆盖已有文件');
+
+  const badFileTarget = await request({ action: 'rename', from: 'about.html', to: 'about.txt' });
+  assertEqual(badFileTarget.error, 'BAD_REQUEST', '文件重命名仍须限制白名单扩展名');
 });
 
 await test('项目模式：非法扩展名与路径穿越被拒绝', async () => {
@@ -821,7 +929,7 @@ await test('项目模式：非法扩展名与路径穿越被拒绝', async () =>
 });
 
 await test('项目模式：读取文件内容（GET 回读一致，含中文）', async () => {
-  const res = await (await fetch(`${BASE}/api/projects/${explorerId}/files?path=css%2Fstyle.css`, { headers: AUTH })).json();
+  const res = await (await fetch(`${BASE}/api/projects/${explorerId}/files?path=css%2Ftheme.css`, { headers: AUTH })).json();
   assert(res.ok, '读取应成功');
   assertEqual(base64ToText(res.content), 'h1{color:red}', 'CSS 内容应一致');
 
@@ -830,6 +938,17 @@ await test('项目模式：读取文件内容（GET 回读一致，含中文）'
 });
 
 await test('项目模式：publish 生成链接 → 公开访问生效', async () => {
+  // 文件重命名测试已把 css/style.css 改为 css/theme.css，先同步入口引用
+  const rewrite = await (await fetch(`${BASE}/api/projects/${explorerId}/files`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      path: 'index.html',
+      content: textToBase64('<!DOCTYPE html><html><head><link rel="stylesheet" href="css/theme.css"></head><body><h1>项目模式页</h1></body></html>'),
+    }),
+  })).json();
+  assert(rewrite.ok, '更新入口 CSS 引用应成功');
+
   const res = await (await fetch(`${BASE}/api/projects/${explorerId}`, {
     method: 'POST',
     headers: { ...AUTH, 'Content-Type': 'application/json' },
@@ -844,7 +963,7 @@ await test('项目模式：publish 生成链接 → 公开访问生效', async (
   const text = await page.text();
   assert(text.includes('项目模式页'), '页面应包含内容');
 
-  const css = await fetch(`${BASE}/p/${explorerId}/css/style.css`);
+  const css = await fetch(`${BASE}/p/${explorerId}/css/theme.css`);
   assertEqual(css.status, 200, '虚拟文件夹内 CSS 应可访问');
   assertEqual(await css.text(), 'h1{color:red}', 'CSS 内容应一致');
 });

@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// 上传队列页：进度条 + 可取消 + 完成后轮询状态
 struct UploadQueueView: View {
@@ -6,8 +7,10 @@ struct UploadQueueView: View {
     let provider: HostProvider
 
     @StateObject private var uploadService = UploadService.shared
+    @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var didStart = false
+    @State private var createdProject: Project?
 
     var body: some View {
         NavigationStack {
@@ -37,6 +40,8 @@ struct UploadQueueView: View {
             .onAppear {
                 guard !didStart else { return }
                 didStart = true
+                // 每次进入创建流程都先刷新一次，避免上次异常退出遗留的旧队列项。
+                uploadService.clearFinishedItems()
                 switch source {
                 case .files(let files):
                     uploadService.upload(files: files, provider: provider)
@@ -50,6 +55,15 @@ struct UploadQueueView: View {
                     // 项目模式由 RootView 直接创建并打开资源管理器，不进入上传队列
                     break
                 }
+            }
+            .onReceive(uploadService.createdProject) { project in
+                createdProject = project
+                Task {
+                    await appState.projectDidBecomeReady(project)
+                }
+            }
+            .navigationDestination(item: $createdProject) { project in
+                PreviewView(project: project)
             }
         }
     }
@@ -89,6 +103,11 @@ struct UploadQueueView: View {
                         Text(L10n.string("open_preview"))
                     }
                     .buttonStyle(.bordered)
+                    Button(L10n.string("done")) {
+                        uploadService.remove(item)
+                        dismiss()
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
             case .expired:
                 Text(L10n.string("error_expired"))

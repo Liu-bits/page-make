@@ -178,6 +178,7 @@ final class AppState: ObservableObject {
         do {
             let project = try await api.createExplorerProject(name: name)
             upsertProject(project)
+            await loadProjects()
             return project
         } catch let error as APIError {
             if case .banned(let ban) = error {
@@ -298,6 +299,13 @@ final class AppState: ObservableObject {
         } else {
             projects.insert(project, at: 0)
         }
+    }
+
+    /// 创建完成后的统一入口：先本地插入保证立即显示，再从服务端拉取权威列表。
+    /// 上传/粘贴都在异步队列里完成，不能依赖列表页 onAppear 的时序。
+    func projectDidBecomeReady(_ project: Project) async {
+        upsertProject(project)
+        await loadProjects()
     }
 }
 

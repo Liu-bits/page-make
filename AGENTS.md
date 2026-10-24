@@ -108,11 +108,11 @@ E:/Page-make/
 │   │                        #   (上传+粘贴+模板) / ExplorerView(虚拟文件夹) / PreviewView /
 │   │                        #   WebView / QRCodeView / BannedView / PasswordAuthView /
 │   │                        #   SettingsView(统计/删账号/游客提示) / UploadQueueView 等 19 个
-│   ├── Resources/           #   Documents/(中英 .txt) + en/zh-Hans.lproj（各 206 键，0 重复）
+│   ├── Resources/           #   Documents/(中英 .txt) + en/zh-Hans.lproj（各 243 键，0 重复）
 │   ├── PageMake.entitlements  # applesignin（免费 Apple ID 用不了，游客登录兜底）
 │   └── PrivacyInfo.xcprivacy  # 隐私清单（过审）
 ├── ios/project.yml          # XcodeGen 描述（改工程结构改这里，勿直接改 xcodeproj）
-├── ios/PageMakeTests/       # 4 个单测文件
+├── ios/PageMakeTests/       # 5 个单测文件
 ├── dev/                     # 测试脚本（见第 5 节）+ make-zip.mjs
 ├── scripts/
 │   ├── deploy-modelscope.sh # CI 部署：推送子集到创空间 Git → 平台自动构建
@@ -139,8 +139,10 @@ E:/Page-make/
 - 上传 ZIP：分片 600KB × N（base64 后约 800KB/片），项目总上限 5MB；异步处理 + 轮询
 - 粘贴代码：HTML 必填 + CSS/JS 可选（合计 300KB）；css/js 文件名自动跟随 HTML 的
   link href / script src；HTML 片段自动包裹完整文档；三套内置模板（主页/落地页/博客）
-- 项目模式（Explorer）：虚拟文件夹资源管理器，单文件 900KB / 总 5MB；仅 html/css/js
-  白名单；路径安全（禁 `..`、`\`、控制字符）；publish 时 index.html 优先选入口 + 静态诊断
+- 项目模式（Explorer）：Windows 风格资源管理器，支持路径栏/返回、文件与文件夹分区、
+  详情、新建/重命名/删除、持久化空文件夹、发布后直接预览；单文件 900KB / 总 5MB；
+  仅 html/css/js 白名单；路径安全（禁 `..`、`\`、控制字符）；新建 HTML 骨架自动引用
+  style.css；publish 时 index.html 优先选入口 + 静态诊断
 
 **公开页与服务端**
 - `/p/<id>` 长期有效（登录用户）；游客 10 分钟；到期 410 中文过期页
@@ -164,7 +166,7 @@ E:/Page-make/
 - 项目列表搜索 + 排序（最新/最旧/名称/大小）+ 滑动重命名
 - 二维码分享（CoreImage CIFilter.qrCodeGenerator + ShareLink）
 - WebView 预览（reloadToken、轮询 150 次上限、runtimeErrors 去重上限 50）
-- 中英本地化（各 206 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
+- 中英本地化（各 243 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
 - 隐私政策/用户协议 App 内展示（Documents 双语文档，文件名后缀区分语言）
 
 ### 4.2 业务常量（backend/lib/state.js，与 iOS 端保持一致）
@@ -184,14 +186,14 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 117 项，提交前必须全绿）
+## 5. 测试体系（共 127 项，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
 | `node dev/run-tests.mjs` | 39 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护、密码强度校验【leetspeak 变形/反向键盘对角线】、MIME 类型映射） |
-| `node dev/test-server.mjs` | 40 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 ZIP PHP 过滤、历史 PHP 入口 404、zip 炸弹端到端、反馈限流、删号 KV 残留断言、弱口令拒绝、登录 429 限速） |
+| `node dev/test-server.mjs` | 45 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 ZIP PHP 过滤、历史 PHP 入口 404、zip 炸弹端到端、Explorer 空目录/重命名/目录迁移/冲突、反馈限流、删号 KV 残留断言、弱口令拒绝、登录 429 限速） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
-| `node dev/test-assets.mjs` | 20 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
+| `node dev/test-assets.mjs` | 25 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
 | `node dev/test-admin.mjs` | 10 | 后台（登录/哈希存储/测试账号权益/封禁下架+禁登/解封恢复/删号） |
 
 > Node 用 managed 绝对路径运行。测试脚本坑：`fail()` 的 error 字段是错误码字符串本身；
@@ -206,7 +208,7 @@ E:/Page-make/
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
-| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 117 项）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
+| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 127 项）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
 | keepalive.yaml | 每 10 分钟 | 探 `${PAGEMAKE_URL}/healthz`，**必须带 UA**（`-A "PageMake-Keepalive/1.0"`），并回显 /api/config 的 jwks 诊断 |
 | jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子并提交（境内拉不到 Google，只能靠 runner） |
 

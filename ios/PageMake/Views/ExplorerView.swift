@@ -1,69 +1,91 @@
 import SwiftUI
 
-/// 项目模式：类 Windows 资源管理器的虚拟文件视图
-/// - 虚拟文件夹：由文件路径推导（如 css/style.css → css 文件夹），无需单独创建
-/// - 仅支持 .html / .css / .js；支持创建、编辑、删除
-/// - 「生成链接」统一发布：自动选入口（index.html 优先）→ 静态诊断 → 返回公开链接
+/// 项目模式：Windows 风格文件资源管理器
+/// - 文件夹来自后端持久化清单（包含显式创建的空目录）
+/// - 支持新建/重命名/删除文件与文件夹、路径导航、详情与预览
+/// - 发布后可直接进入 PreviewView，不需要再回项目列表
 struct ExplorerView: View {
     let initial: Project
 
     @EnvironmentObject private var appState: AppState
     @State private var current: Project
-    @State private var currentDir = ""               // "" = 根目录
-    @State private var showNewFile = false
-    @State private var editingFile: EditingFile?
+    @State private var currentDir = ""
+    @State private var selection: ExplorerEntry?
+    @State private var activeSheet: ActiveSheet?
     @State private var deleteTarget: ExplorerEntry?
     @State private var alertItem: AlertItem?
     @State private var isPublishing = false
-    @State private var showQR = false
+    @State private var isWorking = false
 
     init(project: Project) {
         self.initial = project
         _current = State(initialValue: project)
     }
 
-    // MARK: - 目录条目（虚拟文件夹推导）
+    // MARK: - 状态
 
-    struct ExplorerEntry: Identifiable {
+    enum ActiveSheet: Identifiable {
+        case newFile
+        case newFolder
+        case rename(ExplorerEntry)
+        case edit(String)
+        case preview
+        case qr
+
+        var id: String {
+            switch self {
+            case .newFile: return "new-file"
+            case .newFolder: return "new-folder"
+            case .rename(let entry): return "rename-\(entry.path)"
+            case .edit(let path): return "edit-\(path)"
+            case .preview: return "preview"
+            case .qr: return "qr"
+            }
+        }
+    }
+
+    struct ExplorerEntry: Identifiable, Hashable {
         let name: String
         let path: String
         let isFolder: Bool
+        var size: Int64 = 0
         var id: String { path }
     }
 
-    struct EditingFile: Identifiable {
-        let path: String
-        var id: String { path }
-    }
+    // MARK: - 目录数据
 
-    /// 当前目录下的子文件夹与文件（文件夹在前，均按名称排序）
-    private var folders: [ExplorerEntry] {
-        entriesIn(currentDir).folders
-    }
-
-    private var files: [ExplorerEntry] {
-        entriesIn(currentDir).files
-    }
-
-    private func entriesIn(_ dir: String) -> (folders: [ExplorerEntry], files: [ExplorerEntry]) {
-        let prefix = dir.isEmpty ? "" : dir + "/"
-        var folderNames = Set<String>()
+    private var entries: (folders: [ExplorerEntry], files: [ExplorerEntry]) {
+        let prefix = currentDir.isEmpty ? "" : currentDir + "/"
+        var folderPaths = Set<String>()
+        for folder in current.folders {
+            guard folder.hasPrefix(prefix), folder != prefix else { continue }
+            let rest = String(folder.dropFirst(prefix.count))
+            guard !rest.isEmpty else { continue }
+            folderPaths.insert(String(rest.split(separator: "/")[0]))
+        }
         var fileEntries: [ExplorerEntry] = []
         for file in current.files {
             guard file.path.hasPrefix(prefix), file.path != prefix else { continue }
             let rest = String(file.path.dropFirst(prefix.count))
             guard !rest.isEmpty else { continue }
             if let slash = rest.firstIndex(of: "/") {
-                folderNames.insert(String(rest[..<slash]))
+                folderPaths.insert(String(rest[..<slash]))
             } else {
-                fileEntries.append(ExplorerEntry(name: rest, path: file.path, isFolder: false))
+                fileEntries.append(ExplorerEntry(
+                    name: rest,
+                    path: file.path,
+                    isFolder: false,
+                    size: file.size
+                ))
             }
         }
-        let folderEntries = folderNames.sorted().map {
+        let folders = folderPaths.sorted {
+            $0.localizedStandardCompare($1) == .orderedAscending
+        }.map {
             ExplorerEntry(name: $0, path: prefix + $0, isFolder: true)
         }
         fileEntries.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-        return (folderEntries, fileEntries)
+        return (folders, fileEntries)
     }
 
     /// 面包屑层级：[(名称, 路径)]，根目录在前
@@ -77,57 +99,82 @@ struct ExplorerView: View {
         return result
     }
 
+    private var parentPath: String? {
+        guard !currentDir.isEmpty else { return nil }
+        let parts = currentDir.split(separator: "/")
+        return parts.count <= 1 ? "" : parts.dropLast().joined(separator: "/")
+    }
+
     // MARK: - 视图
 
     var body: some View {
-        List {
-            if currentDir.isEmpty && current.files.isEmpty {
-                emptySection
-            } else {
-                breadcrumbSection
-                if !folders.isEmpty || !files.isEmpty {
-                    directorySections
-                } else {
-                    emptyFolderSection
-                }
-            }
-            if let url = current.publicURL {
-                linkSection(url)
-            }
-            diagnosticsSection
+        VStack(spacing: 0) {
+            addressBar
+            Divider()
+            content
+            Divider()
+            statusBar
         }
-        .listStyle(.insetGrouped)
         .navigationTitle(current.name)
         .navigationBarTitleDisplayMode(.inline)
-        .safeAreaInset(edge: .bottom) { publishBar }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showNewFile = true
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        activeSheet = .newFile
+                    } label: {
+                        Label(L10n.string("explorer_new_file"), systemImage: "doc.badge.plus")
+                    }
+                    Button {
+                        activeSheet = .newFolder
+                    } label: {
+                        Label(L10n.string("explorer_new_folder"), systemImage: "folder.badge.plus")
+                    }
                 } label: {
                     Image(systemName: "plus")
                 }
-                .accessibilityLabel(L10n.string("explorer_new_file"))
+                .accessibilityLabel(L10n.string("explorer_new"))
+
+                Button {
+                    activeSheet = .preview
+                } label: {
+                    Image(systemName: "eye")
+                }
+                .disabled(current.publicURL == nil)
+                .accessibilityLabel(L10n.string("preview"))
             }
         }
-        .sheet(isPresented: $showNewFile) {
-            NewFileSheet(
-                initialDir: currentDir,
-                existingPaths: current.files.map(\.path)
-            ) { path in
-                createFile(path: path)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .newFile:
+                NewFileSheet(
+                    initialDir: currentDir,
+                    existingPaths: current.files.map(\.path)
+                ) { path in
+                    createFile(path: path, sheetId: sheet.id)
+                }
+            case .newFolder:
+                NewFolderSheet(initialDir: currentDir) { path in
+                    createFolder(path: path)
+                }
+            case .rename(let entry):
+                RenameEntrySheet(entry: entry) { newName in
+                    rename(entry, to: newName)
+                }
+            case .edit(let path):
+                FileEditorView(projectId: current.id, path: path) { updated in
+                    apply(updated)
+                }
+            case .preview:
+                NavigationStack {
+                    PreviewView(project: current)
+                }
+            case .qr:
+                QRCodeView(project: current)
             }
-        }
-        .sheet(item: $editingFile) { file in
-            FileEditorView(projectId: current.id, path: file.path) { updated in
-                apply(updated)
-            }
-        }
-        .sheet(isPresented: $showQR) {
-            QRCodeView(project: current)
         }
         .confirmationDialog(
-            L10n.string("explorer_delete_file_title"),
+            L10n.string("explorer_delete_title"),
             isPresented: Binding(
                 get: { deleteTarget != nil },
                 set: { if !$0 { deleteTarget = nil } }
@@ -137,13 +184,15 @@ struct ExplorerView: View {
             Button(L10n.string("delete_confirm_button"), role: .destructive) {
                 if let target = deleteTarget {
                     deleteTarget = nil
-                    Task { await deleteFile(target) }
+                    Task { await delete(target) }
                 }
             }
             Button(L10n.string("cancel"), role: .cancel) { deleteTarget = nil }
         } message: {
             if let target = deleteTarget {
-                Text("\(target.path)\n\(L10n.string("explorer_delete_file_message"))")
+                Text(target.isFolder
+                     ? L10n.format("explorer_delete_folder_message", target.path)
+                     : L10n.format("explorer_delete_file_message", target.path))
             }
         }
         .alert(item: $alertItem) { item in
@@ -153,145 +202,262 @@ struct ExplorerView: View {
                 dismissButton: .default(Text(L10n.string("done")))
             )
         }
-    }
-
-    // MARK: 空项目
-
-    private var emptySection: some View {
-        Section {
-            VStack(spacing: 14) {
-                Image(systemName: "folder.badge.plus")
-                    .font(.system(size: 48))
-                    .foregroundStyle(.secondary)
-                Text(L10n.string("explorer_empty_title"))
-                    .font(.title3.bold())
-                Text(L10n.string("explorer_empty_hint"))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                Button {
-                    showNewFile = true
-                } label: {
-                    Label(L10n.string("explorer_new_file"), systemImage: "plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.glassProminent)
-                .padding(.horizontal, 24)
+        .overlay {
+            if isWorking {
+                ProgressView()
+                    .padding(18)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 24)
-            .listRowBackground(Color.clear)
         }
     }
 
-    private var emptyFolderSection: some View {
-        Section {
-            Text(L10n.string("explorer_empty_folder"))
-                .font(.footnote)
-                .foregroundStyle(.tertiary)
-                .frame(maxWidth: .infinity, alignment: .center)
-        }
-    }
+    // MARK: - 路径栏
 
-    // MARK: 面包屑
+    private var addressBar: some View {
+        HStack(spacing: 8) {
+            Button {
+                if let parentPath { currentDir = parentPath }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 32, height: 32)
+            }
+            .disabled(parentPath == nil)
+            .accessibilityLabel(L10n.string("explorer_back"))
 
-    private var breadcrumbSection: some View {
-        Section {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     ForEach(Array(breadcrumbs.enumerated()), id: \.element.path) { index, crumb in
                         if index > 0 {
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 10))
+                                .font(.system(size: 9, weight: .semibold))
                                 .foregroundStyle(.tertiary)
                         }
                         Button {
                             currentDir = crumb.path
                         } label: {
                             Text(crumb.name)
-                                .font(.footnote)
-                                .fontWeight(index == breadcrumbs.count - 1 ? .bold : .regular)
+                                .font(.system(.footnote, design: .rounded,
+                                              weight: index == breadcrumbs.count - 1 ? .semibold : .regular))
+                                .foregroundStyle(index == breadcrumbs.count - 1 ? .primary : .secondary)
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(index == breadcrumbs.count - 1 ? .primary : .secondary)
                     }
                 }
+                .padding(.horizontal, 4)
             }
+
+            Button {
+                Task { await refreshProject() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .frame(width: 32, height: 32)
+            }
+            .accessibilityLabel(L10n.string("refresh"))
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.bar)
     }
 
-    // MARK: 目录内容
+    // MARK: - 内容
 
     @ViewBuilder
-    private var directorySections: some View {
-        Section {
-            ForEach(folders) { folder in
-                Button {
-                    currentDir = folder.path
-                } label: {
-                    Label {
-                        Text(folder.name)
-                    } icon: {
-                        Image(systemName: "folder.fill")
-                            .foregroundStyle(.blue)
-                    }
-                }
-                .foregroundStyle(.primary)
-            }
-        }
-        Section {
-            ForEach(files) { file in
-                Button {
-                    editingFile = EditingFile(path: file.path)
-                } label: {
-                    Label {
-                        Text(file.name)
-                            .lineLimit(1)
-                        if let url = current.publicURL, isEntry(file.path) {
-                            Text(L10n.string("explorer_entry_badge"))
-                                .font(.caption2)
-                                .foregroundStyle(.green)
+    private var content: some View {
+        let list = entries
+        if current.files.isEmpty && current.folders.isEmpty {
+            emptyProjectView
+        } else if list.folders.isEmpty && list.files.isEmpty {
+            emptyFolderView
+        } else {
+            List {
+                if !list.folders.isEmpty {
+                    Section(L10n.string("explorer_folders")) {
+                        ForEach(list.folders) { folder in
+                            row(folder)
                         }
-                    } icon: {
-                        let icon = fileIcon(file.path)
-                        Image(systemName: icon.symbol)
-                            .foregroundStyle(icon.color)
                     }
                 }
-                .foregroundStyle(.primary)
-                .swipeActions(edge: .trailing) {
-                    Button(role: .destructive) {
-                        deleteTarget = file
-                    } label: {
-                        Label(L10n.string("delete_confirm_button"), systemImage: "trash")
+                if !list.files.isEmpty {
+                    Section(L10n.string("explorer_files")) {
+                        ForEach(list.files) { file in
+                            row(file)
+                        }
                     }
                 }
+                if let selection, !selection.isFolder {
+                    Section(L10n.string("explorer_details")) {
+                        fileDetails(selection)
+                    }
+                }
+                if !current.diagnostics.isEmpty {
+                    Section(L10n.format("explorer_issues_title", current.diagnostics.count)) {
+                        ForEach(current.diagnostics) { item in
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.detail).font(.footnote)
+                                if !item.suggestion.isEmpty {
+                                    Text(item.suggestion)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .animation(.default, value: currentDir)
+        }
+    }
+
+    private func row(_ entry: ExplorerEntry) -> some View {
+        Button {
+            if entry.isFolder {
+                currentDir = entry.path
+                selection = nil
+            } else {
+                selection = entry
+                activeSheet = .edit(entry.path)
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: entry.isFolder ? "folder.fill" : fileIcon(entry.path).symbol)
+                    .font(.system(size: 22))
+                    .foregroundStyle(entry.isFolder ? Color.blue : fileIcon(entry.path).color)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(entry.name)
+                            .font(.system(.body, design: .rounded))
+                            .lineLimit(1)
+                        if !entry.isFolder && isEntry(entry.path) {
+                            Text(L10n.string("explorer_entry_badge"))
+                                .font(.caption2.bold())
+                                .foregroundStyle(.green)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.green.opacity(0.12), in: Capsule())
+                        }
+                    }
+                    Text(entry.isFolder
+                         ? L10n.string("explorer_folder_kind")
+                         : "\(fileKind(entry.path)) · \(ByteCountFormatter.string(fromByteCount: entry.size, countStyle: .file))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if entry.isFolder {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) {
+                deleteTarget = entry
+            } label: {
+                Label(L10n.string("delete_confirm_button"), systemImage: "trash")
+            }
+        }
+        .contextMenu {
+            if entry.isFolder {
+                Button {
+                    currentDir = entry.path
+                } label: {
+                    Label(L10n.string("explorer_open"), systemImage: "folder")
+                }
+            } else {
+                Button {
+                    selection = entry
+                    activeSheet = .edit(entry.path)
+                } label: {
+                    Label(L10n.string("explorer_open"), systemImage: "doc.text")
+                }
+            }
+            Button {
+                activeSheet = .rename(entry)
+            } label: {
+                Label(L10n.string("rename"), systemImage: "pencil")
+            }
+            Button(role: .destructive) {
+                deleteTarget = entry
+            } label: {
+                Label(L10n.string("delete_confirm_button"), systemImage: "trash")
             }
         }
     }
 
-    private func isEntry(_ path: String) -> Bool {
-        current.entryPath.map { $0 == path } ?? false
+    private func fileDetails(_ file: ExplorerEntry) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            LabeledContent(L10n.string("explorer_name"), value: file.name)
+            LabeledContent(L10n.string("explorer_path"), value: file.path)
+            LabeledContent(L10n.string("explorer_size"),
+                           value: ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file))
+            LabeledContent(L10n.string("explorer_type"), value: fileKind(file.path))
+            HStack {
+                Button {
+                    activeSheet = .edit(file.path)
+                } label: {
+                    Label(L10n.string("explorer_edit"), systemImage: "square.and.pencil")
+                }
+                .buttonStyle(.bordered)
+                Button {
+                    activeSheet = .rename(file)
+                } label: {
+                    Label(L10n.string("rename"), systemImage: "pencil")
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .font(.footnote)
     }
 
-    private func fileIcon(_ path: String) -> (symbol: String, color: Color) {
-        let lower = path.lowercased()
-        if lower.hasSuffix(".css") { return ("paintbrush.pointed.fill", .blue) }
-        if lower.hasSuffix(".js") { return ("chevron.left.forwardslash.chevron.right", .orange) }
-        return ("doc.richtext.fill", .red)
+    private var emptyProjectView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "folder.badge.plus")
+                .font(.system(size: 54))
+                .foregroundStyle(.blue)
+            Text(L10n.string("explorer_empty_title"))
+                .font(.system(.title3, design: .rounded, weight: .bold))
+            Text(L10n.string("explorer_empty_hint"))
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 30)
+            HStack {
+                Button(L10n.string("explorer_new_file")) { activeSheet = .newFile }
+                    .buttonStyle(.borderedProminent)
+                Button(L10n.string("explorer_new_folder")) { activeSheet = .newFolder }
+                    .buttonStyle(.bordered)
+            }
+            Spacer()
+        }
     }
 
-    // MARK: 公开链接
+    private var emptyFolderView: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            Image(systemName: "folder")
+                .font(.system(size: 46))
+                .foregroundStyle(.tertiary)
+            Text(L10n.string("explorer_empty_folder"))
+                .foregroundStyle(.secondary)
+            Button(L10n.string("explorer_new_file")) { activeSheet = .newFile }
+                .buttonStyle(.bordered)
+            Spacer()
+        }
+    }
 
-    private func linkSection(_ url: URL) -> some View {
-        Section(L10n.string("explorer_link_section")) {
-            HStack(spacing: 14) {
-                Text(url.absoluteString)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer()
+    private var statusBar: some View {
+        HStack(spacing: 12) {
+            Text(L10n.format("explorer_item_count", entries.folders.count + entries.files.count))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            if let url = current.publicURL {
                 Button {
                     UIPasteboard.general.string = url.absoluteString
                     alertItem = AlertItem(message: L10n.string("link_copied"), titleKey: "alert_tip")
@@ -300,65 +466,29 @@ struct ExplorerView: View {
                 }
                 .accessibilityLabel(L10n.string("copy_link"))
                 Button {
-                    showQR = true
+                    activeSheet = .qr
                 } label: {
                     Image(systemName: "qrcode")
                 }
                 .accessibilityLabel(L10n.string("qr_code"))
             }
-        }
-    }
-
-    // MARK: 发布检查提示（小白话，帮助新手发现问题）
-
-    @ViewBuilder
-    private var diagnosticsSection: some View {
-        if !current.diagnostics.isEmpty {
-            Section(L10n.format("explorer_issues_title", current.diagnostics.count)) {
-                ForEach(current.diagnostics) { item in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label {
-                            Text(item.detail)
-                                .font(.footnote)
-                        } icon: {
-                            Image(systemName: "lightbulb")
-                                .foregroundStyle(.orange)
-                        }
-                        if !item.suggestion.isEmpty {
-                            Text(item.suggestion)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-            }
-        }
-    }
-
-    // MARK: 底部发布栏
-
-    private var publishBar: some View {
-        HStack(spacing: 12) {
-            if isPublishing {
-                ProgressView()
-                Text(L10n.string("explorer_publishing"))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
             Button {
                 Task { await publish() }
             } label: {
-                Text(current.publicURL == nil
-                     ? L10n.string("explorer_publish")
-                     : L10n.string("explorer_republish"))
-                    .frame(maxWidth: .infinity)
+                if isPublishing {
+                    ProgressView()
+                } else {
+                    Label(current.publicURL == nil
+                          ? L10n.string("explorer_publish")
+                          : L10n.string("explorer_republish"),
+                          systemImage: "paperplane.fill")
+                }
             }
-            .buttonStyle(.glassProminent)
+            .buttonStyle(.borderedProminent)
             .disabled(isPublishing)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
         .background(.bar)
     }
 
@@ -367,10 +497,45 @@ struct ExplorerView: View {
     private func apply(_ project: Project) {
         current = project
         appState.upsertProject(project)
+        if !currentDir.isEmpty && !project.folders.contains(currentDir) {
+            currentDir = ""
+        }
+    }
+
+    private func isEntry(_ path: String) -> Bool {
+        current.entryPath == path
+    }
+
+    private func fileKind(_ path: String) -> String {
+        switch (path as NSString).pathExtension.lowercased() {
+        case "html", "htm": return L10n.string("explorer_kind_html")
+        case "css": return L10n.string("explorer_kind_css")
+        case "js": return L10n.string("explorer_kind_js")
+        default: return (path as NSString).pathExtension.uppercased()
+        }
+    }
+
+    private func fileIcon(_ path: String) -> (symbol: String, color: Color) {
+        switch (path as NSString).pathExtension.lowercased() {
+        case "css": return ("paintbrush.pointed.fill", .blue)
+        case "js": return ("chevron.left.forwardslash.chevron.right", .orange)
+        default: return ("doc.richtext.fill", .red)
+        }
+    }
+
+    private func refreshProject() async {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            let updated = try await APIClient.shared.project(current.id)
+            apply(updated)
+        } catch {
+            alertItem = AlertItem(message: L10n.string("error_network"))
+        }
     }
 
     /// 新建文件：先写入 HTML 起始骨架（css/js 为空文件），成功后直接进入编辑器
-    private func createFile(path: String) {
+    private func createFile(path: String, sheetId: String) {
         Task {
             do {
                 let content = NewFileSheet.starterContent(for: path)
@@ -380,7 +545,10 @@ struct ExplorerView: View {
                     content: Data(content.utf8)
                 )
                 apply(updated)
-                editingFile = EditingFile(path: path)
+                // 必须留在同一个 sheet 生命周期里切换内容。若先关闭新建 sheet、
+                // 下一帧再打开编辑器，SwiftUI 的关闭转场会吞掉第二次 presentation。
+                guard activeSheet?.id == sheetId else { return }
+                activeSheet = .edit(path)
             } catch let error as APIError {
                 alertItem = AlertItem(message: error.errorDescription ?? L10n.string("error_generic"))
             } catch {
@@ -389,10 +557,54 @@ struct ExplorerView: View {
         }
     }
 
-    private func deleteFile(_ entry: ExplorerEntry) async {
+    private func createFolder(path: String) {
+        Task {
+            isWorking = true
+            defer { isWorking = false }
+            do {
+                let updated = try await APIClient.shared.createFolder(projectId: current.id, path: path)
+                apply(updated)
+            } catch let error as APIError {
+                alertItem = AlertItem(message: error.errorDescription ?? L10n.string("error_generic"))
+            } catch {
+                alertItem = AlertItem(message: L10n.string("error_generic"))
+            }
+        }
+    }
+
+    private func rename(_ entry: ExplorerEntry, to newName: String) {
+        Task {
+            isWorking = true
+            defer { isWorking = false }
+            let parent = entry.path.split(separator: "/").dropLast().joined(separator: "/")
+            let target = parent.isEmpty ? newName : parent + "/" + newName
+            do {
+                let updated = try await APIClient.shared.renameEntry(
+                    projectId: current.id,
+                    from: entry.path,
+                    to: target
+                )
+                apply(updated)
+                selection = nil
+            } catch let error as APIError {
+                alertItem = AlertItem(message: error.errorDescription ?? L10n.string("error_generic"))
+            } catch {
+                alertItem = AlertItem(message: L10n.string("error_generic"))
+            }
+        }
+    }
+
+    private func delete(_ entry: ExplorerEntry) async {
+        isWorking = true
+        defer { isWorking = false }
         do {
-            let updated = try await APIClient.shared.deleteFile(projectId: current.id, path: entry.path)
+            let updated = entry.isFolder
+                ? try await APIClient.shared.deleteFolder(projectId: current.id, path: entry.path)
+                : try await APIClient.shared.deleteFile(projectId: current.id, path: entry.path)
             apply(updated)
+            if selection?.path == entry.path || selection?.path.hasPrefix(entry.path + "/") == true {
+                selection = nil
+            }
         } catch let error as APIError {
             alertItem = AlertItem(message: error.errorDescription ?? L10n.string("error_generic"))
         } catch {
@@ -473,6 +685,9 @@ struct NewFileSheet: View {
             return ""
         }
         let fileName = (path as NSString).lastPathComponent
+        let directory = (path as NSString).deletingLastPathComponent
+        // HTML 位于子目录时，link 也必须相对该 HTML，否则会指向不存在的目录。
+        let cssHref = directory.isEmpty ? "style.css" : directory + "/style.css"
         return """
         <!DOCTYPE html>
         <html lang="zh-CN">
@@ -480,6 +695,7 @@ struct NewFileSheet: View {
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <title>\(fileName)</title>
+          <link rel="stylesheet" href="\(cssHref)">
         </head>
         <body>
           <h1>\(fileName)</h1>
@@ -533,6 +749,127 @@ struct NewFileSheet: View {
                         }
                     }
                     .disabled(normalizedPath == nil)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 新建文件夹
+
+struct NewFolderSheet: View {
+    let initialDir: String
+    let onCreate: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String
+
+    init(initialDir: String, onCreate: @escaping (String) -> Void) {
+        self.initialDir = initialDir
+        self.onCreate = onCreate
+        _text = State(initialValue: initialDir.isEmpty ? "" : initialDir + "/")
+    }
+
+    var normalizedPath: String? {
+        var raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        raw = raw.replacingOccurrences(of: "\\", with: "/")
+        while raw.hasPrefix("./") { raw.removeFirst(2) }
+        guard !raw.isEmpty, raw.count <= 200,
+              !raw.contains(".."), !raw.hasPrefix("/"), !raw.hasSuffix("/") else { return nil }
+        if raw.unicodeScalars.contains(where: { $0.value < 32 }) { return nil }
+        return raw
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(L10n.string("explorer_folder_placeholder"), text: $text)
+                        .font(.system(.body, design: .monospaced))
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                } footer: {
+                    Text(L10n.string("explorer_folder_hint"))
+                }
+            }
+            .navigationTitle(L10n.string("explorer_new_folder"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.string("cancel")) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.string("explorer_create_folder")) {
+                        if let path = normalizedPath {
+                            dismiss()
+                            onCreate(path)
+                        }
+                    }
+                    .disabled(normalizedPath == nil)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 重命名
+
+struct RenameEntrySheet: View {
+    let entry: ExplorerView.ExplorerEntry
+    let onRename: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String
+
+    init(entry: ExplorerView.ExplorerEntry, onRename: @escaping (String) -> Void) {
+        self.entry = entry
+        self.onRename = onRename
+        _text = State(initialValue: entry.name)
+    }
+
+    private var normalizedName: String? {
+        var raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        raw = raw.replacingOccurrences(of: "\\", with: "/")
+        guard !raw.isEmpty, raw.count <= 100,
+              !raw.contains(".."), !raw.contains("/"),
+              !raw.unicodeScalars.contains(where: { $0.value < 32 }) else { return nil }
+        if !entry.isFolder && !raw.contains(".") { raw += ".html" }
+        if !entry.isFolder {
+            let lower = raw.lowercased()
+            guard lower.hasSuffix(".html") || lower.hasSuffix(".htm")
+                    || lower.hasSuffix(".css") || lower.hasSuffix(".js") else { return nil }
+        }
+        return raw
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(L10n.string("explorer_rename_placeholder"), text: $text)
+                        .font(.system(.body, design: .monospaced))
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                } footer: {
+                    Text(entry.isFolder
+                         ? L10n.string("explorer_rename_folder_hint")
+                         : L10n.string("explorer_rename_file_hint"))
+                }
+            }
+            .navigationTitle(L10n.string("rename"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.string("cancel")) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.string("confirm")) {
+                        if let name = normalizedName, name != entry.name {
+                            dismiss()
+                            onRename(name)
+                        }
+                    }
+                    .disabled(normalizedName == nil || normalizedName == entry.name)
                 }
             }
         }

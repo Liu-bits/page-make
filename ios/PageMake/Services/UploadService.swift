@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// 上传服务：分片上传 + 状态轮询（每 2 秒）
@@ -26,6 +27,8 @@ final class UploadService: ObservableObject {
     }
 
     @Published private(set) var items: [Item] = []
+    /// 新项目 ready 事件：由上传队列监听并刷新全局项目列表
+    let createdProject = PassthroughSubject<Project, Never>()
 
     private let api = APIClient.shared
     private var tasks: [UUID: Task<Void, Never>] = [:]
@@ -41,6 +44,7 @@ final class UploadService: ObservableObject {
         let itemId = item.id
         tasks[itemId] = Task { [weak self] in
             await self?.run(itemId: itemId, files: files, provider: provider)
+            self?.tasks[itemId] = nil
         }
     }
 
@@ -69,7 +73,13 @@ final class UploadService: ObservableObject {
                     js: content.js,
                     name: name
                 )
-                self.update(itemId) { $0.status = .ready; $0.progress = 1; $0.project = project }
+                self.update(itemId) {
+                    $0.status = .ready
+                    $0.progress = 1
+                    $0.project = project
+                    $0.projectId = project.id
+                }
+                self.createdProject.send(project)
                 LogStore.shared.append("paste", result: "ok", errorCode: nil)
             } catch let error as APIError {
                 self.update(itemId) { $0.status = .failed; $0.errorMessage = error.errorDescription }
@@ -78,6 +88,7 @@ final class UploadService: ObservableObject {
                 self.update(itemId) { $0.status = .failed; $0.errorMessage = L10n.string("error_generic") }
                 LogStore.shared.append("paste", result: "failed", errorCode: "network")
             }
+            self.tasks[itemId] = nil
         }
     }
 
@@ -90,6 +101,16 @@ final class UploadService: ObservableObject {
         tasks[item.id]?.cancel()
         tasks[item.id] = nil
         items.removeAll { $0.id == item.id }
+    }
+
+    /// 清理上一轮已完成/失败的队列项；进行中的任务保留。
+    func clearFinishedItems() {
+        items.removeAll { item in
+            switch item.status {
+            case .ready, .failed, .expired: return true
+            case .uploading, .processing: return false
+            }
+        }
     }
 
     private func run(itemId: UUID, files: [PickedFile], provider: HostProvider) async {
@@ -156,6 +177,7 @@ final class UploadService: ObservableObject {
                     if let project = response.project {
                         items[index].status = .ready
                         items[index].project = project
+                        createdProject.send(project)
                     } else {
                         items[index].status = .ready
                         items[index].errorMessage = nil

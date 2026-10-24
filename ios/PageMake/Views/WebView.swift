@@ -26,6 +26,7 @@ struct WebView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
+        context.coordinator.onRuntimeError = onRuntimeError
         if webView.url != url {
             webView.load(URLRequest(url: url))
         } else if let token = reloadToken, token != context.coordinator.lastReloadToken {
@@ -37,6 +38,8 @@ struct WebView: UIViewRepresentable {
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "pagemake")
+        webView.navigationDelegate = nil
+        webView.stopLoading()
     }
 
     /// 运行时错误捕获脚本（atDocumentStart 注入）
@@ -86,18 +89,22 @@ struct WebView: UIViewRepresentable {
                   let dict = message.body as? [String: Any],
                   let type = dict["type"] as? String else { return }
 
-            switch type {
-            case "error":
-                let line = dict["line"] as? Int ?? 0
-                let text = String(format: NSLocalizedString("runtime_js_error", comment: ""),
-                                  dict["message"] as? String ?? "", line)
-                onRuntimeError(text)
-            case "console":
-                onRuntimeError("console.error：" + (dict["message"] as? String ?? ""))
-            case "resource":
-                onRuntimeError(dict["message"] as? String ?? "")
-            default:
-                break
+            // WKScriptMessage 回调在主线程，但 SwiftUI 状态更新仍统一交给
+            // MainActor，避免未来接入异步桥接时出现线程竞态。
+            Task { @MainActor [onRuntimeError] in
+                switch type {
+                case "error":
+                    let line = dict["line"] as? Int ?? 0
+                    let text = String(format: NSLocalizedString("runtime_js_error", comment: ""),
+                                      dict["message"] as? String ?? "", line)
+                    onRuntimeError(text)
+                case "console":
+                    onRuntimeError("console.error：" + (dict["message"] as? String ?? ""))
+                case "resource":
+                    onRuntimeError(dict["message"] as? String ?? "")
+                default:
+                    break
+                }
             }
         }
 

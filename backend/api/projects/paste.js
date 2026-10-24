@@ -50,7 +50,6 @@ function buildHtml(html, css, js, name) {
   // 先归一 HTML 里的引用字符串：后续 findAssetPath 取到的就是最终存储路径，
   // 保证「HTML 引用的路径」与「文件实际存储的路径」严格一致
   html = rewriteLocalRefs(html);
-  const hasStructure = /<html[\s>]/i.test(html);
   const cssPath = findAssetPath(html, 'link', 'href', 'css', 'style.css');
   const jsPath = findAssetPath(html, 'script', 'src', 'js', 'script.js');
   // 「是否已引用」必须按 HTML 里是否真有对应标签判断，不能按路径是否等于默认名：
@@ -62,7 +61,11 @@ function buildHtml(html, css, js, name) {
   const cssLink = `<link rel="stylesheet" href="${cssPath}">`;
   const jsTag = `<script src="${jsPath}"></script>`;
 
-  if (!hasStructure) {
+  // 只要用户没有给出完整的 html/head/body 结构，就按片段包裹。
+  // 不能只检查 <html>：用户常粘贴 `<head>...</head><body>...</body>`，
+  // 这种情况下再包一层会产生嵌套文档，浏览器仍可能不应用样式。
+  const hasDocumentStructure = /<(?:html|head|body)[\s>]/i.test(html);
+  if (!hasDocumentStructure) {
     const head = [
       '<meta charset="utf-8">',
       '<meta name="viewport" content="width=device-width, initial-scale=1">',
@@ -87,16 +90,52 @@ ${html}${bodyTail}
 
   let out = html;
   if (css && !hasCssRef) {
-    out = /<\/head>/i.test(out)
-      ? out.replace(/<\/head>/i, `  ${cssLink}\n</head>`)
-      : `${cssLink}\n${out}`;
+    out = insertIntoHead(out, `  ${cssLink}\n`);
   }
   if (js && !hasJsRef) {
-    out = /<\/body>/i.test(out)
-      ? out.replace(/<\/body>/i, `  ${jsTag}\n</body>`)
-      : `${out}\n${jsTag}`;
+    out = insertIntoBody(out, `  ${jsTag}\n`);
   }
   return { html: out, cssPath, jsPath };
+}
+
+/**
+ * 把一段 head 内容插入完整文档。
+ * 兼容：有 </head>、只有 <head>、完全没有 head、HTML 片段式完整文档。
+ * 以前没有 </head> 时直接拼到文档最前面，link 实际落在 <html> 外，
+ * 浏览器会忽略或把其当作正文资源，表现为“CSS 已上传但不生效”。
+ */
+function insertIntoHead(html, content) {
+  if (/<\/head\s*>/i.test(html)) {
+    return html.replace(/<\/head\s*>/i, `${content}</head>`);
+  }
+  if (/<head[\s>]/i.test(html) && /<body[\s>]/i.test(html)) {
+    return html.replace(/<body([^>]*)>/i, (whole, attrs) => `${content}</head>\n<body${attrs}>`);
+  }
+  if (/<body[\s>]/i.test(html)) {
+    return html.replace(/<body([^>]*)>/i, (whole, attrs) => `<head>\n${content}</head>\n<body${attrs}>`);
+  }
+  if (/<head[\s>]/i.test(html)) {
+    return html.replace(/<head([^>]*)>/i, (whole, attrs) => `<head${attrs}>\n${content}`);
+  }
+  if (/<html[\s>]/i.test(html)) {
+    return html.replace(/<html([^>]*)>/i, (whole, attrs) => `<html${attrs}>\n<head>\n${content}</head>`);
+  }
+  // 兜底：没有可定位的 head 时，在文档最前面建立 head。
+  return `<head>\n${content}</head>\n${html}`;
+}
+
+/**
+ * 把一段脚本内容插入完整文档的 body 末尾。
+ * 没有 </body> 时优先插到 </html> 前；连 html 结束标签都没有才追加到末尾。
+ */
+function insertIntoBody(html, content) {
+  if (/<\/body\s*>/i.test(html)) {
+    return html.replace(/<\/body\s*>/i, `${content}</body>`);
+  }
+  if (/<\/html\s*>/i.test(html)) {
+    return html.replace(/<\/html\s*>/i, `${content}</html>`);
+  }
+  return `${html}\n${content}`;
 }
 
 export async function onRequest(context) {

@@ -149,6 +149,12 @@ final class APIClient {
         return payload.projects
     }
 
+    /// 读取单个项目详情（资源管理器刷新）
+    func project(_ id: String) async throws -> Project {
+        let data = try await request("/api/projects/\(id)")
+        return try decoder.decode(ProjectPayload.self, from: data).project
+    }
+
     /// 重命名项目（POST + action=rename）
     func renameProject(_ id: String, name: String) async throws -> Project {
         let body = try encoder.encode(RenameRequest(action: "rename", name: name))
@@ -295,6 +301,13 @@ final class APIClient {
         let path: String
     }
 
+    struct ExplorerActionRequest: Encodable {
+        let action: String
+        let path: String?
+        let from: String?
+        let to: String?
+    }
+
     struct ActionRequest: Encodable {
         let action: String
     }
@@ -312,6 +325,33 @@ final class APIClient {
         let data = try await request("/api/projects/\(projectId)/files", method: "POST", body: body)
         let payload = try decoder.decode(ProjectPayload.self, from: data)
         return payload.project
+    }
+
+    /// 创建文件夹（支持多级路径，空文件夹会持久化）
+    func createFolder(projectId: String, path: String) async throws -> Project {
+        let body = try encoder.encode(ExplorerActionRequest(
+            action: "createFolder", path: path, from: nil, to: nil
+        ))
+        let data = try await request("/api/projects/\(projectId)/files", method: "POST", body: body)
+        return try decoder.decode(ProjectPayload.self, from: data).project
+    }
+
+    /// 删除文件夹及其全部子文件
+    func deleteFolder(projectId: String, path: String) async throws -> Project {
+        let body = try encoder.encode(ExplorerActionRequest(
+            action: "removeFolder", path: path, from: nil, to: nil
+        ))
+        let data = try await request("/api/projects/\(projectId)/files", method: "POST", body: body)
+        return try decoder.decode(ProjectPayload.self, from: data).project
+    }
+
+    /// 重命名文件或文件夹
+    func renameEntry(projectId: String, from: String, to: String) async throws -> Project {
+        let body = try encoder.encode(ExplorerActionRequest(
+            action: "rename", path: nil, from: from, to: to
+        ))
+        let data = try await request("/api/projects/\(projectId)/files", method: "POST", body: body)
+        return try decoder.decode(ProjectPayload.self, from: data).project
     }
 
     // MARK: - 项目模式（虚拟文件管理器）

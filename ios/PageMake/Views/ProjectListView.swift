@@ -77,7 +77,11 @@ struct ProjectListView: View {
                 await appState.loadProjects()
             }
             .searchable(text: $searchText, prompt: L10n.string("search_projects"))
-            .sheet(isPresented: $showPasswordAuth) {
+            .sheet(isPresented: $showPasswordAuth, onDismiss: {
+                if appState.isLoggedIn {
+                    Task { await appState.loadProjects() }
+                }
+            }) {
                 PasswordAuthView()
                     .environmentObject(appState)
             }
