@@ -186,14 +186,14 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 113 项，提交前必须全绿）
+## 5. 测试体系（共 114 项，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
 | `node dev/run-tests.mjs` | 39 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护、密码强度校验【leetspeak 变形/反向键盘对角线】、MIME 类型映射） |
 | `node dev/test-server.mjs` | 38 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 zip 炸弹端到端、反馈限流、删号 KV 残留断言、弱口令拒绝、登录 429 限速） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
-| `node dev/test-assets.mjs` | 18 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP/CSS 内部 url() 归一三链路/**HTML 其他引用标签 img/iframe/source/a/form/srcset**/**外链与 data URI 原样保留**） |
+| `node dev/test-assets.mjs` | 19 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式归一**） |
 | `node dev/test-admin.mjs` | 10 | 后台（登录/哈希存储/测试账号权益/封禁下架+禁登/解封恢复/删号） |
 
 > Node 用 managed 绝对路径运行。测试脚本坑：`fail()` 的 error 字段是错误码字符串本身；
@@ -275,6 +275,9 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
 - **HTML 引用归一别只做 link/script**：`img/iframe/source/audio/video/track/
   embed/object/a/area/form` 全是同一根因，漏一个就有资源 404 或内页链接
   跳出站点外。`srcset` 是逗号分隔多值，必须逐候选归一，不能当单一路径折叠
+- **CSS `@import` 有两种等价语法**：`url("../a.css")` 与 `"../a.css"` 字符串形式。
+  只处理 url() 会漏掉字符串形式（`@import` 正则要单独写）。注意别误伤
+  `@charset` / `@media` / `@font-face` 等其它 @ 规则
 - `x-forwarded-proto` 可能是逗号分隔多值（"https, https"）→ 取第一个值，否则 URL 非法 500
 - kvPut 直传对象会失败 → 已加自动 JSON 序列化；索引 key 后缀必须 decodeKey 后再查
   （双重编码 bug 出过**三**次：projects 列表 + banUser/unbanUser + **auth/delete.js 漏 decodeKey**

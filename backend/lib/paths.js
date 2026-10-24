@@ -190,6 +190,10 @@ function anyLocalRef(value) {
 // CSS url() 引用：url(x) / url("x") / url('x') 三种写法都要覆盖
 const CSS_URL_RE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)/gi;
 
+// CSS @import 的字符串形式：@import "a.css"; / @import 'a.css' screen;
+// 与 url() 是两个独立语法，此前只处理了 url()，字符串形式整段漏过
+const CSS_IMPORT_RE = /@import\s+(?:"([^"]*)"|'([^']*)')/gi;
+
 /**
  * 把 CSS 里的本地 url() 引用改写成与存储路径一致的形式
  *
@@ -207,13 +211,22 @@ const CSS_URL_RE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)/gi;
  * 这里只判断「是不是本地引用」，不限定扩展名。
  */
 export function rewriteCssRefs(css) {
-  return String(css ?? '').replace(CSS_URL_RE, (whole, dq, sq, bare) => {
+  let out = String(css ?? '').replace(CSS_URL_RE, (whole, dq, sq, bare) => {
     const value = dq ?? sq ?? bare ?? '';
     const quote = dq !== undefined ? '"' : (sq !== undefined ? "'" : '');
     const normalized = cssLocalRef(value);
     if (!normalized || normalized === value.trim()) return whole;
     return `url(${quote}${normalized}${quote})`;
   });
+  // @import 字符串形式（@charset 等其它 @ 规则不受影响：正则要求 import 关键字）
+  out = out.replace(CSS_IMPORT_RE, (whole, dq, sq) => {
+    const value = dq ?? sq ?? '';
+    const quote = dq !== undefined ? '"' : "'";
+    const normalized = cssLocalRef(value);
+    if (!normalized || normalized === value.trim()) return whole;
+    return `@import ${quote}${normalized}${quote}`;
+  });
+  return out;
 }
 
 /** CSS url() 专用：只判本地引用，不限扩展名 */

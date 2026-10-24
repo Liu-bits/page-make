@@ -438,6 +438,22 @@ await test('粘贴：CSS 内部 url() 引用归一后可访问', async () => {
   assert(served.includes('url(data:image/png;base64,iVBORw0KGgo=)'), 'data URI 必须原样保留');
 });
 
+// ⑧ CSS @import 字符串形式：@import "../other.css"; 此前完全漏过
+// （只处理了 url() 形式，而 @import 有两种等价语法）
+await test('粘贴：CSS @import 字符串形式归一后可访问', async () => {
+  const { rewriteCssRefs } = await import('../backend/lib/paths.js');
+  // 字符串形式：@import "x"; / @import 'x';
+  assertEqual(rewriteCssRefs('@import "../other.css";').trim(), '@import "other.css";', '双引号 @import 应归一');
+  assertEqual(rewriteCssRefs("@import '../b.css';").trim(), "@import 'b.css';", '单引号 @import 应归一');
+  assertEqual(rewriteCssRefs('@import "sub/a.css" screen;').trim(), '@import "sub/a.css" screen;', '规范路径与 media query 不应被改');
+  // url() 形式仍要工作
+  assertEqual(rewriteCssRefs('@import url("../other.css");').trim(), '@import url("other.css");', 'url() 形式应归一');
+  // 外链与其它 @ 规则不能误伤
+  assertEqual(rewriteCssRefs('@import "https://cdn.example.com/a.css";').trim(), '@import "https://cdn.example.com/a.css";', '外链 @import 应原样保留');
+  assertEqual(rewriteCssRefs('@charset "utf-8";').trim(), '@charset "utf-8";', '@charset 不能被误改');
+  assertEqual(rewriteCssRefs('@media screen { .a { color: red } }').trim(), '@media screen { .a { color: red } }', '@media 不能被误改');
+});
+
 // ⑥-b 上传 ZIP 链路：ZIP 里的 style.css 内部 url() 同样要归一
 // （HTML 侧归一覆盖不到 CSS 文件内容，上传管线必须单独处理）
 await test('上传 ZIP：CSS 内部 url() 归一后可访问', async () => {
