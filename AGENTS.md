@@ -186,14 +186,14 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 108 项，提交前必须全绿）
+## 5. 测试体系（共 113 项，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
-| `node dev/run-tests.mjs` | 36 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护、密码强度校验、MIME 类型映射） |
+| `node dev/run-tests.mjs` | 39 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护、密码强度校验【leetspeak 变形/反向键盘对角线】、MIME 类型映射） |
 | `node dev/test-server.mjs` | 38 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 zip 炸弹端到端、反馈限流、删号 KV 残留断言、弱口令拒绝、登录 429 限速） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
-| `node dev/test-assets.mjs` | 16 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP/**CSS 内部 url() 归一三链路**） |
+| `node dev/test-assets.mjs` | 18 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP/CSS 内部 url() 归一三链路/**HTML 其他引用标签 img/iframe/source/a/form/srcset**/**外链与 data URI 原样保留**） |
 | `node dev/test-admin.mjs` | 10 | 后台（登录/哈希存储/测试账号权益/封禁下架+禁登/解封恢复/删号） |
 
 > Node 用 managed 绝对路径运行。测试脚本坑：`fail()` 的 error 字段是错误码字符串本身；
@@ -260,6 +260,21 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
 3. DELETE 方法拦截（403）→ 删除类操作改 POST + action
 
 **其他后端坑**：
+- **密码强度别用「键盘物理坐标 + 相邻距离」判断**：试过用 (行,列) 坐标 +
+  Chebyshev 距离判定键盘行走位，但不存在单一阈值能同时满足两个方向——
+  要求 `1qaz2wsx3edc` 被判弱时，`Ab1#efgh`（b-1-e 恰好也相邻）必被误伤。
+  加行偏移（模拟键盘错位）也无效。最终回到**显式枚举所有方向的走法串**
+  （行正反/列正反/主对角线正反/次对角线正反/Shift 形态），逐个子串匹配
+- **leetspeak 全串归一会污染词根边界**：`P@ssw0rd!` 归一成 `passwordi`、
+  `4dm1n2024` 归一成 `adminzoza`，尾部符号/数字被当成字母，反而匹配不上原词根。
+  正确做法是 `matchLeetPrefix` 逐字符比对，只比对词根长度范围内的字符
+- **短词根不能做前缀/包含匹配**：`test`/`admin`/`login`/`secret` 这类 4-5 位词根
+  配上「词根 + 任意尾巴」规则会把 `Test#Passw0rd1`、`AdminPanel2026` 误判。
+  已拆分 `COMMON_ROOTS`（精确表）与 `PREFIX_ROOTS`（长度 >= 5 才参与前缀匹配），
+  且**回退**了「词根出现在任意位置」的兜底（误伤率高于收益）
+- **HTML 引用归一别只做 link/script**：`img/iframe/source/audio/video/track/
+  embed/object/a/area/form` 全是同一根因，漏一个就有资源 404 或内页链接
+  跳出站点外。`srcset` 是逗号分隔多值，必须逐候选归一，不能当单一路径折叠
 - `x-forwarded-proto` 可能是逗号分隔多值（"https, https"）→ 取第一个值，否则 URL 非法 500
 - kvPut 直传对象会失败 → 已加自动 JSON 序列化；索引 key 后缀必须 decodeKey 后再查
   （双重编码 bug 出过**三**次：projects 列表 + banUser/unbanUser + **auth/delete.js 漏 decodeKey**

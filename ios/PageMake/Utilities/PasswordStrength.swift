@@ -18,9 +18,20 @@ enum PasswordStrength {
 
     /// QWERTY 键盘行/列（含 Shift 形态与两条对角线），与后端 KEYBOARD_ROWS 对应
     private static let keyboardRows: [String] = [
-        "1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm",
-        "!@#$%^&*()", "qazwsxedc", "!qaz@wsx#edc",
-        "1qaz2wsx3edc4rfv5tgb", "1q2w3e4r5t6y7u8i9o0p",
+        // 行：正/反
+        "1234567890", "0987654321", "qwertyuiop", "poiuytrewq",
+        "asdfghjkl", "lkjhgfdsa", "zxcvbnm", "mnbvcxz",
+        // 列：qaz / zaq / wes / xsw ...
+        "qazwsxedc", "zaqxswcde", "wsxedcrfv", "xswcdevfr",
+        "edcrfvtgb", "cdevfrbgt", "rfvtgbyhn", "vfrtgbnyh",
+        // 主对角线（1qaz2wsx3edc4rfv）及其反向
+        "1qaz2wsx3edc4rfv5tgb", "bgt5rfv4cde3wsx2zaq1",
+        "1q2w3e4r5t6y7u8i9o0p", "0p9o8i7u6y5t4r3e2w1q",
+        // 次对角线：Zaq12wsx / Xsw2cde 此前完全漏过
+        "zaq12wsxcde34rfvbgt56ynh7mju8", "ujm7hny65tgbvfr43edcxsw21qaz",
+        "xsw2cde3vfr4bgt5nhy6mju7", "ujm7yhn5tgb4rfv3edc2wsx",
+        // Shift 形态（同一物理键）
+        "!qaz@wsx#edc$rfv%tgb", "!qaz@wsx#edc$rfv%tgb^yhn&mju",
     ]
 
     /// 常见词根：带上数字/符号尾巴也判弱（与后端 COMMON_ROOTS 对应）
@@ -29,6 +40,37 @@ enum PasswordStrength {
         "iloveyou", "monkey", "dragon", "sunshine", "princess", "football", "baseball",
         "shadow", "master", "changeme", "secret", "pagemake", "abc123", "test",
     ]
+
+    /// 前缀/包含匹配用的词根（长度 >= 5）。
+    /// `test`/`admin`/`login`/`secret` 这类短词根不放这里：
+    /// `Test#Passw0rd1`、`AdminPanel2026` 是合理自定义密码，
+    /// 但会被「词根 + 任意尾巴」规则误判（与后端 PREFIX_ROOTS 对应）
+    private static var prefixRoots: [String] {
+        commonRoots.filter { $0.count >= 5 }
+    }
+
+    /// leetspeak 替换表：常见的一一对应替换（与后端 deLeet 对应）
+    private static let leetMap: [Character: Character] = [
+        "@": "a", "4": "a", "8": "b", "3": "e", "1": "i", "!": "i",
+        "0": "o", "$": "s", "5": "s", "7": "t", "+": "t", "9": "g", "2": "z",
+    ]
+
+    /// leetspeak 归一化：P@ssw0rd → password、Qw3rty → qwerty
+    private static func deLeet(_ s: String) -> String {
+        String(s.map { leetMap[$0] ?? $0 })
+    }
+
+    /// 逐字符前缀匹配：密码前缀是否匹配某词根（允许 leetspeak 替换）。
+    /// 只比对词根长度范围内的字符，尾巴不参与，避免尾部符号/数字污染边界判断
+    private static func matchLeetPrefix(_ s: String, _ root: String) -> Bool {
+        let sc = Array(s)
+        let rc = Array(root)
+        guard sc.count >= rc.count else { return false }
+        for i in rc.indices where sc[i] != rc[i] && deLeet(String(sc[i])) != String(rc[i]) {
+            return false
+        }
+        return true
+    }
 
     private static let commonPasswords: Set<String> = [
         "123456", "1234567", "12345678", "123456789", "1234567890", "123123123",
@@ -49,13 +91,25 @@ enum PasswordStrength {
         let lower = password.lowercased()
 
         if commonPasswords.contains(lower) { return .common }
+        // 常见口令表也要按 leetspeak 归一后比对（P@ssw0rd / 4dm1n）
+        if commonPasswords.contains(Self.deLeet(lower)) { return .common }
 
         // 常见词根 + 数字/符号尾巴：letmein1 / password2024 / qwerty!
-        for root in commonRoots where lower.hasPrefix(root) {
+        // 逐字符前缀匹配（含 leetspeak 替换）：
+        // P@ssw0rd! / p@ssword1 / L3tm31n!x / 4dm1n2024 / Iloveyou123 全部命中
+        for root in Self.prefixRoots where Self.matchLeetPrefix(lower, root) {
             let rest = String(lower.dropFirst(root.count))
             if rest.isEmpty { return .common }
-            // 只拦「词根 + 最多 1 个额外字母 + 数字尾巴」，避免误伤 PasswordManager2024 这类
-            if rest.range(of: #"^[a-z]?\d+[^a-z\d]*$"#, options: .regularExpression) != nil {
+            // 尾巴允许：空 / 纯符号 / 符号+单字母 / 数字(可带符号) / 字母+数字 / 符号+数字
+            // 此前只允许「数字尾巴」，导致 Sunshine! / Qw3rty!23 / L3tm31n!x 全部漏过
+            let patterns = [
+                #"^[^a-z\d]+$"#,        // 纯符号
+                #"^[^a-z\d]+[a-z]$"#,   // 符号 + 单个字母（!x）
+                #"^\d+[^a-z\d]*$"#,     // 数字 + 可选符号
+                #"^[a-z]\d+[^a-z\d]*$"#, // 一个字母 + 数字
+                #"^[^a-z\d]*\d+[^a-z\d]*$"#, // 符号在数字前（!23）
+            ]
+            if patterns.contains(where: { rest.range(of: $0, options: .regularExpression) != nil }) {
                 return .common
             }
         }

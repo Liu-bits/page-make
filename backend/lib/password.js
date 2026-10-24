@@ -86,6 +86,53 @@ const COMMON_ROOTS = [
   'shadow', 'master', 'changeme', 'secret', 'pagemake', 'abc123', 'test',
 ];
 
+/**
+ * 前缀/包含匹配用的词根（必须足够长，否则误伤率高）
+ *
+ * `test`、`admin`、`login`、`secret` 这类短词根不放这里：
+ * `Test#Passw0rd1`、`AdminPanel2026` 是合理的自定义密码，
+ * 但会被「词根 + 任意尾巴」规则误判成弱口令。短词根只在
+ * COMMON_PASSWORDS 精确表里出现（test123 / admin123 整体匹配）。
+ */
+const PREFIX_ROOTS = COMMON_ROOTS.filter((r) => r.length >= 5);
+
+/**
+ * leetspeak 归一化：把常见替换字符还原成字母，用于识别
+ * `P@ssw0rd!` / `Qw3rty!23` / `L3tm31n` / `4dm1n2024` 这类变形口令
+ *
+ * 这些密码此前全部通过校验：它们只替换了个别字符，长度与字符类别都达标，
+ * 但实际强度等同原弱口令（字典攻击会先跑替换变体表）。
+ * 只做保守映射（一一对应的常见替换），不把任意符号都当字母，
+ * 避免把 `A@B#C$` 这类随机串误判成弱口令。
+ *
+ * 注意：全串归一会污染词根边界——`P@ssw0rd!` 归一成 `passwordi`、
+ * `4dm1n2024` 归一成 `adminzoza`，尾部符号/数字被当成字母，反而匹配不上
+ * 原词根。所以这里只在「逐字符比较」时用，不做整串 startsWith。
+ */
+function deLeet(s) {
+  const map = { '@': 'a', '4': 'a', '8': 'b', '3': 'e', '1': 'i', '!': 'i', '0': 'o', '$': 's', '5': 's', '7': 't', '+': 't', '9': 'g', '2': 'z' };
+  return s.replace(/[@4813!0$57+92]/g, (c) => map[c] || c);
+}
+
+/**
+ * 逐字符比较：密码前缀是否匹配某词根（允许 leetspeak 替换）
+ * 只比对词根长度范围内的字符，尾巴（数字/符号后缀）不参与，
+ * 避免尾部字符被归一后污染边界判断
+ * @returns {string|null} 匹配上的词根，未匹配返回 null
+ */
+function matchLeetPrefix(s, root) {
+  if (s.length < root.length) return null;
+  for (let i = 0; i < root.length; i++) {
+    const c = s[i];
+    const want = root[i];
+    if (c === want) continue;
+    // 单个字符的 leetspeak 替换算匹配（0→o / @→a / 3→e / 1→i / 4→a …）
+    if (deLeet(c) === want) continue;
+    return null;
+  }
+  return root;
+}
+
 /** 是否为「单一字符重复」或「连续递增/递减」的弱模式 */
 function isSequentialPattern(password) {
   const s = password.toLowerCase();
@@ -102,12 +149,25 @@ function isSequentialPattern(password) {
   return asc || desc;
 }
 
-// QWERTY 键盘行/列（含 Shift 形态）：asdfghjkl / 1qaz2wsx / qwertyuiop 都是常见弱模式
+// QWERTY 键盘常见弱走法（显式枚举所有方向）
+// 说明：试过用「物理坐标 + 相邻距离」判断，但无法同时满足两个方向——
+// 要求 1qaz2wsx3edc 被判弱时，Ab1#efgh（b-1-e 恰好也相邻）会被误伤。
+// 坐标法在"键盘行走位"这个问题上不存在单一阈值，故回到枚举并补齐方向。
 const KEYBOARD_ROWS = [
-  '1234567890', 'qwertyuiop', 'asdfghjkl', 'zxcvbnm',
-  '!@#$%^&*()', 'qazwsxedc', '!qaz@wsx#edc',
-  // 对角线序列：1qaz2wsx3edc4rfv / zaq12wsx 是人肉记强密码时最常写的"形状"
-  '1qaz2wsx3edc4rfv5tgb', '1q2w3e4r5t6y7u8i9o0p',
+  // 行：正/反
+  '1234567890', '0987654321', 'qwertyuiop', 'poiuytrewq',
+  'asdfghjkl', 'lkjhgfdsa', 'zxcvbnm', 'mnbvcxz',
+  // 列：qaz / zaq / wes / xsw ...
+  'qazwsxedc', 'zaqxswcde', 'wsxedcrfv', 'xswcdevfr',
+  'edcrfvtgb', 'cdevfrbgt', 'rfvtgbyhn', 'vfrtgbnyh',
+  // 主对角线（左上→右下 / 右下→左上）：1qaz2wsx3edc4rfv 及其反向
+  '1qaz2wsx3edc4rfv5tgb', 'bgt5rfv4cde3wsx2zaq1',
+  '1q2w3e4r5t6y7u8i9o0p', '0p9o8i7u6y5t4r3e2w1q',
+  // 次对角线（左下→右上 / 右上→左下）：Zaq12wsx / Xsw2cde
+  'zaq12wsxcde34rfvbgt56ynh7mju8', 'ujm7hny65tgbvfr43edcxsw21qaz',
+  'xsw2cde3vfr4bgt5nhy6mju7', 'ujm7yhn5tgb4rfv3edc2wsx',
+  // Shift 形态（同一物理键）
+  '!qaz@wsx#edc$rfv%tgb', '!qaz@wsx#edc$rfv%tgb^yhn&mju',
 ];
 
 /** 是否含长度 >= 5 的键盘相邻序列（正/反向） */
@@ -161,11 +221,27 @@ export function checkPasswordStrength(password) {
   const lower = password.toLowerCase();
   // 常见词根 + 数字/符号尾巴：letmein1 / password2024 / qwerty!
   // 只拦「词根 + 最多 1 个额外字母 + 数字尾巴」，避免误伤 PasswordManager2024 这类
-  const isCommonRooted = COMMON_ROOTS.some((r) => {
-    if (!lower.startsWith(r)) return false;
+  // 逐字符前缀匹配（含 leetspeak 替换）：
+  // P@ssw0rd! / p@ssword1 / L3tm31n!x / 4dm1n2024 / Iloveyou123 全部命中
+  const isCommonRooted = PREFIX_ROOTS.some((r) => {
+    if (!matchLeetPrefix(lower, r)) return false;
+    // 尾巴允许：空 / 纯符号 / 数字(可带符号尾巴) / 一个字母+数字
+    // 此前只允许「数字尾巴」，导致 Sunshine! / Qw3rty!23 / L3tm31n!x
+    // 这类「词根 + 符号尾巴」全部漏过
     const rest = lower.slice(r.length);
-    return rest === '' || /^[a-z]?\d+[^a-z\d]*$/.test(rest);
+    if (rest === '') return true;
+    if (/^[^a-z\d]+$/.test(rest)) return true;              // 纯符号尾巴
+    if (/^[^a-z\d]+[a-z]$/.test(rest)) return true;          // 符号 + 单个字母（!x）
+    if (/^\d+[^a-z\d]*$/.test(rest)) return true;            // 数字 + 可选符号
+    if (/^[a-z]\d+[^a-z\d]*$/.test(rest)) return true;       // 一个字母 + 数字
+    // 符号在数字前：Qw3rty!23 / L3tm31n!x 这类「词根 + ! + 数字」尾巴
+    if (/^[^a-z\d]*\d+[^a-z\d]*$/.test(rest)) return true;
   });
+  // 常见口令表也要按 leetspeak 归一后比对（P@ssw0rd / 4dm1n）
+  const isCommonExact = COMMON_PASSWORDS.has(lower) || COMMON_PASSWORDS.has(deLeet(lower));
+  if (isCommonExact) {
+    return { ok: false, reason: 'WEAK_PASSWORD_COMMON' };
+  }
   if (isCommonRooted) {
     return { ok: false, reason: 'WEAK_PASSWORD_COMMON' };
   }

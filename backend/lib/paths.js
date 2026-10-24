@@ -100,6 +100,19 @@ export function findLocalAsset(html, tag, attr, ext) {
  * `https://host/style.css`——直接跳出 `/p/` 前缀落到站点外 → 404 断链。
  * 存访必须同时改写，只改存储名只是半截修复（曾因此留下真实断链）。
  * 逐标签就地替换，不做全文字符串替换，避免误改正文里同名的普通文本。
+ *
+ * 覆盖范围（都属「本地资源引用」，同一根因）：
+ *   link[href]    样式表 / icon / manifest
+ *   script[src]   脚本
+ *   img[src]      图片
+ *   source[src]   picture/video/audio 的 <source>
+ *   iframe[src]   内嵌页
+ *   audio/video/track[src]、video[poster]
+ *   img[srcset]   响应式图片（逗号分隔多个候选）
+ *   a[href]       站内跳转（.html/.php 等；外链与锚点不动）
+ *   form[action]  表单提交
+ * 早期只归一 link/script，导致 img/iframe/source 等仍 404、内页链接
+ * 跳到站点外——与 CSS/JS 断链同一症状但漏了半边，这里补齐。
  */
 export function rewriteLocalRefs(html) {
   const rewrite = (source, tag, attr, ext) => source.replace(
@@ -111,7 +124,67 @@ export function rewriteLocalRefs(html) {
       return `${prefix}${quote}${normalized}${quote}`;
     })
   );
-  return rewrite(rewrite(html, 'link', 'href', 'css'), 'script', 'src', 'js');
+
+  // 不限定扩展名的引用（图片/媒体/内嵌页/跳转/提交都可能带任意后缀或无后缀）
+  const rewriteAnyExt = (source, tag, attr) => source.replace(
+    tagReFor(tag),
+    (tagText) => tagText.replace(attrReFullFor(attr), (whole, prefix, quote, value) => {
+      const normalized = anyLocalRef(value);
+      if (!normalized || normalized === value.trim()) return whole;
+      return `${prefix}${quote}${normalized}${quote}`;
+    })
+  );
+
+  let out = rewrite(rewrite(html, 'link', 'href', 'css'), 'script', 'src', 'js');
+  for (const [tag, attr] of [
+    ['img', 'src'], ['source', 'src'], ['iframe', 'src'], ['audio', 'src'],
+    ['video', 'src'], ['video', 'poster'], ['track', 'src'], ['embed', 'src'],
+    ['object', 'data'], ['a', 'href'], ['area', 'href'], ['form', 'action'],
+    // link 除样式表外还有 icon / manifest / preload 等，同样要归一
+    ['link', 'href'],
+  ]) {
+    out = rewriteAnyExt(out, tag, attr);
+  }
+  // srcset 是「URL + 描述符」的逗号分隔列表，不能当单一路径折叠，
+  // 否则第一个候选归一后整串被 normalizeRelPath 吃掉后半段
+  out = out.replace(tagReFor('img'), (t) => t.replace(attrReFullFor('srcset'), (w, p, q, v) => {
+    const parts = v.split(',').map((cand) => {
+      const m = cand.match(/^(\s*)(\S+)(\s.*)?$/);
+      if (!m) return cand;
+      const normalized = anyLocalRef(m[2]);
+      return `${m[1]}${normalized || m[2]}${m[3] || ''}`;
+    });
+    const joined = parts.join(',');
+    return joined === v ? w : `${p}${q}${joined}${q}`;
+  }));
+  out = out.replace(tagReFor('source'), (t) => t.replace(attrReFullFor('srcset'), (w, p, q, v) => {
+    const parts = v.split(',').map((cand) => {
+      const m = cand.match(/^(\s*)(\S+)(\s.*)?$/);
+      if (!m) return cand;
+      const normalized = anyLocalRef(m[2]);
+      return `${m[1]}${normalized || m[2]}${m[3] || ''}`;
+    });
+    const joined = parts.join(',');
+    return joined === v ? w : `${p}${q}${joined}${q}`;
+  }));
+  // 内联 style 属性里的 url()（与 CSS 文件内部同一处理）
+  out = out.replace(/(<[a-z][^>]*\sstyle\s*=\s*)(["'])([^"']*)\2/gi,
+    (whole, prefix, quote, value) => {
+      const rewritten = rewriteCssRefs(value);
+      return rewritten === value ? whole : `${prefix}${quote}${rewritten}${quote}`;
+    });
+  return out;
+}
+
+/**
+ * 不限定扩展名的本地引用判定（img/iframe/a/form 等）
+ * 与 cssLocalRef 同规则：只判「是不是本地引用」，不看扩展名
+ */
+function anyLocalRef(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  if (NON_LOCAL_RE.test(raw) || raw.startsWith('//')) return null;
+  return normalizeRelPath(raw) || null;
 }
 
 // CSS url() 引用：url(x) / url("x") / url('x') 三种写法都要覆盖

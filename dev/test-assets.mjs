@@ -509,6 +509,59 @@ await test('探索器：CSS 内 url(../img/x.png) → publish 归一', async () 
   assert(!text.includes('url(../'), '不得残留 ../ 引用');
 });
 
+// ⑦ HTML 其他引用标签：此前只归一 link[href]/script[src]，
+// img/iframe/source/a/form 等全部漏掉——用户写 ../img/a.png 时图片 404、
+// 内页链接跳到站点外，与 CSS/JS 断链同一症状但漏了半边
+await test('HTML 其他引用标签归一（img/iframe/source/a/form/srcset）', async () => {
+  const { token } = await login();
+  const html = `<html><head><link rel="stylesheet" href="../style.css"></head>
+<body>
+  <img src="../img/a.png" alt="a">
+  <img srcset="../img/a.png 1x, ../img/b.png 2x">
+  <a href="../about.html">关于</a>
+  <iframe src="../frame.html"></iframe>
+  <source src="../v.mp4" type="video/mp4">
+  <form action="../submit.php"></form>
+  <div style="background:url(../img/bg.png)">x</div>
+</body></html>`;
+  const { status, body } = await paste(token, { name: 'tags', html, css: 'h1{color:red}', js: '' });
+  assertEqual(status, 200, '粘贴应成功');
+  const id = body.project.id;
+  const served = await (await fetch(`${BASE}/p/${id}`)).text();
+  assert(served.includes('src="img/a.png"'), `img src 应归一，实际：${served.slice(0, 400)}`);
+  assert(served.includes('srcset="img/a.png 1x, img/b.png 2x"'), `srcset 应逐候选归一，实际片段：${(served.match(/srcset="[^"]*"/) || [''])[0]}`);
+  assert(served.includes('href="about.html"'), 'a href 应归一');
+  assert(served.includes('src="frame.html"'), 'iframe src 应归一');
+  assert(served.includes('src="v.mp4"'), 'source src 应归一');
+  assert(served.includes('action="submit.php"'), 'form action 应归一');
+  assert(served.includes('url(img/bg.png)'), '内联 style 的 url() 应归一');
+  assert(!served.includes('../'), `不得残留 ../ 引用，实际：${served.slice(0, 600)}`);
+});
+
+// ⑦-b 外链与 data URI 必须原样保留（不能被当成本地引用改写）
+await test('外链与 data URI 引用保持原样', async () => {
+  const { token } = await login();
+  const html = `<html><head><link rel="stylesheet" href="https://cdn.example.com/s.css"></head>
+<body>
+  <img src="https://cdn.example.com/a.png" alt="ext">
+  <img src="data:image/png;base64,iVBORw0KGgo=" alt="d">
+  <a href="https://example.com/page">外站</a>
+  <a href="#top">锚点</a>
+  <a href="mailto:a@b.com">邮件</a>
+  <script src="//cdn.example.com/j.js"></script>
+</body></html>`;
+  const { status, body } = await paste(token, { name: 'ext', html, css: '', js: '' });
+  assertEqual(status, 200, '粘贴应成功');
+  const served = await (await fetch(`${BASE}/p/${body.project.id}`)).text();
+  assert(served.includes('href="https://cdn.example.com/s.css"'), '外链样式表应原样保留');
+  assert(served.includes('src="https://cdn.example.com/a.png"'), '外链图片应原样保留');
+  assert(served.includes('src="data:image/png;base64,iVBORw0KGgo="'), 'data URI 应原样保留');
+  assert(served.includes('href="https://example.com/page"'), '外站链接应原样保留');
+  assert(served.includes('href="#top"'), '锚点应原样保留');
+  assert(served.includes('href="mailto:a@b.com"'), 'mailto 应原样保留');
+  assert(served.includes('src="//cdn.example.com/j.js"'), '协议相对 URL 应原样保留');
+});
+
 server.kill();
 try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch { /* ignore */ }
 console.log(`\n结果：${passed} 通过，${failed} 失败`);

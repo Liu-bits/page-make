@@ -529,6 +529,36 @@ await test('前后空格被拒（避免"看似安全"实际不可用）', async 
   assert(!checkPasswordStrength('   Aa1!xyz').ok, '首部带空格应拒');
 });
 
+// leetspeak 变形：P@ssw0rd / Qw3rty / L3tm31n / 4dm1n 此前全部通过校验
+// （只替换个别字符，长度与字符类别都达标），但实际强度等同原弱口令
+await test('leetspeak 变形弱口令被拒（P@ssw0rd / Qw3rty / 4dm1n）', async () => {
+  const { checkPasswordStrength } = await import('../backend/lib/password.js');
+  for (const pw of ['P@ssw0rd!', 'p@ssword1', 'Qw3rty!23', 'Qw3rty', 'L3tm31n!x',
+    '4dm1n2024', '4dmin!', 'Welcome1', 'Monkey123', 'Sunshine!', 'F00tball',
+    'Dr4g0n2024', 'Iloveyou123']) {
+    assert(!checkPasswordStrength(pw).ok, `${pw} 应被判为弱口令（leetspeak 变形）`);
+  }
+});
+
+// 反向键盘对角线：Zaq12wsx / Xsw2cde 此前完全漏过（正反向都要覆盖）
+await test('反向键盘对角线被拒（Zaq12wsx / Xsw2cde）', async () => {
+  const { checkPasswordStrength } = await import('../backend/lib/password.js');
+  for (const pw of ['Zaq12wsx', 'Xsw2cde3', 'Cde34rfv', 'Vfr45tgb']) {
+    assert(!checkPasswordStrength(pw).ok, `${pw} 应被判为键盘弱模式`);
+  }
+});
+
+// 加固不能误伤：这些是合理的自定义/随机密码，必须放行
+// （曾因"词根包含匹配"兜底把 Test#Passw0rd1 误判，已回退该规则）
+await test('加固后不误伤正常强密码', async () => {
+  const { checkPasswordStrength } = await import('../backend/lib/password.js');
+  for (const pw of ['Test#Passw0rd1', 'Tr0ub4dor&3', 'correct-horse-battery',
+    'Kx9#mQ2vLp', 'Zhang.San.2026', 'B7$wR!2nZq', 'MyP@ss2024',
+    'hello2024world', 'Str0ng#Pass', 'Ab1#efgh']) {
+    assert(checkPasswordStrength(pw).ok, `${pw} 不应被误伤`);
+  }
+});
+
 await test('加固后不误伤正常强密码', async () => {
   const { checkPasswordStrength } = await import('../backend/lib/password.js');
   for (const pw of ['Test#Passw0rd1', 'Adm1n#Secure99', 'Xk7#mQ2vLp9!', 'Tr0ub4dor&3x',
