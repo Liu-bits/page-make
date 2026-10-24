@@ -919,8 +919,13 @@ struct FileEditorView: View {
                             .padding(.vertical, 6)
                         TextEditor(text: $content)
                             .font(.system(.footnote, design: .monospaced))
+                            .foregroundStyle(PageMakeTheme.codeText)
+                            .tint(PageMakeTheme.coral)
+                            .scrollContentBackground(.hidden)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
+                            .padding(8)
+                            .background(PageMakeTheme.codeBackground)
                     }
                 }
             }

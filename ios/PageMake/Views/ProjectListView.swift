@@ -4,7 +4,6 @@ import SwiftUI
 struct ProjectListView: View {
     @EnvironmentObject private var appState: AppState
     let onCreateTapped: () -> Void
-    let onSettingsTapped: () -> Void
     @State private var showPasswordAuth = false
     @State private var alertItem: AlertItem?
     @State private var searchText = ""
@@ -63,30 +62,7 @@ struct ProjectListView: View {
                 }
             }
         }
-        .navigationTitle(L10n.string("welcome_title"))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbarColorScheme(.light, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if appState.isLoggedIn {
-                    Button(action: onCreateTapped) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 15, weight: .bold))
-                            .frame(width: 30, height: 30)
-                            .background(PageMakeTheme.ink, in: Circle())
-                            .foregroundStyle(.white)
-                    }
-                    .accessibilityLabel(L10n.string("add_project"))
-                }
-            }
-            ToolbarItem(placement: .topBarLeading) {
-                Button(action: onSettingsTapped) {
-                    Image(systemName: "gearshape")
-                }
-                .accessibilityLabel(L10n.string("settings"))
-            }
-        }
+        .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             if appState.isLoggedIn {
                 Task { await appState.loadProjects(isInitialRestore: true) }
@@ -268,7 +244,7 @@ struct ProjectListView: View {
                             .font(.caption.bold())
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
-                            .background(.white.opacity(0.72), in: Capsule())
+                            .background(PageMakeTheme.surface, in: Capsule())
                             .foregroundStyle(PageMakeTheme.ink)
                             .overlay {
                                 Capsule().stroke(PageMakeTheme.ink.opacity(0.08), lineWidth: 1)
@@ -396,16 +372,6 @@ struct ProjectListView: View {
                             .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)
-
-                    Button(action: onSettingsTapped) {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(width: 45, height: 45)
-                            .background(.white.opacity(0.11), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                            .foregroundStyle(.white)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(L10n.string("settings"))
                 }
             }
         }
@@ -464,7 +430,7 @@ struct ProjectListView: View {
         }
         .padding(.horizontal, 15)
         .padding(.vertical, 12)
-        .background(.white.opacity(0.74), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 15, style: .continuous)
                 .stroke(PageMakeTheme.ink.opacity(0.07), lineWidth: 1)
@@ -532,7 +498,7 @@ struct ProjectListView: View {
             }
         }
         .padding(17)
-        .background(.white.opacity(0.86), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(PageMakeTheme.ink.opacity(0.065), lineWidth: 1)

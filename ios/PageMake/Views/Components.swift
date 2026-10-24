@@ -1,20 +1,79 @@
 import SwiftUI
+import UIKit
+
+/// 外观偏好：跟随系统 / 浅色 / 深色。
+/// 原始值持久化到 AppStorage，App 与设置页共用同一份配置。
+enum AppearanceMode: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var titleKey: String {
+        switch self {
+        case .system: return "appearance_system"
+        case .light: return "appearance_light"
+        case .dark: return "appearance_dark"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .system: return "circle.lefthalf.filled"
+        case .light: return "sun.max.fill"
+        case .dark: return "moon.stars.fill"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
+/// 系统颜色方案变化时自动重绘的主题色。
+private func adaptiveColor(light: UInt32, dark: UInt32) -> Color {
+    Color(uiColor: UIColor { traits in
+        UIColor(hex: traits.userInterfaceStyle == .dark ? dark : light)
+    })
+}
+
+private extension UIColor {
+    convenience init(hex: UInt32) {
+        self.init(
+            red: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: 1
+        )
+    }
+}
 
 /// Page-make 的视觉基础：纸张暖白 + 墨蓝 + 珊瑚强调色。
 /// 颜色集中在这里，避免各页面各写一套渐变导致风格漂移。
 enum PageMakeTheme {
-    static let ink = Color(red: 0.08, green: 0.12, blue: 0.18)
-    static let inkSoft = Color(red: 0.28, green: 0.34, blue: 0.42)
-    static let paper = Color(red: 0.965, green: 0.955, blue: 0.925)
-    static let paperWarm = Color(red: 0.985, green: 0.968, blue: 0.925)
+    static let ink = adaptiveColor(light: 0x141F2E, dark: 0xF2EEE5)
+    static let inkSoft = adaptiveColor(light: 0x47576D, dark: 0xAAB5C2)
+    static let paper = adaptiveColor(light: 0xF6F4EC, dark: 0x0A1017)
+    static let paperWarm = adaptiveColor(light: 0xFBF7EC, dark: 0x111A24)
+    static let surface = adaptiveColor(light: 0xFFFEF9, dark: 0x131D27)
+    static let surfaceSoft = adaptiveColor(light: 0xF7F2E7, dark: 0x18242F)
+    static let border = adaptiveColor(light: 0xE6E0D3, dark: 0x293746)
+    static let shadow = adaptiveColor(light: 0xD5CDBE, dark: 0x000000)
+    static let codeBackground = adaptiveColor(light: 0xFFFFFF, dark: 0x0D151E)
+    static let codeText = adaptiveColor(light: 0x000000, dark: 0xE8EDF3)
     static let coral = Color(red: 0.91, green: 0.33, blue: 0.25)
     static let sea = Color(red: 0.08, green: 0.48, blue: 0.50)
     static let gold = Color(red: 0.84, green: 0.61, blue: 0.20)
 
     static let heroGradient = LinearGradient(
         colors: [
-            Color(red: 0.075, green: 0.13, blue: 0.20),
-            Color(red: 0.075, green: 0.30, blue: 0.32)
+            adaptiveColor(light: 0x132231, dark: 0x101B26),
+            adaptiveColor(light: 0x13504F, dark: 0x123F43)
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -43,7 +102,7 @@ struct PageMakeBackground: View {
                         path.addLine(to: CGPoint(x: size.width, y: y))
                         y += spacing
                     }
-                    context.stroke(path, with: .color(PageMakeTheme.ink.opacity(0.035)), lineWidth: 0.5)
+                    context.stroke(path, with: .color(PageMakeTheme.ink.opacity(0.045)), lineWidth: 0.5)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
             }
@@ -67,7 +126,7 @@ struct PageMakeBackground: View {
     }
 }
 
-/// 统一的白色内容卡片。
+/// 统一的内容卡片，自动适配浅色与深色模式。
 struct PageMakeCard<Content: View>: View {
     var padding: CGFloat = 18
     @ViewBuilder var content: Content
@@ -76,12 +135,12 @@ struct PageMakeCard<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(PageMakeTheme.ink.opacity(0.07), lineWidth: 1)
+                    .stroke(PageMakeTheme.border, lineWidth: 1)
             }
-            .shadow(color: PageMakeTheme.ink.opacity(0.07), radius: 18, x: 0, y: 8)
+            .shadow(color: PageMakeTheme.shadow.opacity(0.14), radius: 18, x: 0, y: 8)
     }
 }
 
@@ -187,15 +246,88 @@ struct SecondaryButtonStyle: ButtonStyle {
             .font(.system(.headline, design: .rounded, weight: .semibold))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 13)
-            .background(.white.opacity(0.78), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .stroke(PageMakeTheme.ink.opacity(0.1), lineWidth: 1)
+                    .stroke(PageMakeTheme.border, lineWidth: 1)
             }
             .foregroundStyle(PageMakeTheme.ink)
             .opacity(configuration.isPressed ? 0.75 : 1)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+    }
+}
+
+/// 底部双入口：左侧标准新建/作品工作台，右侧个人设置。
+/// 设置从弹窗改为独立页签，才能稳定承载外观模式等长期偏好。
+struct MainTabBar: View {
+    @Binding var selection: RootView.MainTab
+    let onCreateTapped: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            tabButton(
+                tab: .workspace,
+                icon: "square.grid.2x2.fill",
+                selectedIcon: "plus.square.fill",
+                title: L10n.string("tab_create"),
+                action: {
+                    if selection == .workspace {
+                        onCreateTapped()
+                    } else {
+                        selection = .workspace
+                    }
+                }
+            )
+
+            tabButton(
+                tab: .settings,
+                icon: "person.crop.circle",
+                selectedIcon: "person.crop.circle.fill",
+                title: L10n.string("tab_profile"),
+                action: {
+                    selection = .settings
+                }
+            )
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(PageMakeTheme.border.opacity(0.7))
+                .frame(height: 0.5)
+        }
+    }
+
+    private func tabButton(
+        tab: RootView.MainTab,
+        icon: String,
+        selectedIcon: String,
+        title: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        let isSelected = selection == tab
+        return Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: isSelected ? selectedIcon : icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(height: 22)
+                Text(title)
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .foregroundStyle(isSelected ? PageMakeTheme.ink : PageMakeTheme.inkSoft)
+            .background(
+                isSelected ? PageMakeTheme.surfaceSoft : Color.clear,
+                in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

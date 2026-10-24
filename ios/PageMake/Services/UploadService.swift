@@ -33,15 +33,13 @@ final class UploadService: ObservableObject {
 
     init() {}
 
-    func upload(files: [PickedFile], provider: HostProvider) {
-        let displayName = files.count == 1
-            ? files[0].name
-            : "\(files.count) \(L10n.string("file_count_unit"))"
+    func upload(files: [PickedFile], provider: HostProvider, projectName: String) {
+        let displayName = projectName
         let item = Item(name: displayName, provider: provider)
         items.append(item)
         let itemId = item.id
         tasks[itemId] = Task { [weak self] in
-            await self?.run(itemId: itemId, files: files, provider: provider)
+            await self?.run(itemId: itemId, files: files, provider: provider, projectName: projectName)
             self?.tasks[itemId] = nil
         }
     }
@@ -111,14 +109,14 @@ final class UploadService: ObservableObject {
         }
     }
 
-    private func run(itemId: UUID, files: [PickedFile], provider: HostProvider) async {
+    private func run(itemId: UUID, files: [PickedFile], provider: HostProvider, projectName: String) async {
         func update(_ transform: (inout Item) -> Void) {
             guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
             transform(&items[index])
         }
 
         do {
-            let initResponse = try await api.initUpload(provider: provider, files: files)
+            let initResponse = try await api.initUpload(provider: provider, files: files, name: projectName)
             update { $0.uploadId = initResponse.uploadId }
 
             let totalChunks = files.reduce(0) { count, file in

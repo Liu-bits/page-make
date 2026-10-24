@@ -175,7 +175,11 @@ await test('完整上传流程：init → chunk → finish → 轮询 → ready'
   const initRes = await fetch(`${BASE}/api/upload/init`, {
     method: 'POST',
     headers: { ...AUTH, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider: 'edgeone', files: [{ name: 'site.zip', size: zip.length }] }),
+    body: JSON.stringify({
+      provider: 'edgeone',
+      files: [{ name: 'site.zip', size: zip.length }],
+      name: '上传项目名称',
+    }),
   });
   const init = await initRes.json();
   assert(init.ok && init.uploadId, 'init 应返回 uploadId');
@@ -216,6 +220,8 @@ await test('完整上传流程：init → chunk → finish → 轮询 → ready'
     if (status === 'failed') throw new Error(`处理失败：${json.errorCode}`);
   }
   assert(status === 'ready', `状态应为 ready，实际 ${status}`);
+  const ready = await (await fetch(`${BASE}/api/projects/${projectId}/status`, { headers: AUTH })).json();
+  assertEqual(ready.project.name, '上传项目名称', 'ready 项目应保留用户填写的名称');
 });
 
 await test('ZIP 上传：.php 文件被跳过，不会落库或公开下载', async () => {
@@ -468,6 +474,7 @@ await test('粘贴代码创建：注入 CSS/JS + 公开访问', async () => {
   const project = json.project;
   assertEqual(project.status, 'ready', '粘贴项目应直接 ready');
   assertEqual(project.sourceType, 'paste', 'sourceType 应为 paste');
+  assertEqual(project.name, '粘贴测试', '粘贴项目应保存用户填写的名称');
   assert(project.url, '应返回公开链接');
 
   // 公开页面应包含注入的 CSS/JS 引用

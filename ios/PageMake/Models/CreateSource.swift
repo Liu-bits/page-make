@@ -2,8 +2,8 @@ import Foundation
 
 /// 创建来源：上传文件 / 直接粘贴代码 / 项目模式（空白项目）
 enum CreateSource {
-    case files([PickedFile])
-    case paste(PasteContent)
+    case files([PickedFile], name: String)
+    case paste(PasteContent, name: String)
     case explorer(name: String)
 }
 

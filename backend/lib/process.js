@@ -127,7 +127,7 @@ export async function processUpload(args) {
       projectId,
       files,
       entryPath,
-      name: upload.files[0]?.name || 'untitled',
+      name: upload.projectName || upload.files[0]?.name || '未命名项目',
     });
 
     // 6. 写库（先写索引，最后才让 ready 状态可见，避免列表查询竞态）
@@ -139,6 +139,7 @@ export async function processUpload(args) {
     await kvPut(kv, keys.userProject(upload.userId, projectId), { createdAt: nowSeconds() });
 
     const project = await finish(STATUS.READY, {
+      name: upload.projectName || upload.files[0]?.name || '未命名项目',
       entryPath,
       fileCount: files.size,
       size: manifest.reduce((a, f) => a + f.size, 0),

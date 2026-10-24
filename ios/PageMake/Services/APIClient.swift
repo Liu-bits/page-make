@@ -269,6 +269,7 @@ final class APIClient {
     struct UploadInitRequest: Encodable {
         let provider: String
         let files: [FileMeta]
+        let name: String
 
         struct FileMeta: Encodable {
             let name: String
@@ -297,10 +298,11 @@ final class APIClient {
         let status: String
     }
 
-    func initUpload(provider: HostProvider, files: [PickedFile]) async throws -> UploadInitResponse {
+    func initUpload(provider: HostProvider, files: [PickedFile], name: String) async throws -> UploadInitResponse {
         let body = try encoder.encode(UploadInitRequest(
             provider: provider.rawValue,
-            files: files.map { .init(name: $0.name, size: $0.size) }
+            files: files.map { .init(name: $0.name, size: $0.size) },
+            name: name
         ))
         let data = try await request("/api/upload/init", method: "POST", body: body)
         return try decoder.decode(UploadInitResponse.self, from: data)

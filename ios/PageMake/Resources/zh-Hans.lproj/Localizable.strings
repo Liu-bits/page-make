@@ -88,6 +88,10 @@
 "creation_zip_detail" = "可以上传完整 ZIP 项目，也可以多选 HTML、CSS、JS 文件。系统会自动识别入口页与资源引用。";
 "creation_folder_eyebrow" = "项目模式";
 "creation_code_eyebrow" = "在线编辑";
+"project_name_field" = "项目名称";
+"project_name_placeholder" = "例如：我的个人主页";
+"project_name_hint" = "最多 60 个字符，创建后会显示在作品列表中。";
+"project_name_required" = "请先给项目起一个名字";
 "editor_optional" = "可选";
 "editor_required" = "必填";
 "validation_empty" = "请先选择文件";
@@ -167,6 +171,15 @@
 "ban_until" = "解封时间";
 "ban_permanent" = "永久封禁";
 "ban_note" = "如有疑问，可通过反馈渠道联系我们。违规项目链接将显示「已下架」。";
+
+// MARK: - 底部导航与外观
+"tab_create" = "新建";
+"tab_profile" = "我的";
+"appearance_section" = "外观";
+"appearance_hint" = "选择界面明暗风格，代码编辑区会自动保持清晰可读。";
+"appearance_system" = "跟随系统";
+"appearance_light" = "浅色";
+"appearance_dark" = "深色";
 
 // MARK: - 错误码（小白话）
 "error_no_entry" = "你的压缩包里没有 HTML 文件";

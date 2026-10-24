@@ -4,7 +4,7 @@ import SwiftUI
 /// 视觉上沿用项目工作台的纸张/墨蓝体系，不再使用默认 List 样式。
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
-    @Environment(\.dismiss) private var dismiss
+    @AppStorage("appearance_mode") private var appearanceRaw = AppearanceMode.system.rawValue
     @State private var alertItem: AlertItem?
     @State private var showFeedback = false
     @State private var showDocument: AppDocument?
@@ -13,70 +13,60 @@ struct SettingsView: View {
     @State private var isDeletingAccount = false
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                PageMakeBackground()
-                ScrollView {
-                    VStack(spacing: 16) {
-                        profileCard
-                        if appState.isLoggedIn {
-                            usageCard
-                        } else {
-                            signInCard
-                        }
-                        toolsCard
-                        aboutCard
-                        accountActions
-                        Color.clear.frame(height: 12)
+        ZStack {
+            PageMakeBackground()
+            ScrollView {
+                VStack(spacing: 16) {
+                    profileCard
+                    if appState.isLoggedIn {
+                        usageCard
+                    } else {
+                        signInCard
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 10)
+                    appearanceCard
+                    toolsCard
+                    aboutCard
+                    accountActions
+                    Color.clear.frame(height: 12)
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
             }
-            .navigationTitle(L10n.string("settings"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbarColorScheme(.light, for: .navigationBar)
-            .task {
-                if appState.isLoggedIn {
-                    await appState.loadStats()
-                }
+        }
+        .toolbar(.hidden, for: .navigationBar)
+        .task {
+            if appState.isLoggedIn {
+                await appState.loadStats()
             }
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(L10n.string("done")) { dismiss() }
-                        .fontWeight(.semibold)
-                }
+        }
+        .sheet(isPresented: $showFeedback) {
+            FeedbackView()
+        }
+        .sheet(item: $showDocument) { document in
+            DocumentView(document: document)
+        }
+        .sheet(isPresented: $showPasswordAuth) {
+            PasswordAuthView()
+                .environmentObject(appState)
+        }
+        .confirmationDialog(
+            L10n.string("delete_account_confirm_title"),
+            isPresented: $showDeleteAccountConfirm,
+            titleVisibility: .visible
+        ) {
+            Button(L10n.string("delete_account_button"), role: .destructive) {
+                Task { await deleteAccount() }
             }
-            .sheet(isPresented: $showFeedback) {
-                FeedbackView()
-            }
-            .sheet(item: $showDocument) { document in
-                DocumentView(document: document)
-            }
-            .sheet(isPresented: $showPasswordAuth) {
-                PasswordAuthView()
-                    .environmentObject(appState)
-            }
-            .confirmationDialog(
-                L10n.string("delete_account_confirm_title"),
-                isPresented: $showDeleteAccountConfirm,
-                titleVisibility: .visible
-            ) {
-                Button(L10n.string("delete_account_button"), role: .destructive) {
-                    Task { await deleteAccount() }
-                }
-                Button(L10n.string("cancel"), role: .cancel) {}
-            } message: {
-                Text(L10n.string("delete_account_confirm_message"))
-            }
-            .alert(item: $alertItem) { item in
-                Alert(
-                    title: Text(L10n.string(item.titleKey)),
-                    message: Text(item.message),
-                    dismissButton: .default(Text(L10n.string("done")))
-                )
-            }
+            Button(L10n.string("cancel"), role: .cancel) {}
+        } message: {
+            Text(L10n.string("delete_account_confirm_message"))
+        }
+        .alert(item: $alertItem) { item in
+            Alert(
+                title: Text(L10n.string(item.titleKey)),
+                message: Text(item.message),
+                dismissButton: .default(Text(L10n.string("done")))
+            )
         }
     }
 
@@ -140,6 +130,57 @@ struct SettingsView: View {
     }
 
     // MARK: - 用量
+
+    private var appearanceCard: some View {
+        PageMakeCard {
+            VStack(alignment: .leading, spacing: 15) {
+                sectionHeading(
+                    icon: "circle.lefthalf.filled",
+                    title: L10n.string("appearance_section"),
+                    subtitle: L10n.string("appearance_hint"),
+                    tint: PageMakeTheme.coral
+                )
+
+                HStack(spacing: 7) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        appearanceButton(mode)
+                    }
+                }
+            }
+        }
+    }
+
+    private func appearanceButton(_ mode: AppearanceMode) -> some View {
+        let isSelected = appearanceRaw == mode.rawValue
+        return Button {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                appearanceRaw = mode.rawValue
+            }
+        } label: {
+            VStack(spacing: 7) {
+                Image(systemName: mode.icon)
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(height: 21)
+                Text(L10n.string(mode.titleKey))
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 11)
+            .background(
+                isSelected ? PageMakeTheme.ink : PageMakeTheme.surfaceSoft,
+                in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+            )
+            .foregroundStyle(isSelected ? PageMakeTheme.paper : PageMakeTheme.inkSoft)
+            .overlay {
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(isSelected ? Color.clear : PageMakeTheme.border, lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
 
     private var usageCard: some View {
         PageMakeCard {
@@ -351,13 +392,12 @@ struct SettingsView: View {
 
                 Button {
                     appState.signOut()
-                    dismiss()
                 } label: {
                     Label(L10n.string("sign_out"), systemImage: "rectangle.portrait.and.arrow.right")
                         .font(.system(.subheadline, design: .rounded, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
-                        .background(.white.opacity(0.68), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                        .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
                         .foregroundStyle(PageMakeTheme.ink)
                 }
                 .buttonStyle(.plain)
@@ -448,8 +488,6 @@ struct SettingsView: View {
         defer { isDeletingAccount = false }
         if let error = await appState.deleteAccount() {
             alertItem = AlertItem(message: error)
-        } else {
-            dismiss()
         }
     }
 }

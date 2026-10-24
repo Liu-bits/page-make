@@ -15,7 +15,7 @@ struct FilePickerView: View {
     @State private var mode: Mode = .files
     @State private var showPicker = false
     @State private var alertItem: AlertItem?
-    @State private var explorerName = ""
+    @State private var projectName = ""
 
     // 粘贴模式内容
     @State private var html = ""
@@ -61,7 +61,6 @@ struct FilePickerView: View {
             .navigationTitle(L10n.string("creation_studio"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
-            .toolbarColorScheme(.light, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string("cancel")) { dismiss() }
@@ -86,6 +85,56 @@ struct FilePickerView: View {
         }
     }
 
+    // MARK: - 项目名称
+
+    private var trimmedProjectName: String {
+        projectName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @ViewBuilder
+    private var nameField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(L10n.string("project_name_field"))
+                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .foregroundStyle(PageMakeTheme.inkSoft)
+                    .textCase(.uppercase)
+                    .tracking(0.4)
+                Text(L10n.string("editor_required"))
+                    .font(.caption2.bold())
+                    .foregroundStyle(PageMakeTheme.coral)
+            }
+            TextField(L10n.string("project_name_placeholder"), text: $projectName)
+                .font(.system(.body, design: .rounded, weight: .medium))
+                .textInputAutocapitalization(.sentences)
+                .autocorrectionDisabled()
+                .submitLabel(.done)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 12)
+                .background(PageMakeTheme.surfaceSoft, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(PageMakeTheme.border, lineWidth: 1)
+                }
+                .onChange(of: projectName) { _, newValue in
+                    if newValue.count > 60 {
+                        projectName = String(newValue.prefix(60))
+                    }
+                }
+            Text(L10n.string("project_name_hint"))
+                .font(.caption2)
+                .foregroundStyle(PageMakeTheme.inkSoft)
+        }
+    }
+
+    private func validatedProjectName() -> String? {
+        guard !trimmedProjectName.isEmpty else {
+            alertItem = AlertItem(message: L10n.string("project_name_required"))
+            return nil
+        }
+        return trimmedProjectName
+    }
+
     // MARK: - 创建模式选择
 
     private var modeChooser: some View {
@@ -95,7 +144,7 @@ struct FilePickerView: View {
             modeButton(.explorer, icon: "folder.badge.plus", titleKey: "mode_explorer")
         }
         .padding(5)
-        .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 17, style: .continuous)
                 .stroke(PageMakeTheme.ink.opacity(0.07), lineWidth: 1)
@@ -141,6 +190,8 @@ struct FilePickerView: View {
 
                 PageMakeCard {
                     VStack(alignment: .leading, spacing: 14) {
+                        nameField
+
                         Label(L10n.string("creation_zip_note"), systemImage: "checkmark.circle.fill")
                             .font(.subheadline.bold())
                             .foregroundStyle(PageMakeTheme.ink)
@@ -150,7 +201,9 @@ struct FilePickerView: View {
                             .fixedSize(horizontal: false, vertical: true)
 
                         Button {
-                            showPicker = true
+                            if validatedProjectName() != nil {
+                                showPicker = true
+                            }
                         } label: {
                             Label(L10n.string("pick_files_action"), systemImage: "folder")
                         }
@@ -178,25 +231,12 @@ struct FilePickerView: View {
 
                 PageMakeCard {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text(L10n.string("explorer_name_placeholder"))
-                            .font(.caption.bold())
-                            .foregroundStyle(PageMakeTheme.inkSoft)
-                            .textCase(.uppercase)
-                            .tracking(0.5)
-
-                        TextField(L10n.string("explorer_name_placeholder"), text: $explorerName)
-                            .font(.system(.body, design: .rounded, weight: .medium))
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 12)
-                            .background(PageMakeTheme.paperWarm, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .stroke(PageMakeTheme.ink.opacity(0.08), lineWidth: 1)
-                            }
+                        nameField
 
                         Button {
-                            let name = explorerName.trimmingCharacters(in: .whitespacesAndNewlines)
-                            onPick(.explorer(name: name.isEmpty ? L10n.string("explorer_default_name") : name))
+                            if let name = validatedProjectName() {
+                                onPick(.explorer(name: name))
+                            }
                         } label: {
                             Label(L10n.string("explorer_create"), systemImage: "arrow.right")
                         }
@@ -221,6 +261,8 @@ struct FilePickerView: View {
                     detailKey: "paste_hint",
                     tint: PageMakeTheme.coral
                 )
+
+                nameField
 
                 templatesRow
 
@@ -291,7 +333,7 @@ struct FilePickerView: View {
                             }
                             .padding(12)
                             .frame(width: 150, alignment: .leading)
-                            .background(.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                            .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
                             .overlay {
                                 RoundedRectangle(cornerRadius: 15, style: .continuous)
                                     .stroke(PageMakeTheme.ink.opacity(0.07), lineWidth: 1)
@@ -329,6 +371,8 @@ struct FilePickerView: View {
             ZStack(alignment: .topLeading) {
                 TextEditor(text: text)
                     .font(.system(.footnote, design: .monospaced))
+                    .foregroundStyle(PageMakeTheme.codeText)
+                    .tint(PageMakeTheme.coral)
                     .scrollContentBackground(.hidden)
                     .padding(6)
                     .frame(minHeight: minHeight, alignment: .topLeading)
@@ -343,7 +387,7 @@ struct FilePickerView: View {
             }
         }
         .padding(12)
-        .background(.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(PageMakeTheme.codeBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(PageMakeTheme.ink.opacity(0.07), lineWidth: 1)
@@ -409,6 +453,7 @@ struct FilePickerView: View {
     }
 
     private func submitPaste() {
+        guard let name = validatedProjectName() else { return }
         guard pasteContent.hasContent else {
             alertItem = AlertItem(message: L10n.string("paste_content_required"))
             return
@@ -417,13 +462,14 @@ struct FilePickerView: View {
             alertItem = AlertItem(message: L10n.string("paste_too_large"))
             return
         }
-        onPick(.paste(pasteContent))
+        onPick(.paste(pasteContent, name: name))
     }
 
     // MARK: - 文件选择
 
     /// 拷贝到临时目录（脱离安全作用域资源）+ 本地校验
     private func handlePicked(_ urls: [URL]) {
+        guard let name = validatedProjectName() else { return }
         var picked: [PickedFile] = []
         for url in urls {
             let didStart = url.startAccessingSecurityScopedResource()
@@ -451,7 +497,7 @@ struct FilePickerView: View {
 
         switch FileValidator.validate(picked) {
         case .success(let files):
-            onPick(.files(files))
+            onPick(.files(files, name: name))
         case .failure(let error):
             alertItem = AlertItem(message: error.errorDescription ?? L10n.string("error_generic"))
         }

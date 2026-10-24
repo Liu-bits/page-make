@@ -88,6 +88,10 @@
 "creation_zip_detail" = "Upload a full ZIP project or select HTML, CSS, and JS files. The entry page and asset references are detected automatically.";
 "creation_folder_eyebrow" = "Project mode";
 "creation_code_eyebrow" = "Online editor";
+"project_name_field" = "Project name";
+"project_name_placeholder" = "For example: My home page";
+"project_name_hint" = "Up to 60 characters. This name appears in your project list.";
+"project_name_required" = "Give your project a name first";
 "editor_optional" = "Optional";
 "editor_required" = "Required";
 "validation_empty" = "Please select at least one file";
@@ -167,6 +171,15 @@
 "ban_until" = "Unban at";
 "ban_permanent" = "Permanent ban";
 "ban_note" = "If you have questions, contact us via Feedback. Banned project links will show \"Taken down\".";
+
+// MARK: - Bottom navigation and appearance
+"tab_create" = "Create";
+"tab_profile" = "Profile";
+"appearance_section" = "Appearance";
+"appearance_hint" = "Choose the interface style. The code editor stays clear and readable in both modes.";
+"appearance_system" = "System";
+"appearance_light" = "Light";
+"appearance_dark" = "Dark";
 
 // MARK: - Error codes (plain language)
 "error_no_entry" = "There is no HTML file in your zip";

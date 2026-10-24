@@ -11,19 +11,23 @@ struct RootView: View {
     /// 第二次 presentation 吞掉，表现为“所有按钮都没反应”。
     enum ActiveSheet: Identifiable {
         case filePicker
-        case settings
 
         var id: String {
             switch self {
             case .filePicker: return "filePicker"
-            case .settings: return "settings"
             }
         }
+    }
+
+    enum MainTab: String {
+        case workspace
+        case settings
     }
 
     @State private var activeSheet: ActiveSheet?
     @State private var createSource: CreateSource?
     @State private var explorerProject: Project?
+    @State private var selectedTab: MainTab = .workspace
 
     var body: some View {
         Group {
@@ -40,8 +44,13 @@ struct RootView: View {
                 FilePickerView { source in
                     handlePicked(source)
                 }
-            case .settings:
-                SettingsView()
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if appState.banInfo == nil, activeSheet == nil, createSource == nil {
+                MainTabBar(selection: $selectedTab) {
+                    activeSheet = .filePicker
+                }
             }
         }
         .sheet(isPresented: Binding(
@@ -68,14 +77,18 @@ struct RootView: View {
 
     private var mainContent: some View {
         NavigationStack {
-            ProjectListView(
-                onCreateTapped: {
-                    activeSheet = .filePicker
-                },
-                onSettingsTapped: {
-                    activeSheet = .settings
+            Group {
+                switch selectedTab {
+                case .workspace:
+                    ProjectListView(
+                        onCreateTapped: {
+                            activeSheet = .filePicker
+                        }
+                    )
+                case .settings:
+                    SettingsView()
                 }
-            )
+            }
             .navigationDestination(item: $explorerProject) { project in
                 ExplorerView(project: project)
             }

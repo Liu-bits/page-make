@@ -1,5 +1,5 @@
 // POST /api/upload/init — 初始化分片上传
-// body: { provider, files: [{ name, size }] }
+// body: { provider, files: [{ name, size }], name? }
 import { requireAuth, isTestUser } from '../../lib/session.js';
 import { getKV, kvPut, kvGet, kvDel, kvListAll, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
@@ -46,6 +46,8 @@ export async function onRequest(context) {
 
   const files = Array.isArray(body?.files) ? body.files : [];
   if (!files.length) return fail('BAD_REQUEST', 400);
+  const projectName =
+    (typeof body?.name === 'string' && body.name.trim().slice(0, 60)) || '未命名项目';
 
   let total = 0;
   for (const file of files) {
@@ -66,6 +68,7 @@ export async function onRequest(context) {
     uploadId,
     userId: auth.user.userId,
     provider,
+    projectName,
     files: files.map((f) => ({ name: String(f.name).split('/').pop(), size: f.size })),
     createdAt: nowSeconds(),
   });

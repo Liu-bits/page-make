@@ -164,7 +164,8 @@ export async function onRequest(context) {
   const html = typeof body?.html === 'string' ? body.html : '';
   const css = typeof body?.css === 'string' ? body.css : '';
   const js = typeof body?.js === 'string' ? body.js : '';
-  const name = (typeof body?.name === 'string' && body.name.trim()) || 'untitled';
+  const name =
+    (typeof body?.name === 'string' && body.name.trim().slice(0, 60)) || '未命名项目';
 
   if (!html.trim()) return fail('BAD_REQUEST', 400);
 
@@ -205,6 +206,7 @@ export async function onRequest(context) {
     const project = {
       id: projectId,
       userId: auth.user.userId,
+      name,
       provider,
       status: STATUS.READY,
       entryPath,
