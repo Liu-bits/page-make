@@ -313,7 +313,7 @@ struct FilePickerView: View {
 
     private func editor(title: String, text: Binding<String>, placeholder: String, minHeight: CGFloat) -> some View {
         let isRequired = title == L10n.string("paste_html")
-        VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 7) {
                 Circle()
                     .fill(editorTint(title))
