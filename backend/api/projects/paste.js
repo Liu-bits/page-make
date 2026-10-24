@@ -2,7 +2,7 @@
 // body: { provider, html, css?, js?, name? }
 // 说明：html 必填；css/js 可选，写入 style.css / script.js 并自动注入 HTML 引用；
 //       HTML 片段（无 <html> 结构）自动包裹成完整文档。
-import { requireAuth, isVIPUser } from '../../lib/session.js';
+import { requireAuth, isVIPUser, isGuestLimited } from '../../lib/session.js';
 import { kvPut, kvListAll, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
 import { PROVIDERS, PASTE_MAX_BYTES, STATUS, GUEST_LINK_TTL_SECONDS } from '../../lib/state.js';
@@ -152,7 +152,7 @@ export async function onRequest(context) {
   }
 
   // 游客（免登录兜底）最多创建 1 个网页
-  if (auth.user.userId.startsWith('guest_')) {
+  if (isGuestLimited(auth.user)) {
     const existing = await kvListAll(auth.kv, keys.userProject(auth.user.userId, ''));
     if (existing.length >= 1) return fail('GUEST_LIMIT', 403);
   }
@@ -170,7 +170,7 @@ export async function onRequest(context) {
   if (!html.trim()) return fail('BAD_REQUEST', 400);
 
   const totalBytes = bytes(html).length + bytes(css).length + bytes(js).length;
-  // VIP 用户（后台创建）可绕过粘贴大小上限
+  // VIP 用户（后台升级现有账号）可绕过粘贴大小上限
   if (!isVIPUser(auth.user) && totalBytes > PASTE_MAX_BYTES) return fail('TOO_LARGE', 413);
 
   const projectId = crypto.randomUUID().replace(/-/g, '');
@@ -199,7 +199,7 @@ export async function onRequest(context) {
     await kvPut(kv, keys.userProject(auth.user.userId, projectId), { createdAt: nowSeconds() });
 
     // 游客创建的链接 10 分钟后自动失效（登录后长期有效）
-    const guestExpires = auth.user.userId.startsWith('guest_')
+    const guestExpires = isGuestLimited(auth.user)
       ? nowSeconds() + GUEST_LINK_TTL_SECONDS
       : null;
 

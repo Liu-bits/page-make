@@ -1,5 +1,5 @@
 // GET /api/projects — 我的项目列表（按创建时间倒序）
-import { requireAuth } from '../lib/session.js';
+import { accountKind, isVIPUser, requireAuth } from '../lib/session.js';
 import { kvGet, kvListAll, keys } from '../lib/kv.js';
 import { decodeKey } from '../lib/base64.js';
 import { ok, fail } from '../lib/responses.js';
@@ -20,5 +20,9 @@ export async function onRequest(context) {
     if (project) projects.push(project);
   }
   projects.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  return ok({ projects });
+  return ok({
+    projects,
+    role: isVIPUser(auth.user) ? 'vip' : 'user',
+    accountKind: accountKind(auth.user),
+  });
 }

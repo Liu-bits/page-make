@@ -17,6 +17,7 @@ final class AppState: ObservableObject {
     private let api = APIClient.shared
     /// 首开恢复会话已发起拉取时，列表页 onAppear 不应再并发发同一请求。
     private var isRestoringProjects = false
+    private var isRefreshingRole = false
 
     var isLoggedIn: Bool {
         guard let session else { return false }
@@ -38,6 +39,8 @@ final class AppState: ObservableObject {
             token: token,
             userId: userId,
             email: KeychainStore.shared.userEmail,
+            role: KeychainStore.shared.accountRole,
+            accountKind: KeychainStore.shared.accountKind(for: userId),
             expiresAt: expiresAt
         )
         guard !restored.isExpired else {
@@ -96,7 +99,7 @@ final class AppState: ObservableObject {
     func signOut() {
         // 游客退出 = 结束本次试用：清除设备游客标识，下次「以游客身份继续」获得全新身份
         // （重新计时 10 分钟并重新获得 1 个创建名额；旧游客项目链接仍受原 10 分钟 TTL 约束）
-        if let session, session.userId.hasPrefix("guest_") {
+        if let session, session.isGuestLimited {
             KeychainStore.shared.clearGuestIdentity()
         }
         KeychainStore.shared.clearSession()
@@ -106,6 +109,7 @@ final class AppState: ObservableObject {
         stats = nil
         projectsLoadError = nil
         isRestoringProjects = false
+        isRefreshingRole = false
         banInfo = nil
     }
 
@@ -177,6 +181,7 @@ final class AppState: ObservableObject {
     /// 加载用量统计
     func loadStats() async {
         stats = try? await api.stats()
+        await refreshAccountRole()
     }
 
     // MARK: - 项目模式
@@ -198,24 +203,6 @@ final class AppState: ObservableObject {
         } catch {
             authError = L10n.string("error_generic")
             return nil
-        }
-    }
-
-    /// VIP 账号登录；账号仅由管理后台发放。
-    func signInWithVIP(email: String, password: String) async -> String? {
-        do {
-            let response = try await api.login(email: email, password: password)
-            applySession(response)
-            await loadProjects()
-            return nil
-        } catch let error as APIError {
-            if case .banned(let ban) = error {
-                banInfo = ban
-                return nil
-            }
-            return error.errorDescription
-        } catch {
-            return L10n.string("error_generic")
         }
     }
 
@@ -242,12 +229,48 @@ final class AppState: ObservableObject {
             token: response.token,
             userId: response.userId,
             email: response.email,
+            role: response.role,
+            accountKind: response.accountKind,
             expiresAt: response.expiresAt
         )
         session = newSession
         api.setToken(response.token)
         stats = nil
         KeychainStore.shared.saveSession(response)
+    }
+
+    /// 管理后台可能随时给当前账号升级/取消 VIP。列表与设置页刷新时同步角色，
+    /// 不要求用户重新登录，同时保留原 token、userId、项目和游客身份。
+    func refreshAccountRole() async {
+        guard !isRefreshingRole,
+              let existing = session,
+              !existing.isExpired else { return }
+        isRefreshingRole = true
+        defer { isRefreshingRole = false }
+        guard let snapshot = try? await api.accountSnapshot() else { return }
+        applyAccountSnapshot(snapshot, matching: existing)
+    }
+
+    /// 将服务端角色的最新快照合并到当前会话；不新建 token、不触碰项目数据。
+    /// `expected` 为发起请求时的会话；用于阻止旧响应覆盖切换后的新账号。
+    private func applyAccountSnapshot(_ snapshot: AccountSnapshot, matching expected: UserSession) {
+        // 请求期间可能已退出或切换账号，绝不能用旧响应覆盖新会话。
+        guard let current = session,
+              current.userId == expected.userId,
+              current.token == expected.token else { return }
+        guard current.role != snapshot.role || current.accountKind != snapshot.accountKind else { return }
+
+        let updated = UserSession(
+            token: current.token,
+            userId: current.userId,
+            email: current.email,
+            role: snapshot.role,
+            accountKind: snapshot.accountKind,
+            expiresAt: current.expiresAt
+        )
+        session = updated
+        KeychainStore.shared.set(snapshot.role.rawValue, for: "account_role")
+        KeychainStore.shared.set(snapshot.accountKind.rawValue, for: "account_kind")
     }
 
     // MARK: - 项目
@@ -266,9 +289,16 @@ final class AppState: ObservableObject {
             isRestoringProjects = false
         }
         do {
-            let list = try await api.listProjects()
-            projects = list.sorted { ($0.createdAt) > ($1.createdAt) }
+            let result = try await api.listProjects()
+            projects = result.projects.sorted { ($0.createdAt) > ($1.createdAt) }
             projectsLoadError = nil
+            // /api/projects 已返回同一份权威角色快照，直接应用，避免再请求 /api/stats。
+            // 若项目列表与设置页同时刷新，角色更新也不会额外放大网关抖动。
+            if let account = result.account, let requestedSession = session {
+                applyAccountSnapshot(account, matching: requestedSession)
+            } else {
+                await refreshAccountRole()
+            }
         } catch let error as APIError {
             if case .banned(let ban) = error {
                 banInfo = ban

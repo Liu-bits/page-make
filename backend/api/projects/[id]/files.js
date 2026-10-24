@@ -208,7 +208,7 @@ export async function onRequest(context) {
     const content = body?.content;
     if (typeof content !== 'string') return fail('BAD_REQUEST', 400);
     const bytes = base64ToBytes(content);
-    // VIP 用户（后台创建）可绕过单文件/项目总大小上限
+    // VIP 用户（后台升级现有账号）可绕过单文件/项目总大小上限
     if (!isVIPUser(result.user) && bytes.length > FILE_MAX_BYTES) return fail('TOO_LARGE', 413);
 
     // 项目总大小上限（覆盖不增加占用；与上传管线 5MB 保持一致）

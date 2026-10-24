@@ -9,6 +9,7 @@ import {
   nowSeconds, appendLog, pathFromSiteKey,
 } from './kv.js';
 import { STATUS, GUEST_LINK_TTL_SECONDS } from './state.js';
+import { isVIPUser } from './session.js';
 
 function concatBytes(chunks) {
   const total = chunks.reduce((a, c) => a + c.length, 0);
@@ -72,6 +73,9 @@ export async function processUpload(args) {
   };
 
   try {
+    // 上传异步处理期间，账号可能刚被管理员升级为 VIP。以处理完成时的最新角色
+    // 决定链接期限，避免“升级成功但新项目仍只有 10 分钟”。
+    const currentUser = await kvGet(kv, keys.user(upload.userId));
     // 1. 组装分片（KV 最终一致性：读取重试）
     const assembled = new Map();
     for (let fi = 0; fi < upload.files.length; fi++) {
@@ -149,7 +153,7 @@ export async function processUpload(args) {
       diagnostics,
       url: `${origin}/p/${projectId}`,
       // 游客创建的链接 10 分钟后自动失效（登录后长期有效）
-      expiresAt: upload.userId?.startsWith('guest_')
+      expiresAt: upload.userId?.startsWith('guest_') && !isVIPUser(currentUser)
         ? nowSeconds() + GUEST_LINK_TTL_SECONDS
         : deploy.expiresAt,
       deploymentUrl: deploy.deploymentUrl,

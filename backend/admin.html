@@ -20,6 +20,7 @@
   button.gray { background: #64748b; }
   button.red { background: #dc2626; }
   button.green { background: #16a34a; }
+  button.gold { background: #d97706; }
   button.sm { padding: 6px 10px; font-size: 12px; }
   .row { display: flex; gap: 8px; margin-top: 10px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -31,6 +32,7 @@
   .tag.banned { background: #fee2e2; color: #b91c1c; }
   .tag.guest { background: #e0e7ff; color: #4338ca; }
   .tag.vip { background: #fef3c7; color: #92400e; }
+  .tag.guest-vip { background: #ede9fe; color: #6d28d9; }
   .muted { color: #94a3b8; font-size: 12px; }
   .msg { padding: 10px 12px; border-radius: 10px; margin: 10px 0; font-size: 14px; display: none; }
   .msg.err { background: #fee2e2; color: #b91c1c; }
@@ -67,16 +69,14 @@
 
     <div class="card"><div class="stats" id="stats"></div></div>
 
-    <h2>VIP 用户（可绕过普通存储限制）</h2>
+    <h2>VIP 权益（升级现有账号，不创建邮箱账号）</h2>
     <div class="card">
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <input id="vipEmail" type="email" placeholder="登录邮箱" style="flex:2;min-width:200px">
-        <input id="vipPwd" type="password" placeholder="登录密码（至少 8 位）" style="flex:2;min-width:160px">
-        <button onclick="createVIPUser()" style="flex:0 0 auto">创建 VIP 用户</button>
-      </div>
-      <p class="muted" style="margin-top:8px">VIP 账号仅由管理员发放，不开放 App 内注册。</p>
+      <p class="muted">在下表点击“升级 VIP”即可让该 Apple / Google / 游客账号获得长期链接与更高容量；
+        userId、项目、会话均保持不变。</p>
+      <p class="muted" style="margin-top:6px">历史邮箱密码账号不再具备登录能力，可在此彻底清理其账号、项目与会话。</p>
+      <button class="red sm" style="margin-top:10px" onclick="purgePasswordUsers()">清理历史邮箱密码账号</button>
       <table id="vipTable" style="margin-top:10px">
-        <thead><tr><th>邮箱</th><th>项目</th><th>创建时间</th><th>操作</th></tr></thead>
+        <thead><tr><th>账号</th><th>类型</th><th>项目</th><th>升级时间</th><th>操作</th></tr></thead>
         <tbody></tbody>
       </table>
     </div>
@@ -170,23 +170,32 @@ function render(d) {
 
   const vipUsers = d.users.filter(u => u.role === 'vip');
   document.querySelector('#vipTable tbody').innerHTML = vipUsers.map(u =>
-    `<tr><td>${escapeHtml(u.email || u.userId)}</td><td>${fmtNumber(u.projectCount)}</td><td>${escapeHtml(fmtTime(u.createdAt))}</td>
-     <td><button class="sm red" data-user-id="${escapeHtml(u.userId)}" onclick="deleteVIPUser(this.dataset.userId)">删除</button></td></tr>`
-  ).join('') || '<tr><td colspan="4" class="muted">暂无 VIP 用户</td></tr>';
+    `<tr><td>${escapeHtml(u.email || u.userId)}</td><td>${escapeHtml(kindLabel(u.accountKind))}</td>
+     <td>${fmtNumber(u.projectCount)}</td><td>${escapeHtml(fmtTime(u.vipSince))}</td>
+     <td><button class="sm gray" data-user-id="${escapeHtml(u.userId)}" onclick="downgradeVIP(this.dataset.userId)">取消 VIP</button>
+     <button class="sm red" data-user-id="${escapeHtml(u.userId)}" onclick="deleteVIPUser(this.dataset.userId)">删除</button></td></tr>`
+  ).join('') || '<tr><td colspan="5" class="muted">暂无 VIP 用户</td></tr>';
 
   document.querySelector('#userTable tbody').innerHTML = d.users.map(u => {
     const statusTag = u.status === 'banned'
       ? `<span class="tag banned">已封禁 L${fmtNumber(u.banLevel)}</span>`
       : `<span class="tag ok">正常</span>`;
-    const guestTag = u.isGuest ? ' <span class="tag guest">游客</span>' : '';
-    const vipTag = u.role === 'vip' ? ' <span class="tag vip">VIP</span>' : '';
+    const guestTag = u.accountKind === 'guest' || u.accountKind === 'guest-vip'
+      ? ' <span class="tag guest">游客</span>' : '';
+    const vipTag = u.role === 'vip'
+      ? ` <span class="tag ${u.accountKind === 'guest-vip' ? 'guest-vip' : 'vip'}">VIP</span>` : '';
     const banInfo = u.status === 'banned'
       ? `${escapeHtml(u.banReason || '')}<br><span class="muted">${u.banUntil ? '至 ' + escapeHtml(fmtTime(u.banUntil)) : '永久'}</span>`
       : '<span class="muted">—</span>';
+    const vipAction = u.role === 'vip'
+      ? `<button class="sm gray" data-user-id="${escapeHtml(u.userId)}" onclick="downgradeVIP(this.dataset.userId)">取消 VIP</button>`
+      : `<button class="sm gold" data-user-id="${escapeHtml(u.userId)}" onclick="upgradeVIP(this.dataset.userId)">升级 VIP</button>`;
     const action = u.status === 'banned'
       ? `<button class="sm green" data-user-id="${escapeHtml(u.userId)}" onclick="unban(this.dataset.userId)">解封</button>
+         ${vipAction}
          <button class="sm red" data-user-id="${escapeHtml(u.userId)}" onclick="deleteUser(this.dataset.userId)">删除账号</button>`
       : `<button class="sm red" data-user-id="${escapeHtml(u.userId)}" onclick="banPrompt(this.dataset.userId)">封号</button>
+         ${vipAction}
          <button class="sm gray" data-user-id="${escapeHtml(u.userId)}" onclick="deleteUser(this.dataset.userId)">删除账号</button>`;
     return `<tr><td>${escapeHtml(u.email || u.userId)}${guestTag}${vipTag}<br><span class="muted">创建 ${fmtTime(u.createdAt)}</span></td>
       <td>${statusTag}</td><td>${fmtNumber(u.projectCount)}</td><td>${banInfo}</td><td>${action}</td></tr>`;
@@ -241,13 +250,29 @@ function unban(userId) {
     .catch(e => msg(e.message, true));
 }
 
-function createVIPUser() {
-  const email = document.getElementById('vipEmail').value.trim();
-  const password = document.getElementById('vipPwd').value;
-  if (!email || !password) { msg('邮箱和密码都要填', true); return; }
-  api(API.action, { action: 'createVIPUser', email, password })
-    .then((r) => { msg(`VIP 用户已创建：${r.email}`); document.getElementById('vipPwd').value = ''; load(); })
-    .catch(e => msg(e.message === 'USER_EXISTS' ? '该邮箱已被占用' : weakPwdHint(e.message), true));
+function kindLabel(kind) {
+  return { guest: '游客', 'guest-vip': '游客 VIP', vip: 'VIP', user: '普通账号' }[kind] || kind || '未知';
+}
+
+function upgradeVIP(userId) {
+  if (!confirm('将账号 ' + userId + ' 升级为 VIP？\n账号、项目与当前会话都会保留。')) return;
+  api(API.action, { action: 'upgradeVIP', userId })
+    .then(() => { msg('已升级为 VIP，用户无需重新登录'); load(); })
+    .catch(e => msg(e.message === 'ALREADY_VIP' ? '该账号已经是 VIP' : e.message, true));
+}
+
+function downgradeVIP(userId) {
+  if (!confirm('取消账号 ' + userId + ' 的 VIP 权益？\n账号与项目会保留。')) return;
+  api(API.action, { action: 'downgradeVIP', userId })
+    .then(() => { msg('已取消 VIP'); load(); })
+    .catch(e => msg(e.message, true));
+}
+
+function purgePasswordUsers() {
+  if (!confirm('彻底清理全部历史邮箱密码账号？\n其项目、文件与会话会一并删除，且不可恢复。')) return;
+  api(API.action, { action: 'purgePasswordUsers' })
+    .then((r) => { msg(`已清理 ${fmtNumber(r.deleted)} 个历史邮箱密码账号`); load(); })
+    .catch(e => msg(e.message, true));
 }
 
 function deleteVIPUser(userId) {

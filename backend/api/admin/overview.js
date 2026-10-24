@@ -4,13 +4,16 @@
 import { kvListAll } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
 import { requireAdmin } from '../../lib/admin.js';
+import { accountKind, isVIPUser } from '../../lib/session.js';
 
 function publicUser(u) {
+  const kind = accountKind(u);
   return {
     userId: u.userId,
     email: u.email ?? null,
     isGuest: Boolean(u.userId?.startsWith('guest_')),
-    role: u.role === 'vip' || u.isTest ? 'vip' : 'user',
+    role: isVIPUser(u) ? 'vip' : 'user',
+    accountKind: kind,
     status: u.status ?? 'active',
     banLevel: u.banLevel ?? 0,
     banReason: u.banReason ?? null,
@@ -61,6 +64,7 @@ export async function onRequest(context) {
     u._projectCount = projectCountByUser.get(u.userId) || 0;
     const publicRecord = publicUser(u);
     publicRecord.legacyIsTest = Boolean(u.isTest);
+    publicRecord.vipSince = u.vipSince ?? null;
     users.push(publicRecord);
   }
   users.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));

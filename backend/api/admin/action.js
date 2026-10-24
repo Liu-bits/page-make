@@ -6,15 +6,18 @@
 //   deleteFeedback    { id }
 //   deleteProject     { projectId }
 //   setPassword       { newPassword }                管理员改自己的后台密码
-//   createVIPUser     { email, password }            创建 VIP 用户（绕过普通用户大小限制）
+//   upgradeVIP        { userId }                     将现有 Apple/Google/游客账号升级为 VIP
+//   downgradeVIP      { userId }                     取消 VIP（保留账号与项目）
 //   deleteVIPUser     { userId }                     删除 VIP 用户（= deleteUser，仅允许 VIP）
+//   purgePasswordUsers {}                             删除历史邮箱密码账号及其数据与会话
 // 合规：封号必须带原因（用户端可见），解封后项目自动恢复上架；用户可通过 App 内反馈申诉
 import { kvGet, kvPut, kvDel, kvListAll, keys, nowSeconds } from '../../lib/kv.js';
 import { decodeKey } from '../../lib/base64.js';
 import { ok, fail } from '../../lib/responses.js';
 import { requireAdmin, changeAdminPassword } from '../../lib/admin.js';
+import { revokeUserSessions, isVIPUser } from '../../lib/session.js';
 import { BAN_LEVELS } from '../../lib/state.js';
-import { hashPassword, userIdFromEmail, EMAIL_RE, checkPasswordStrength } from '../../lib/password.js';
+import { deleteUserAccount, purgePasswordUsers } from '../../lib/admin-users.js';
 
 /** 遍历某用户的全部项目（uproject 索引的 value 段是 hex 编码的项目 ID，需 decodeKey 还原） */
 async function forEachUserProject(kv, userId, fn) {
@@ -81,50 +84,46 @@ async function unbanUser(kv, { userId }) {
 }
 
 /** 删除账号：用户记录 + 全部项目（含文件）+ 会话（强制下线） */
-async function deleteUserAccount(kv, { userId, requireVIP = false }) {
+async function deleteUserFromAdmin(kv, { userId, requireVIP = false }) {
   if (typeof userId !== 'string' || !userId) return fail('BAD_REQUEST', 400);
   const user = await kvGet(kv, keys.user(userId));
   if (!user) return fail('NOT_FOUND', 404);
-  if (requireVIP && user.role !== 'vip' && !user.isTest) return fail('NOT_VIP_USER', 400);
+  if (requireVIP && !isVIPUser(user)) return fail('NOT_VIP_USER', 400);
 
-  await forEachUserProject(kv, userId, async (projectId, indexKey) => {
-    for (const siteKey of await kvListAll(kv, keys.sitePrefix(projectId))) await kvDel(kv, siteKey);
-    await kvDel(kv, keys.siteMeta(projectId));
-    await kvDel(kv, keys.project(projectId));
-    await kvDel(kv, indexKey);
-  });
-
-  // 会话全部清除（下次请求即 401，实现强制下线）
-  for (const key of await kvListAll(kv, 'session_')) {
-    const session = await kvGet(kv, key);
-    if (session?.userId === userId) await kvDel(kv, key);
-  }
-  await kvDel(kv, keys.user(userId));
+  await deleteUserAccount(kv, userId);
   return ok({ deleted: true, userId });
 }
 
-/** 创建 VIP 用户（后台分配账号密码，可绕过普通用户存储限制） */
-async function createVIPUser(kv, { email, password }) {
-  const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
-  if (!EMAIL_RE.test(cleanEmail)) return fail('BAD_REQUEST', 400);
-  const strength = checkPasswordStrength(password);
-  if (!strength.ok) return fail(strength.reason, 400);
-  const userId = await userIdFromEmail(cleanEmail);
-  if (await kvGet(kv, keys.user(userId))) return fail('USER_EXISTS', 409);
+/**
+ * 将现有账号升级为 VIP。
+ * 不新建账号、不改 userId、不销毁会话，因此游客升级后仍用原游客方式进入，
+ * 但所有游客限制在下一次请求即按升级后的角色解除。
+ */
+async function upgradeVIP(kv, { userId }) {
+  if (typeof userId !== 'string' || !userId) return fail('BAD_REQUEST', 400);
+  const user = await kvGet(kv, keys.user(userId));
+  if (!user) return fail('NOT_FOUND', 404);
+  if (isVIPUser(user)) return fail('ALREADY_VIP', 409);
 
-  await kvPut(kv, keys.user(userId), {
-    userId,
-    email: cleanEmail,
-    password: await hashPassword(password),
-    role: 'vip',
-    status: 'active',
-    banLevel: 0,
-    banUntil: null,
-    banReason: null,
-    banCount: 0,
-    createdAt: nowSeconds(),
-  });
-  return ok({ created: true, userId, email: cleanEmail });
+  user.role = 'vip';
+  user.vipSince = nowSeconds();
+  delete user.isTest;
+  await kvPut(kv, keys.user(userId), user);
+  return ok({ upgraded: true, userId });
+}
+
+/** 取消 VIP：保留账号、项目与会话，只恢复普通账号权益。 */
+async function downgradeVIP(kv, { userId }) {
+  if (typeof userId !== 'string' || !userId) return fail('BAD_REQUEST', 400);
+  const user = await kvGet(kv, keys.user(userId));
+  if (!user) return fail('NOT_FOUND', 404);
+  if (!isVIPUser(user)) return fail('NOT_VIP_USER', 400);
+
+  user.role = 'user';
+  delete user.isTest;
+  delete user.vipSince;
+  await kvPut(kv, keys.user(userId), user);
+  return ok({ downgraded: true, userId });
 }
 
 /** 删除项目（管理员强制下架清理） */
@@ -159,11 +158,15 @@ export async function onRequest(context) {
     case 'unban':
       return unbanUser(kv, body);
     case 'deleteUser':
-      return deleteUserAccount(kv, body);
-    case 'createVIPUser':
-      return createVIPUser(kv, body);
+      return deleteUserFromAdmin(kv, body);
+    case 'upgradeVIP':
+      return upgradeVIP(kv, body);
+    case 'downgradeVIP':
+      return downgradeVIP(kv, body);
     case 'deleteVIPUser':
-      return deleteUserAccount(kv, { ...body, requireVIP: true });
+      return deleteUserFromAdmin(kv, { ...body, requireVIP: true });
+    case 'purgePasswordUsers':
+      return ok({ deleted: await purgePasswordUsers(kv) });
     case 'deleteFeedback': {
       if (typeof body.id !== 'string' || !body.id) return fail('BAD_REQUEST', 400);
       await kvDel(kv, keys.feedback(body.id));

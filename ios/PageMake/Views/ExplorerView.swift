@@ -118,24 +118,7 @@ struct ExplorerView: View {
         .navigationTitle(current.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button {
-                    Task { await publish() }
-                } label: {
-                    if isPublishing {
-                        ProgressView()
-                    } else {
-                        Text(current.publicURL == nil
-                             ? L10n.string("explorer_build")
-                             : L10n.string("explorer_rebuild"))
-                            .fontWeight(.semibold)
-                    }
-                }
-                .disabled(isPublishing)
-                .accessibilityLabel(current.publicURL == nil
-                                    ? L10n.string("explorer_build")
-                                    : L10n.string("explorer_rebuild"))
-
+            ToolbarItem(placement: .topBarLeading) {
                 Menu {
                     Button {
                         activeSheet = .newFile
@@ -148,17 +131,59 @@ struct ExplorerView: View {
                         Label(L10n.string("explorer_new_folder"), systemImage: "folder.badge.plus")
                     }
                 } label: {
-                    Image(systemName: "plus")
+                    Label(L10n.string("explorer_new"), systemImage: "plus")
                 }
                 .accessibilityLabel(L10n.string("explorer_new"))
-
+            }
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
-                    activeSheet = .preview
+                    Task { await publish() }
                 } label: {
-                    Image(systemName: "eye")
+                    if isPublishing {
+                        ProgressView()
+                    } else {
+                        Label(
+                            current.publicURL == nil
+                                ? L10n.string("explorer_build")
+                                : L10n.string("explorer_rebuild"),
+                            systemImage: "hammer.fill"
+                        )
+                    }
                 }
-                .disabled(current.publicURL == nil)
-                .accessibilityLabel(L10n.string("preview"))
+                .buttonStyle(.borderedProminent)
+                .tint(PageMakeTheme.coral)
+                .disabled(isPublishing)
+                .accessibilityLabel(current.publicURL == nil
+                                    ? L10n.string("explorer_build")
+                                    : L10n.string("explorer_rebuild"))
+
+                Menu {
+                    Button {
+                        activeSheet = .preview
+                    } label: {
+                        Label(L10n.string("preview"), systemImage: "eye")
+                    }
+                    .disabled(current.publicURL == nil)
+
+                    Button {
+                        activeSheet = .qr
+                    } label: {
+                        Label(L10n.string("qr_code"), systemImage: "qrcode")
+                    }
+                    .disabled(current.publicURL == nil)
+
+                    if let url = current.publicURL {
+                        Button {
+                            UIPasteboard.general.string = url.absoluteString
+                            alertItem = AlertItem(message: L10n.string("link_copied"), titleKey: "alert_tip")
+                        } label: {
+                            Label(L10n.string("copy_link"), systemImage: "doc.on.doc")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel(L10n.string("more_actions"))
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -489,14 +514,26 @@ struct ExplorerView: View {
                 }
                 .accessibilityLabel(L10n.string("qr_code"))
             }
-            if current.publicURL != nil {
-                Button {
-                    activeSheet = .preview
-                } label: {
-                    Label(L10n.string("preview"), systemImage: "eye")
+            Button {
+                Task { await publish() }
+            } label: {
+                if isPublishing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Label(
+                        current.publicURL == nil
+                            ? L10n.string("explorer_build")
+                            : L10n.string("explorer_rebuild"),
+                        systemImage: "hammer.fill"
+                    )
+                    .font(.caption.bold())
                 }
-                .buttonStyle(.bordered)
             }
+            .buttonStyle(.borderedProminent)
+            .tint(PageMakeTheme.coral)
+            .controlSize(.small)
+            .disabled(isPublishing)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)

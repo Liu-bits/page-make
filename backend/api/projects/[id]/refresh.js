@@ -6,6 +6,7 @@ import { findEntry } from '../../../lib/diagnostics.js';
 import { appendLog, nowSeconds, kvPut, keys } from '../../../lib/kv.js';
 import { ok, fail } from '../../../lib/responses.js';
 import { STATUS, GUEST_LINK_TTL_SECONDS } from '../../../lib/state.js';
+import { isGuestLimited } from '../../../lib/session.js';
 
 export async function onRequest(context) {
   const { request, params } = context;
@@ -46,7 +47,7 @@ export async function onRequest(context) {
     project.errorCode = null;
     project.entryPath = entry;
     // 游客链接重新计时 10 分钟（登录用户长期有效，随部署 TTL）
-    project.expiresAt = user.userId.startsWith('guest_')
+    project.expiresAt = isGuestLimited(user)
       ? nowSeconds() + GUEST_LINK_TTL_SECONDS
       : deploy.expiresAt;
     if (deploy.deploymentUrl) project.deploymentUrl = deploy.deploymentUrl;

@@ -4,7 +4,6 @@ import SwiftUI
 struct ProjectListView: View {
     @EnvironmentObject private var appState: AppState
     let onCreateTapped: () -> Void
-    @State private var showVIPLogin = false
     @State private var alertItem: AlertItem?
     @State private var searchText = ""
     @State private var sortOrder: SortOrder = .newest
@@ -67,14 +66,6 @@ struct ProjectListView: View {
             if appState.isLoggedIn {
                 Task { await appState.loadProjects(isInitialRestore: true) }
             }
-        }
-        .sheet(isPresented: $showVIPLogin, onDismiss: {
-            if appState.isLoggedIn {
-                Task { await appState.loadProjects() }
-            }
-        }) {
-            VIPLoginView()
-                .environmentObject(appState)
         }
         .alert(item: $alertItem) { item in
             Alert(
@@ -139,13 +130,6 @@ struct ProjectListView: View {
                                 Task { await signInWithGoogle() }
                             } label: {
                                 Label(L10n.string("login_google"), systemImage: "g.circle.fill")
-                            }
-                            .buttonStyle(SecondaryButtonStyle())
-
-                            Button {
-                                showVIPLogin = true
-                            } label: {
-                                Label(L10n.string("vip_login"), systemImage: "crown.fill")
                             }
                             .buttonStyle(SecondaryButtonStyle())
 

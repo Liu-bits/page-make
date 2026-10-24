@@ -12,15 +12,9 @@ enum PlainLanguage {
         case "DB_ERROR": return "error_db_error"
         case "INVALID_PROVIDER": return "error_invalid_provider"
         case "EXPIRED": return "error_expired"
-        case "INVALID_EMAIL": return "error_invalid_email"
-        case "WEAK_PASSWORD": return "error_weak_password"
-        case "WEAK_PASSWORD_COMMON": return "error_weak_password_common"
-        case "WEAK_PASSWORD_PATTERN": return "error_weak_password_pattern"
-        case "WEAK_PASSWORD_SIMPLE": return "error_weak_password_simple"
-        case "TOO_MANY_ATTEMPTS": return "error_too_many_attempts"
-        case "INVALID_CREDENTIALS": return "error_invalid_credentials"
         case "INVALID_GOOGLE_TOKEN": return "error_invalid_google_token"
         case "GUEST_LIMIT": return "error_guest_limit"
+        case "GUEST_NO_EXPLORER": return "error_guest_no_explorer"
         default: return ""
         }
     }

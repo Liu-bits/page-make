@@ -89,7 +89,7 @@ async function guestLogin(deviceId) {
 async function guestPaste(token, name = 'guest-page') {
   const res = await fetch(`${BASE}/api/projects/paste`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json', 'X-Pagemake-Token': token },
     body: JSON.stringify({
       name,
       html: '<html><body><h1>guest trial</h1></body></html>',
@@ -172,7 +172,7 @@ await test('到期后：/p/<id> 与 /p/<id>/* 均返回 410 过期页', async ()
 
 await test('到期后：项目状态接口报 expired', async () => {
   const res = await fetch(`${BASE}/api/projects/${project1.id}/status`, {
-    headers: { Authorization: `Bearer ${session1.token}` },
+    headers: { 'X-Pagemake-Token': session1.token },
   });
   assertEqual(res.status, 200, '状态查询应 200');
   const body = await res.json();
@@ -184,7 +184,7 @@ await test('到期后：项目状态接口报 expired', async () => {
 await test('游客刷新已过期项目 → 重新计时 10 分钟 → 恢复访问', async () => {
   const res = await fetch(`${BASE}/api/projects/${project1.id}/refresh`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${session1.token}` },
+    headers: { 'X-Pagemake-Token': session1.token },
   });
   assertEqual(res.status, 200, `刷新应成功，实际 ${res.status}`);
   const after = readProjectFromDisk(project1.id);
@@ -217,7 +217,7 @@ await test('回归：新设备游客项目仍带 10 分钟 expiresAt', async () 
   assert(auth.userId.startsWith('guest_'), '应创建游客会话');
   const res = await fetch(`${BASE}/api/projects/paste`, {
     method: 'POST',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-Pagemake-Token': auth.token },
     body: JSON.stringify({ name: 'user-page', html: '<h1>user page</h1>' }),
   });
   assertEqual(res.status, 200, '登录用户粘贴应成功');

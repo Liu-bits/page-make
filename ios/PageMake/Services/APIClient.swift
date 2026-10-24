@@ -140,18 +140,6 @@ final class APIClient {
         let idToken: String
     }
 
-    /// VIP 账号登录（仅后台发放的账号）
-    func login(email: String, password: String) async throws -> AuthResponse {
-        let body = try encoder.encode(PasswordAuthRequest(email: email, password: password))
-        let data = try await request("/api/auth/login", method: "POST", body: body, requiresAuth: false)
-        return try decoder.decode(AuthResponse.self, from: data)
-    }
-
-    struct PasswordAuthRequest: Encodable {
-        let email: String
-        let password: String
-    }
-
     /// 游客登录（设备 ID 免密，免费 Apple ID 环境的兜底）
     func guestAuthenticate(deviceId: String) async throws -> AuthResponse {
         let body = try encoder.encode(GuestAuthRequest(deviceId: deviceId))
@@ -167,12 +155,22 @@ final class APIClient {
 
     struct ProjectsPayload: Decodable {
         let projects: [Project]
+        let role: AccountRole?
+        let accountKind: AccountKind?
     }
 
-    func listProjects() async throws -> [Project] {
+    struct ProjectListResult {
+        let projects: [Project]
+        let account: AccountSnapshot?
+    }
+
+    func listProjects() async throws -> ProjectListResult {
         let data = try await request("/api/projects")
         let payload = try decoder.decode(ProjectsPayload.self, from: data)
-        return payload.projects
+        let account = payload.role.flatMap { role in
+            payload.accountKind.map { AccountSnapshot(role: role, accountKind: $0) }
+        }
+        return ProjectListResult(projects: payload.projects, account: account)
     }
 
     /// 读取单个项目详情（资源管理器刷新）
@@ -201,6 +199,18 @@ final class APIClient {
 
     struct StatsPayload: Decodable {
         let stats: UserStats
+        let role: AccountRole?
+        let accountKind: AccountKind?
+    }
+
+    /// 读取最新账号权益。管理后台升级 VIP 后用于无需重登即时刷新。
+    func accountSnapshot() async throws -> AccountSnapshot {
+        let data = try await request("/api/stats")
+        let payload = try decoder.decode(StatsPayload.self, from: data)
+        guard let role = payload.role, let accountKind = payload.accountKind else {
+            throw APIError.decoding
+        }
+        return AccountSnapshot(role: role, accountKind: accountKind)
     }
 
     /// 删除项目（ModelScope 网关拦截 DELETE 方法，改用 POST + action）

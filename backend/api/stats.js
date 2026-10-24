@@ -1,5 +1,5 @@
 // GET /api/stats — 当前用户的用量统计（项目数 / 总大小 / 文件数）
-import { requireAuth } from '../lib/session.js';
+import { accountKind, isVIPUser, requireAuth } from '../lib/session.js';
 import { kvGet, kvListAll, keys } from '../lib/kv.js';
 import { decodeKey } from '../lib/base64.js';
 import { ok } from '../lib/responses.js';
@@ -24,5 +24,9 @@ export async function onRequest(context) {
     fileCount += project.fileCount || 0;
   }
 
-  return ok({ stats: { projectCount, totalSize, fileCount } });
+  return ok({
+    stats: { projectCount, totalSize, fileCount },
+    role: isVIPUser(auth.user) ? 'vip' : 'user',
+    accountKind: accountKind(auth.user),
+  });
 }

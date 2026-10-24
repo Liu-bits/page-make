@@ -38,11 +38,16 @@ async function readJsonFile(filePath) {
 
 async function writeJsonFile(filePath, data) {
   if (!(await ensureNode())) return;
+  const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
   try {
     await nodeFs.mkdir(path.dirname(filePath), { recursive: true });
-    await nodeFs.writeFile(filePath, JSON.stringify(data));
+    // 读请求可能并发执行。直接写目标文件会让另一请求读到半截 JSON；
+    // 先写同目录临时文件再原子重命名，确保磁盘缓存要么是旧完整文件，要么是新完整文件。
+    await nodeFs.writeFile(tmp, JSON.stringify(data));
+    await nodeFs.rename(tmp, filePath);
   } catch {
     // 持久卷不可写时静默（不影响主流程）
+    await nodeFs.unlink(tmp).catch(() => {});
   }
 }
 
@@ -79,6 +84,8 @@ export function createJwksLoader(options) {
 
   let memory = { keys: [], fetchedAt: 0, source: null, lastError: null };
   let seedPromise = null;
+  // 磁盘缓存写入使用独立 Promise，测试或关闭流程可等待真正落盘完成。
+  let cacheWrite = Promise.resolve();
 
   async function fetchLive() {
     const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
@@ -110,7 +117,10 @@ export function createJwksLoader(options) {
     try {
       const data = await fetchLive();
       memory = { keys: data.keys, fetchedAt: now, source: 'live', lastError: null };
-      if (cacheDir) void writeJsonFile(path.join(cacheDir, `${name}-jwks.json`), data);
+      if (cacheDir) {
+        cacheWrite = writeJsonFile(path.join(cacheDir, `${name}-jwks.json`), data);
+        void cacheWrite;
+      }
       return { keys: memory.keys, source: 'live', fetchedAt: memory.fetchedAt };
     } catch (error) {
       memory.lastError = String(error?.message || error);
@@ -137,6 +147,8 @@ export function createJwksLoader(options) {
 
   return {
     getKeys,
+    /** 等待磁盘缓存写入完成（诊断/测试用；业务请求无需等待）。 */
+    flushCache: () => cacheWrite,
     status() {
       return {
         name,

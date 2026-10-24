@@ -2,7 +2,7 @@
 // body: { idToken } — iOS 端 OAuth 拿到的 Google id_token
 // 环境变量：GOOGLE_CLIENT_ID（iOS OAuth 客户端 ID）
 import { getKV, kvGet, kvPut, keys, nowSeconds, appendLog } from '../../lib/kv.js';
-import { createSession, publicBan, isBanned } from '../../lib/session.js';
+import { accountKind, createSession, publicBan, isBanned } from '../../lib/session.js';
 import { ok, fail } from '../../lib/responses.js';
 import { verifyGoogleIdentityToken } from '../../lib/google-auth.js';
 
@@ -42,9 +42,9 @@ export async function onRequest(context) {
 
   const userId = `google_${google.sub}`;
 
-  const existing = await kvGet(kv, keys.user(userId));
-  if (!existing) {
-    await kvPut(kv, keys.user(userId), {
+  let user = await kvGet(kv, keys.user(userId));
+  if (!user) {
+    user = {
       userId,
       email: google.email,
       name: google.name,
@@ -54,10 +54,11 @@ export async function onRequest(context) {
       banReason: null,
       banCount: 0,
       createdAt: nowSeconds(),
-    });
-  } else if (isBanned(existing)) {
+    };
+    await kvPut(kv, keys.user(userId), user);
+  } else if (isBanned(user)) {
     // 封禁中禁止登录（管理员解封后恢复）
-    return fail('BANNED', 403, { ban: publicBan(existing) });
+    return fail('BANNED', 403, { ban: publicBan(user) });
   }
 
   const session = await createSession(kv, userId);
@@ -67,6 +68,8 @@ export async function onRequest(context) {
     token: session.token,
     userId,
     email: google.email,
+    role: isVIPUser(user) ? 'vip' : 'user',
+    accountKind: accountKind(user),
     expiresAt: new Date(session.expiresAt * 1000).toISOString(),
   });
 }

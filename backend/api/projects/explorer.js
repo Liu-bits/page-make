@@ -1,7 +1,7 @@
 // POST /api/projects/explorer — 创建空白项目（项目模式：虚拟文件夹 + 在线创建/编辑 html/css/js）
 // body: { name? }
 // 项目初始为空（无文件、无入口、无链接）；添加文件后通过 action=publish 生成公开链接
-import { requireAuth } from '../../lib/session.js';
+import { requireAuth, isGuestLimited } from '../../lib/session.js';
 import { kvPut, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
 import { STATUS } from '../../lib/state.js';
@@ -20,7 +20,7 @@ export async function onRequest(context) {
   }
 
   // 游客限制：不可用项目模式（引导登录），且创建的链接 10 分钟后自动失效
-  if (auth.user.userId.startsWith('guest_')) {
+  if (isGuestLimited(auth.user)) {
     return fail('GUEST_NO_EXPLORER', 403);
   }
 

@@ -1,5 +1,5 @@
 // 会话 / 鉴权中间件
-import { getKV, kvGet, kvPut, keys, nowSeconds } from './kv.js';
+import { getKV, kvGet, kvPut, kvDel, kvListAll, keys, nowSeconds } from './kv.js';
 import { SESSION_TTL_SECONDS } from './state.js';
 import { fail } from './responses.js';
 
@@ -31,9 +31,30 @@ export function isBanned(user) {
   return !user.banUntil || user.banUntil > nowSeconds();
 }
 
-/** VIP 用户（管理员后台创建）：可绕过普通用户的存储限制。 */
+/**
+ * VIP 用户（管理员后台升级现有账号）：可绕过普通用户的存储限制。
+ * isTest 仅为历史账号只读兼容；新建账号统一写 role=vip。
+ */
 export function isVIPUser(user) {
   return user?.role === 'vip' || Boolean(user?.isTest);
+}
+
+/**
+ * 账号类型：普通、VIP、游客。
+ *
+ * 游客身份与 VIP 是两个维度：管理员可以把一个现有 guest_ 账号升级为 VIP，
+ * 此时 userId 仍是 guest_ 前缀（保留原项目与会话），但所有游客限制必须解除。
+ * 因此不能在任何业务里只看 userId 前缀判断游客权益。
+ */
+export function accountKind(user) {
+  const guest = Boolean(user?.userId?.startsWith('guest_'));
+  if (isVIPUser(user)) return guest ? 'guest-vip' : 'vip';
+  return guest ? 'guest' : 'user';
+}
+
+/** 是否仍受游客试用规则限制（项目数 / 链接 10 分钟 / 禁用项目模式）。 */
+export function isGuestLimited(user) {
+  return accountKind(user) === 'guest';
 }
 
 /**
@@ -82,5 +103,34 @@ export async function createSession(kv, userId) {
   const token = (crypto.randomUUID() + crypto.randomUUID()).replace(/-/g, '');
   const expiresAt = nowSeconds() + SESSION_TTL_SECONDS;
   await kvPut(kv, keys.session(token), { userId, createdAt: nowSeconds(), expiresAt });
+  await kvPut(kv, keys.userSession(userId, token), {
+    token,
+    userId,
+    createdAt: nowSeconds(),
+    expiresAt,
+  });
   return { token, expiresAt };
+}
+
+/**
+ * 精确注销用户全部会话（删号/后台强制下线）。
+ *
+ * 早期实现通过 kvListAll('session_') 全表扫描，但该前缀是 `session_`，
+ * 不会命中管理员 `admin_session_`；同时依赖底层 list 与全量读取，成本高。
+ * 新会话同时写 `usession_<user>_<token>` 索引，这里按用户前缀精确清理。
+ * 兼容旧会话：仅对当前用户做一次受限回扫，无法识别其他用户。
+ */
+export async function revokeUserSessions(kv, userId) {
+  const prefix = keys.userSessionPrefix(userId);
+  for (const key of await kvListAll(kv, prefix)) {
+    const record = await kvGet(kv, key);
+    if (record?.token) await kvDel(kv, keys.session(record.token));
+    await kvDel(kv, key);
+  }
+
+  // 兼容索引上线前签发的存量会话。
+  for (const key of await kvListAll(kv, 'session_')) {
+    const record = await kvGet(kv, key);
+    if (record?.userId === userId) await kvDel(kv, key);
+  }
 }

@@ -22,6 +22,8 @@ export function nowSeconds() {
 export const keys = {
   user: (userId) => `user_${encodeKey(userId)}`,
   session: (token) => `session_${encodeKey(token)}`,
+  userSession: (userId, token) => `usession_${encodeKey(userId)}_${encodeKey(token)}`,
+  userSessionPrefix: (userId) => `usession_${encodeKey(userId)}_`,
   project: (id) => `project_${encodeKey(id)}`,
   userProject: (userId, id) => `uproject_${encodeKey(userId)}_${encodeKey(id)}`,
   upload: (id) => `upload_${encodeKey(id)}`,

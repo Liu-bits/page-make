@@ -78,29 +78,29 @@ async function login() {
   assert(adminRes.ok, `管理员登录失败 HTTP ${adminRes.status}`);
   const admin = await adminRes.json();
 
-  const email = `assets-${Date.now()}@test.local`;
-  const password = 'Test#Passw0rd1';
-  const created = await fetch(`${BASE}/api/admin/action`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': admin.token },
-    body: JSON.stringify({ action: 'createVIPUser', email, password }),
-  });
-  assert(created.ok, `创建资源测试 VIP 失败 HTTP ${created.status}`);
-
-  const res = await fetch(`${BASE}/api/auth/login`, {
+  // 资源回归需要 VIP 的不限项目/不限大小权益，但不再创建邮箱密码账号：
+  // 先建立真实游客，再由后台升级现有账号，原 token 立即获得权益。
+  const guestRes = await fetch(`${BASE}/api/auth/guest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ deviceId: `assets-${Date.now()}-abcdef` }),
   });
-  assert(res.ok, `VIP 登录失败 HTTP ${res.status}`);
-  const body = await res.json();
-  return { token: body.token, email: body.email };
+  assert(guestRes.ok, `游客创建失败 HTTP ${guestRes.status}`);
+  const guest = await guestRes.json();
+
+  const upgraded = await fetch(`${BASE}/api/admin/action`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': admin.token },
+    body: JSON.stringify({ action: 'upgradeVIP', userId: guest.userId }),
+  });
+  assert(upgraded.ok, `升级资源测试 VIP 失败 HTTP ${upgraded.status}`);
+  return { token: guest.token, email: null };
 }
 
 async function paste(token, body) {
   const res = await fetch(`${BASE}/api/projects/paste`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    headers: { 'Content-Type': 'application/json', 'X-Pagemake-Token': token },
     body: JSON.stringify(body),
   });
   return { status: res.status, body: await res.json() };
@@ -408,7 +408,7 @@ await test('粘贴：外链引用字符串保持原样', async () => {
 await test('ZIP 上传：HTML 内 ../style.css → 引用改写且可访问', async () => {
   const { buildZip } = await import('./make-zip.mjs');
   const token = sharedToken;
-  const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+  const H = { 'Content-Type': 'application/json', 'X-Pagemake-Token': token };
   const zip = buildZip([
     ['index.html', '<html><head><link rel="stylesheet" href="../style.css"></head><body><h1>zip</h1></body></html>'],
     ['style.css', 'h1 { color: teal; }'],
@@ -455,7 +455,7 @@ await test('ZIP 上传：HTML 内 ../style.css → 引用改写且可访问', as
 // ③-f 项目模式 publish：用户手写 ../style.css 引用时同步归一
 await test('探索器：HTML 写 ../style.css → publish 归一且可访问', async () => {
   const token = sharedToken;
-  const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+  const H = { 'Content-Type': 'application/json', 'X-Pagemake-Token': token };
   const created = await (await fetch(`${BASE}/api/projects/explorer`, {
     method: 'POST', headers: H, body: JSON.stringify({ name: 'expro-parent' }),
   })).json();
@@ -527,7 +527,7 @@ await test('粘贴：PHP 字段不再生成可执行入口', async () => {
 // ⑤ 探索器模式发布 → 资源可访问
 await test('探索器：三文件 publish → HTML/CSS/JS 全部可访问', async () => {
   const token = sharedToken;
-  const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+  const H = { 'Content-Type': 'application/json', 'X-Pagemake-Token': token };
   const created = await (await fetch(`${BASE}/api/projects/explorer`, {
     method: 'POST', headers: H, body: JSON.stringify({ name: 'expro' }),
   })).json();
@@ -651,7 +651,7 @@ await test('CSS 引用归一：注释与 content 字符串保持原样', async (
 await test('上传 ZIP：CSS 内部 url() 归一后可访问', async () => {
   const { buildZip } = await import('./make-zip.mjs');
   const token = sharedToken;
-  const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+  const H = { 'Content-Type': 'application/json', 'X-Pagemake-Token': token };
   const zip = buildZip([
     ['index.html', '<html><head><link rel="stylesheet" href="../style.css"></head><body><h1>zip</h1></body></html>'],
     ['style.css', '.hero { background-image: url(../img/bg.png); }'],
@@ -697,7 +697,7 @@ await test('上传 ZIP：CSS 内部 url() 归一后可访问', async () => {
 // ⑥-c 项目模式 publish：编辑器里 CSS 的 url() 引用同样归一
 await test('探索器：CSS 内 url(../img/x.png) → publish 归一', async () => {
   const token = sharedToken;
-  const H = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+  const H = { 'Content-Type': 'application/json', 'X-Pagemake-Token': token };
   const created = await (await fetch(`${BASE}/api/projects/explorer`, {
     method: 'POST', headers: H, body: JSON.stringify({ name: 'cssurl-expro' }),
   })).json();

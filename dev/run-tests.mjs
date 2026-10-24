@@ -469,8 +469,8 @@ await test('实时拉取成功 → 优先 live 并写入磁盘缓存', async () 
     const { keys: jwksKeys, source } = await loader.getKeys();
     assertEqual(source, 'live', '实时可达时应走 live');
     assertEqual(jwksKeys[0].kid, 'test-kid');
-    // 磁盘缓存为 fire-and-forget 写入，等一个微任务+短延时再读
-    await new Promise((r) => setTimeout(r, 50));
+    // 缓存写入不阻塞业务请求；测试通过 flushCache 等待真实落盘，避免固定延时竞态。
+    await loader.flushCache();
     const cached = JSON.parse(readFileSync(path.join(tmp, 'test-live-jwks.json'), 'utf8'));
     assertEqual(cached.keys[0].kid, 'test-kid', '磁盘缓存应已写入');
   } finally {

@@ -8,7 +8,7 @@ Page-make is a static site hosting tool: you upload a zip or individual HTML/CSS
 
 2. Accounts
 
-2.1 This service supports Apple, Google, administrator-issued VIP accounts, and guest access. Accounts are for personal use only.
+2.1 This service supports Apple, Google, and guest access. VIP is a benefit level for an existing account; it does not create a separate account or password. Accounts are for personal use only.
 2.2 You are responsible for all activity under your account.
 
 3. Content Rules
@@ -24,29 +24,26 @@ Uploaded content must comply with applicable laws and public order. The followin
 
 4. Enforcement
 
-4.1 Violating projects will be taken down (link shows "taken down"); files are kept for 7 days as evidence, then deleted.
+4.1 Violating projects will be taken down (the link shows "taken down"); related files may be retained temporarily for review, appeals, and compliance handling.
 4.2 Violating accounts are banned by level: first minor violation — 1 day; repeat violations — 1 week; fraud or phishing — 1 month; pornography, terrorism, or malware — permanent.
 4.3 Reports are reviewed manually. If you believe an action was taken in error, you may appeal via the feedback channel.
 
-5. User Responsibility
+5. Intellectual Property and User Responsibility
 
-5.1 You are solely responsible for the legality and copyright of your uploaded content.
+5.1 You are solely responsible for the legality and copyright of your uploaded content, and you must hold all rights needed to upload, store, and publicly display it.
 5.2 Public links are open to everyone. Do not upload passwords, keys, or other sensitive information.
+5.3 You retain ownership of your content and grant this service only the limited license needed to provide upload, storage, display, and sharing features.
 
 6. Service Availability
 
 6.1 This is a free service with no guarantee of continuous availability; it may be interrupted or changed due to maintenance, failures, or platform policy changes.
-6.2 Public links on the self-hosted service are long-lived; guest links are limited to a 10-minute trial.
-6.3 The service runs on a single self-hosted instance and may be briefly unavailable during maintenance or failures.
+6.2 Public links created by signed-in users remain available while the project exists; guest links are limited to a 10-minute trial.
+6.3 The service may be briefly unavailable during maintenance, upgrades, or failures.
 
 7. Disclaimer
 
 The service is provided "as is" without warranty of any kind. We are not liable for any direct or indirect damages arising from use of the service.
 
-8. Open Source
-
-This app is open source under the GPL-3.0 license; the source code is publicly available.
-
-9. Feedback and Reporting
+8. Feedback and Reporting
 
 You can submit feedback and report violating content via Settings > Feedback in the app.

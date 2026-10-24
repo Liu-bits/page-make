@@ -1,29 +1,33 @@
 Page-make Privacy Policy
 
-Effective date: October 2026
+Effective date: October 24, 2026
 
 1. Information We Collect
 
-1.1 Account information: when you sign in with Apple, we receive your Apple user identifier (User ID) and email (if you choose to share it); when you sign in with Google or a VIP account, we receive the corresponding account identifier and email.
-1.2 Uploaded content: the zip or HTML/CSS/JS files you upload, including their extracted contents.
+1.1 Account information: when you sign in with Apple, we receive your Apple user identifier (User ID) and email (if you choose to share it); when you sign in with Google, we receive the corresponding account identifier and email; guest access uses a random identifier generated on your device. VIP is a benefit level for an existing Apple, Google, or guest account, not a separate sign-in method.
+1.2 Uploaded content: archives or HTML/CSS/JS files you upload, including their extracted contents.
 1.3 Usage logs: timestamps and results of operations such as upload, deploy and link refresh, used for troubleshooting.
 1.4 Feedback: messages and reports you submit via Settings > Feedback.
+1.5 Credentials: session credentials are stored in the device's secure storage. The administrator password is stored only as a salted, irreversible hash; no plaintext password is stored.
 
 2. How We Use Information
 
 2.1 To provide the static site hosting service: extracting archives, checking your code, and generating public links.
-2.2 To troubleshoot issues and keep the service safe (e.g. banning abusive accounts, taking down violating projects).
-2.3 We do not use your information for advertising and do not sell it to any third party.
+2.2 To troubleshoot issues, maintain your signed-in session, and keep the service safe (e.g. banning abusive accounts, taking down violating projects).
+2.3 To comply with applicable laws and respond to lawful law-enforcement requests.
+2.4 We do not use your information for advertising and do not sell it to any third party.
 
 3. Where Information Is Stored
 
-3.1 Your files and project data are stored on the servers of the self-hosted Page-make service.
+3.1 Your account information, files, and project data are stored only on the servers operated for this service.
 3.2 Please note: public links are accessible to anyone while valid. Do not upload files containing sensitive information.
-3.3 When you delete a project, its files are deleted immediately. Projects taken down for policy violations keep their files for 7 days as evidence before deletion.
+3.3 When you delete a project, its files are deleted immediately. Projects taken down for policy violations may be retained temporarily for review, appeals, and compliance handling.
+3.4 Incomplete temporary uploads expire and are cleaned up after 30 minutes.
+3.5 Account data is generally retained while your account exists. When you delete your account, the account record, projects, and files are deleted unless retention is required by law.
 
 4. Information Sharing
 
-4.1 Infrastructure providers may access the account and file data necessary to operate the service.
+4.1 Contracted infrastructure providers may access the account and file data necessary to operate the service.
 4.2 We do not disclose your information to any other third party unless required by law.
 
 5. Tracking and Advertising
@@ -36,14 +40,20 @@ This app contains no third-party analytics, advertising, or tracking SDKs.
 6.2 You can permanently delete your account and all associated data from Settings > Delete Account.
 6.3 You can sign out at any time (Settings > Sign Out).
 
-7. Protection of Minors
+7. Data Security
+
+7.1 The administrator password is protected with a salted hash, session credentials are stored in the device's secure storage, and data is transmitted over encrypted connections.
+7.2 Administrative access is restricted to authorized personnel, and account deletion, bans, and takedowns require human action.
+7.3 If you discover a data-security issue, please contact us through in-app feedback.
+
+8. Protection of Minors
 
 This service is not directed at children under 14 and does not knowingly collect their information. Minors should use the service under guardian supervision.
 
-8. Policy Updates
+9. Policy Updates
 
 If this policy changes materially, we will update this document in the app and update the effective date.
 
-9. Contact Us
+10. Contact Us
 
 For any privacy-related questions, please contact us via Settings > Feedback in the app.

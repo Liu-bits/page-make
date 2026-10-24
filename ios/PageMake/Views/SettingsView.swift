@@ -8,7 +8,6 @@ struct SettingsView: View {
     @State private var alertItem: AlertItem?
     @State private var showFeedback = false
     @State private var showDocument: AppDocument?
-    @State private var showVIPLogin = false
     @State private var showDeleteAccountConfirm = false
     @State private var isDeletingAccount = false
 
@@ -44,10 +43,6 @@ struct SettingsView: View {
         }
         .sheet(item: $showDocument) { document in
             DocumentView(document: document)
-        }
-        .sheet(isPresented: $showVIPLogin) {
-            VIPLoginView()
-                .environmentObject(appState)
         }
         .confirmationDialog(
             L10n.string("delete_account_confirm_title"),
@@ -121,10 +116,16 @@ struct SettingsView: View {
         if let email = appState.session?.email, !email.isEmpty {
             return email
         }
-        if let userId = appState.session?.userId {
-            return userId.hasPrefix("guest_")
-                ? L10n.string("account_guest_detail")
-                : userId
+        if let session = appState.session {
+            if session.isVIP {
+                return L10n.string(session.accountKind == .guestVip
+                    ? "account_guest_vip_detail"
+                    : "account_vip_detail")
+            }
+            if session.accountKind == .guest {
+                return L10n.string("account_guest_detail")
+            }
+            return session.userId
         }
         return L10n.string("account_signed_in")
     }
@@ -264,18 +265,12 @@ struct SettingsView: View {
                 .buttonStyle(SecondaryButtonStyle())
 
                 Button {
-                    showVIPLogin = true
-                } label: {
-                    Label(L10n.string("vip_login"), systemImage: "crown.fill")
-                }
-                .buttonStyle(SecondaryButtonStyle())
-
-                Button {
                     Task { await appState.signInAsGuest() }
                 } label: {
                     Label(L10n.string("login_guest"), systemImage: "person.fill")
                 }
                 .buttonStyle(SecondaryButtonStyle())
+
             }
         }
     }
@@ -378,10 +373,17 @@ struct SettingsView: View {
     private var accountActions: some View {
         if appState.isLoggedIn {
             VStack(spacing: 10) {
-                if let session = appState.session, session.userId.hasPrefix("guest_") {
+                if let session = appState.session, session.isGuestLimited {
                     Label(L10n.string("guest_signout_hint"), systemImage: "info.circle")
                         .font(.caption)
                         .foregroundStyle(PageMakeTheme.inkSoft)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
+                }
+                if let session = appState.session, session.isVIP {
+                    Label(L10n.string("vip_active_hint"), systemImage: "crown.fill")
+                        .font(.caption)
+                        .foregroundStyle(PageMakeTheme.gold)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 4)
                 }

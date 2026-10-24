@@ -19,7 +19,7 @@
 .
 ├── ios/                        # iOS App（XcodeGen 工程，CI 生成）
 │   ├── project.yml             #   工程描述：cd ios && xcodegen generate
-│   ├── PageMake/               #   源码（9 个页面 + 服务 + 模型 + 本地化中英 + 双语文档）
+│   ├── PageMake/               #   源码（页面 + 服务 + 模型 + 本地化中英 + 双语文档）
 │   ├── PageMakeTests/          #   单元测试
 │   └── scripts/resolve-simulator.mjs  # CI 模拟器解析（优先 iOS 27.0.1）
 ├── backend/                    # API 处理器（路由 + lib 库，容器与测试共用）
@@ -131,24 +131,26 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 | --- | --- |
 | `POST /api/auth` | Sign in with Apple 换 7 天会话凭证 |
 | `POST /api/auth/guest` | 游客登录（设备 ID 免密，免费 Apple ID 兜底） |
+| `POST /api/auth/google` | Google 登录（校验 id_token） |
 | `POST /api/upload/init` | 初始化分片上传（校验线路选择，5MB 上限） |
 | `POST /api/upload/chunk` | 上传分片（600KB/片） |
 | `POST /api/upload/finish` | 完成上传，后台处理（processing → ready/failed） |
 | `GET /api/projects` | 我的项目列表 |
 | `POST /api/projects/paste` | 粘贴代码直接创建（HTML 必填，CSS/JS 可选，自动注入引用） |
-| `GET/DELETE /api/projects/:id` | 详情 / 删除 |
+| `GET/POST /api/projects/:id` | 详情 / 重命名或删除（网关兼容：删除走 `POST action=delete`） |
+| `GET/POST /api/projects/:id/refresh` | 刷新公开链接 |
 | `GET /api/projects/:id/status` | 状态轮询（每 2 秒） |
 | `POST /api/projects/:id/refresh` | 刷新链接（重新部署） |
-| `POST/DELETE /api/projects/:id/files` | 增删文件 |
-| `DELETE /api/upload/:uploadId` | 取消上传（清理临时分片） |
+| `GET/POST /api/projects/:id/files` | 读取 / 新增、编辑、重命名、删除文件 |
+| `POST /api/upload/:uploadId` | 取消上传（`action=cancel`，清理临时分片） |
 | `POST /api/feedback` | 反馈 / 举报 |
 | `GET /p/:projectId` | 公开访问（无需登录；已下架有专门页面） |
 
 ## 核心规则
 
 - 未登录：只能浏览公开链接，不能创建、管理、看诊断详情、选线路
-- 创建网页必须登录（Apple / Google / 后台发放的 VIP 账号）；游客可限时试用
-- App 内不开放普通邮箱注册；公开链接任何人可访问
+- 创建网页必须登录（Apple / Google）或使用游客试用；游客由管理员升级 VIP 后保留原身份与作品
+- VIP 是现有 Apple / Google / 游客账号的附加权益，不提供独立 VIP 账号或邮箱密码登录
 - 单线路部署（自托管容器），创建时无需选择线路
 - 语言：跟随 iOS 系统语言（中文/英文，其他默认英文），不提供手动切换
 - 诊断详情是登录特权，未登录只显示「您的代码有错误」
@@ -165,11 +167,11 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 ## 已知限制（第一版）
 
 1. 自托管单容器：单点故障（重启秒级恢复）、无 CDN（海外慢）、容量受机器限制（约 2 核 / 8GB + 持久盘，以创空间控制台为准）
-2. 存储：普通项目 ≤ 5MB；管理后台发放的 VIP 账号可突破普通存储限制，磁盘满后无法再上传（可定期清理或扩容）
+2. 存储：普通项目 ≤ 5MB；管理后台升级的 VIP 账号可突破普通存储限制，取消 VIP 后重新受普通限制，磁盘满后无法再上传（可定期清理或扩容）
 3. 容器模式无 1MB body / 200ms CPU 限制（沿用分片协议是出于兼容）
 4. Windows 无法本地编译 iOS → 依赖 GitHub Actions macOS runner
 5. 封号：用户举报 + 人工审核（第一版不做自动扫描）
-6. 第一版不做：普通邮箱注册、签名、App Store 上传、订阅、npm 后端
+6. 第一版不做：邮箱注册或邮箱密码登录、签名、App Store 上传、订阅、npm 后端
 
 ## License
 

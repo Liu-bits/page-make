@@ -568,39 +568,15 @@ await test('Google 登录：非法 token 拒绝 + 参数校验', async () => {
   assertEqual(missing.error, 'BAD_REQUEST', '缺 idToken 应报 BAD_REQUEST');
 });
 
-await test('邮箱密码：普通注册已下线，登录只接受 VIP 账号', async () => {
-  const email = `user${Date.now()}@example.com`;
-  const password = 'Str0ng#Pass99';
-
-  // 普通注册入口必须不存在（避免 App/攻击者绕过管理员发放 VIP）
-  const reg = await fetch(`${BASE}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
-  assertEqual(reg.status, 404, '普通注册路由应下线');
-
-  // 账号不存在与密码错误统一错误码
-  const login = await (await fetch(`${BASE}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  })).json();
-  assertEqual(login.error, 'INVALID_CREDENTIALS', '非 VIP/账号不存在应统一返回 INVALID_CREDENTIALS');
-
-  const badEmail = await (await fetch(`${BASE}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'not-an-email', password }),
-  })).json();
-  assertEqual(badEmail.error, 'INVALID_CREDENTIALS', '非法邮箱也不应泄露校验细节');
-
-  const missing = await fetch(`${BASE}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
-  });
-  assertEqual(missing.status, 401, '缺参数应稳定返回 401');
+await test('邮箱密码体系已彻底删除（注册与登录路由均 404）', async () => {
+  for (const path of ['/api/auth/register', '/api/auth/login']) {
+    const res = await fetch(`${BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'nobody@example.com', password: 'Str0ng#Pass99' }),
+    });
+    assertEqual(res.status, 404, `${path} 必须返回 404`);
+  }
 });
 
 await test('游客登录：设备 ID 换会话（免费 Apple ID 兜底）', async () => {
@@ -1097,25 +1073,6 @@ await test('服务重启后数据仍在（磁盘 KV 持久化）', async () => {
   } finally {
     server2.kill();
   }
-});
-
-// ---------------------------------------------------------------------------
-// 登录限速放在最后：本套件所有用例共用同一 IP，先跑会占用错误密码配额影响后续用例
-await test('登录限速：连续错误密码触发 429（防暴力破解）', async () => {
-  const email = `ratelimit-${Date.now()}@t.local`;
-
-  let limited = 0;
-  let unauthorized = 0;
-  for (let i = 0; i < 14; i++) {
-    const res = await fetch(`${BASE}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: `wrong-${i}-pass` }),
-    });
-    if (res.status === 429) limited++;
-    else if (res.status === 401) unauthorized++;
-  }
-  assert(limited > 0, `连续错误密码应触发 429，实际 401=${unauthorized} 429=${limited}`);
 });
 
 // ---------------------------------------------------------------------------

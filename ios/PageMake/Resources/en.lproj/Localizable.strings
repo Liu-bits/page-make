@@ -12,8 +12,8 @@
 "session_expired" = "Your session has expired. Please sign in again";
 "login_canceled" = "Sign-in cancelled";
 "login_guest" = "Continue as guest";
-"guest_login_hint" = "Free Apple IDs cannot use Sign in with Apple — guest mode supports all features";
-"guest_signout_hint" = "Guest links expire after 10 minutes. Signing out resets your guest identity so you can start a fresh trial.";
+"guest_login_hint" = "Try the app without an account. Upgrading to VIP keeps your guest identity and projects.";
+"guest_signout_hint" = "Standard guest links expire after 10 minutes. Signing out resets the guest identity. Upgrading to VIP keeps your account and projects.";
 "error_apple_authorization_failed" = "Sign-in failed (code %@), please try again";
 
 // MARK: - Sign in
@@ -219,31 +219,15 @@
 "paste_project_name" = "Pasted page";
 "paste_size" = "Entered %@ KB / 300 KB limit";
 
-// MARK: - VIP sign-in
-"vip_login" = "VIP Sign In";
-"vip_login_title" = "Continue with a VIP account";
-"vip_login_hint" = "Accounts are issued by an administrator with higher upload and editing limits. In-app registration is disabled.";
-"login" = "Log in";
-"email_label" = "Email";
-"password_label" = "Password";
-"password_placeholder" = "At least 8 characters";
-"password_rule" = "Only used by Page-make — not your email password. No verification email in v1.";
-"error_invalid_email" = "Invalid email address";
-"error_weak_password" = "Password must be at least 8 characters";
-"error_weak_password_common" = "This password is too common — pick a different one";
-"error_weak_password_pattern" = "Avoid repeated or sequential characters like aaaaaaa or 12345678, keyboard runs like qwerty / asdf / 1qaz2wsx, or a repeated chunk";
-"error_weak_password_simple" = "Mix letters with numbers or symbols";
-"error_too_many_attempts" = "Too many attempts — try again in a minute";
-"error_invalid_credentials" = "Wrong email or password";
-
 // MARK: - Google sign-in
 "login_google" = "Sign in with Google";
 "google_not_configured" = "Google sign-in not configured (missing Client ID)";
 "error_invalid_google_token" = "Google sign-in verification failed, please retry";
 "alert_tip" = "Notice";
-"provider_local_name" = "ModelScope Space";
-"provider_local_detail" = "Self-hosted container — links stay valid";
-"error_guest_limit" = "Guests can create 1 page — log in to create more";
+"provider_local_name" = "Page-make";
+"provider_local_detail" = "Permanent links";
+"error_guest_limit" = "Standard guests can create 1 page. Sign in or upgrade to VIP for more.";
+"error_guest_no_explorer" = "Project Mode is available to signed-in accounts and guest VIPs";
 
 // MARK: - QR code sharing
 "qr_code" = "QR Code";
@@ -269,6 +253,9 @@
 "account_guest" = "Guest session";
 "account_signed_out_hint" = "Sign in to sync your projects and public links";
 "account_guest_detail" = "Guest projects expire according to the trial rules";
+"account_vip_detail" = "VIP account · permanent links and higher limits";
+"account_guest_vip_detail" = "Guest VIP · permanent links and higher limits";
+"vip_active_hint" = "VIP benefits are active. Your account and projects are preserved.";
 "account_protected" = "Account and work are safely stored";
 
 // MARK: - Paste code (placeholders)
@@ -282,7 +269,7 @@
 "explorer_default_name" = "Untitled Project";
 "explorer_create" = "Create Blank Project";
 "explorer_empty_title" = "Empty Folder";
-"explorer_empty_hint" = "Easy steps: ① tap + to create index.html as your home page → ② add style.css if needed (no folders required) → ③ tap \"Publish Link\" below";
+"explorer_empty_hint" = "Easy steps: ① tap + to create index.html as your home page → ② add style.css if needed (no folders required) → ③ tap \"Build\" at top right";
 "explorer_empty_folder" = "This folder is empty";
 "explorer_new" = "New";
 "explorer_new_file" = "New File";
@@ -312,6 +299,8 @@
 "explorer_item_count" = "%d items";
 "explorer_back" = "Back";
 "explorer_link_section" = "Public Link";
+"explorer_build" = "Build";
+"explorer_rebuild" = "Rebuild";
 "explorer_publish" = "Publish Link";
 "explorer_republish" = "Update Published Content";
 "explorer_publishing" = "Publishing…";

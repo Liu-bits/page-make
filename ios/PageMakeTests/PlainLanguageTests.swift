@@ -11,12 +11,8 @@ final class PlainLanguageTests: XCTestCase {
         XCTAssertEqual(PlainLanguage.messageKey(forErrorCode: "DB_ERROR"), "error_db_error")
         XCTAssertEqual(PlainLanguage.messageKey(forErrorCode: "INVALID_PROVIDER"), "error_invalid_provider")
         XCTAssertEqual(PlainLanguage.messageKey(forErrorCode: "EXPIRED"), "error_expired")
-        // 密码强度与限速错误码（后端 checkPasswordStrength / ratelimit 新增）
-        XCTAssertEqual(PlainLanguage.messageKey(forErrorCode: "WEAK_PASSWORD"), "error_weak_password")
-        XCTAssertEqual(PlainLanguage.messageKey(forErrorCode: "WEAK_PASSWORD_COMMON"), "error_weak_password_common")
-        XCTAssertEqual(PlainLanguage.messageKey(forErrorCode: "WEAK_PASSWORD_PATTERN"), "error_weak_password_pattern")
-        XCTAssertEqual(PlainLanguage.messageKey(forErrorCode: "WEAK_PASSWORD_SIMPLE"), "error_weak_password_simple")
-        XCTAssertEqual(PlainLanguage.messageKey(forErrorCode: "TOO_MANY_ATTEMPTS"), "error_too_many_attempts")
+        XCTAssertEqual(PlainLanguage.messageKey(forErrorCode: "GUEST_LIMIT"), "error_guest_limit")
+        XCTAssertEqual(PlainLanguage.messageKey(forErrorCode: "GUEST_NO_EXPLORER"), "error_guest_no_explorer")
     }
 
     func testUnknownErrorCodeFallsBackToGeneric() {
