@@ -1,6 +1,6 @@
 // POST /api/admin/login — 管理员登录（密码验证 → 签发 24h 会话 token）
 // body: { password }
-// 安全：每 IP 每分钟最多 5 次；密码 PBKDF2 哈希存储（初始 123456，登录后台后请立即修改）
+// 安全：每 IP 每分钟最多 5 次；密码 PBKDF2 哈希存储；初始密码随机生成并输出到容器日志
 import { getKV } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
 import { verifyAdminPassword, createAdminSession, loginRateLimited, isDefaultAdminPassword } from '../../lib/admin.js';

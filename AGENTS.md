@@ -71,11 +71,11 @@ E:/Page-make/
 │   ├── admin.html           #   管理后台单页（/admin，PBKDF2 登录，token 存 sessionStorage）
 │   ├── api/                 #   API 路由
 │   │   ├── auth.js          #     Apple 登录（identityToken → JWKS 验签）
-│   │   ├── auth/            #     delete(删账号) / google / guest / login / register
+│   │   ├── auth/            #     delete(删账号) / google / guest / login(VIP)
 │   │   ├── config.js        #     公开配置 + JWKS 诊断（source=live/disk/seed）
 │   │   ├── feedback.js      #     用户反馈（= 封禁申诉入口）
-│   │   ├── admin/           #     login / action(ban/unban/deleteUser/createTestAccount/
-│   │   │                    #       deleteTestAccount/deleteProject/setPassword) / overview
+│   │   ├── admin/           #     login / action(ban/unban/deleteUser/createVIPUser/
+│   │   │                    #       deleteVIPUser/deleteProject/setPassword) / overview
 │   │   ├── projects.js      #     项目列表
 │   │   ├── projects/        #     paste(粘贴建站) / explorer(项目模式) / [id].js(rename/delete)
 │   │   │   └── [id]/        #       files(GET/POST) / refresh(刷新区间链接) / status
@@ -84,8 +84,8 @@ E:/Page-make/
 │   ├── lib/                 #   核心库
 │   │   ├── kv.js            #     KV 抽象（EdgeOne KV / DiskKV 双实现）+ keys() 键空间
 │   │   ├── state.js         #     全部业务常量（见第 4 节）
-│   │   ├── session.js       #     会话（7 天 TTL）、requireAuth、isBanned、isTestUser
-│   │   ├── password.js      #     PBKDF2（12 万轮+盐+恒定时间比较）
+│   │   ├── session.js       #     会话（7 天 TTL）、requireAuth、isBanned、isVIPUser
+│   │   ├── password.js      #     PBKDF2（60 万轮+盐+恒定时间比较）
 │   │   ├── jwks.js          #     JWKS 三级加载器（live 5s → 磁盘缓存 → 内置种子）
 │   │   ├── google-auth.js / apple-auth.js   # 登录验签
 │   │   ├── project.js       #     项目 CRUD + syncProjectFiles + deploySite(local 分支)
@@ -103,20 +103,22 @@ E:/Page-make/
 │   │                        #   GoogleAuthService(ASWebAuthenticationSession+PKCE) /
 │   │                        #   KeychainStore(deviceId 持久化) / UploadService
 │   ├── Utilities/           #   Config(baseURL/ClientID) / L10n / PlainLanguage(错误码→人话) /
-│   │                        #   DocumentStore(中英隐私政策) / FileValidator / LogStore
+│   │                        #   DocumentStore(中英隐私政策) / FileValidator / LogStore /
+│   │                        #   PasswordStrength(客户端与服务端同规则预检)
 │   ├── Views/               #   RootView / ProjectListView(搜索排序重命名) / FilePickerView
 │   │                        #   (上传+粘贴+模板) / ExplorerView(虚拟文件夹) / PreviewView /
-│   │                        #   WebView / QRCodeView / BannedView / PasswordAuthView /
-│   │                        #   SettingsView(统计/删账号/游客提示) / UploadQueueView 等 19 个
-│   ├── Resources/           #   Documents/(中英 .txt) + en/zh-Hans.lproj（各 243 键，0 重复）
+│   │                        #   WebView / QRCodeView / BannedView / SettingsView
+│   │                        #   (统计/删账号/游客提示) / VIPLoginView / UploadQueueView
+│   ├── Resources/           #   Documents/(中英 .txt) + en/zh-Hans.lproj（各 292 键，0 重复）
 │   ├── PageMake.entitlements  # applesignin（免费 Apple ID 用不了，游客登录兜底）
 │   └── PrivacyInfo.xcprivacy  # 隐私清单（过审）
 ├── ios/project.yml          # XcodeGen 描述（改工程结构改这里，勿直接改 xcodeproj）
-├── ios/PageMakeTests/       # 5 个单测文件
+├── ios/PageMakeTests/       # 5 个单测文件（含密码强度边界与错误码映射）
 ├── dev/                     # 测试脚本（见第 5 节）+ make-zip.mjs
 ├── scripts/
 │   ├── deploy-modelscope.sh # CI 部署：推送子集到创空间 Git → 平台自动构建
-│   └── refresh-jwks.mjs     # 拉取官方 JWKS 写种子（失败保留旧种子）
+│   ├── refresh-jwks.mjs     # 拉取官方 JWKS 写种子（失败保留旧种子）
+│   └── check-localization.mjs # 校验中英本地化 key 完整/无重复
 └── .github/workflows/       # page-make.yaml(主 CI) / keepalive.yaml / jwks-refresh.yaml
 ```
 
@@ -131,9 +133,10 @@ E:/Page-make/
 - Sign in with Apple（entitlement 已配；免费 Apple ID 无法启用该能力 → 游客兜底）
 - Google OAuth（iOS Client ID `242453650088-...apps.googleusercontent.com`，已填 Config +
   后端 aud；ASWebAuthenticationSession + PKCE 手写，无 SDK）
-- 邮箱密码（PBKDF2 12 万轮哈希；用户不存在/密码错误同一错误码不泄露账号存在性）
+- VIP 邮箱密码（仅管理后台发号；PBKDF2 60 万轮哈希，旧哈希按记录轮数兼容验证；
+  用户不存在/非 VIP/密码错误统一错误码并做等代价计算，降低枚举与时序泄漏）
 - 游客登录（deviceId → SHA-256 派生 `guest_<hash>`；**限 1 个项目；链接 10 分钟过期**；
-  退出登录时清除 deviceId 重置身份）
+  退出登录时清除 deviceId 重置身份；没有 App 内普通邮箱注册，邮箱密码仅用于后台发放的 VIP）
 
 **建站（3 种方式）**
 - 上传 ZIP：分片 600KB × N（base64 后约 800KB/片），项目总上限 5MB；异步处理 + 轮询
@@ -153,12 +156,12 @@ E:/Page-make/
 - 刷新链接（refresh.js，成功/失败均持久化 kvPut——曾有不写回的存量 bug）
 - 反馈接口（App 内反馈 = 封禁申诉入口）；用量统计 /api/stats；账号删除（过审项）
 
-**管理后台 /admin**（密码初始 123456，PBKDF2 哈希存储，改密用 setPassword）
+**管理后台 /admin**（首次启动生成随机初始密码并输出到容器日志；PBKDF2 哈希存储，改密用 setPassword）
 - 封号 L1-L4（必填原因，用户端 BannedView 可见原因/等级/解封时间；封号同时全部项目
   下架，解封自动恢复——注意索引 key 取项目 ID 必须 decodeKey，曾有二次编码 bug）
 - 删除账号（deleteUser：用户 + 全部项目含文件 + 全部会话 = 强制下线）
-- 测试账号（createTestAccount：指定邮箱+密码；isTest 标识**豁免粘贴/上传/文件三处
-  大小上限**；deleteTestAccount 仅允许删 isTest）
+- VIP 用户（createVIPUser：管理员指定邮箱+密码；role=vip **豁免粘贴/上传/文件三处
+  大小上限**；deleteVIPUser 仅允许删 VIP；历史 isTest 账号只读兼容，不迁移也不丢失）
 - 解封前所有登录入口（邮箱/Google/游客）均拦截
 
 **iOS 端**
@@ -166,7 +169,7 @@ E:/Page-make/
 - 项目列表搜索 + 排序（最新/最旧/名称/大小）+ 滑动重命名
 - 二维码分享（CoreImage CIFilter.qrCodeGenerator + ShareLink）
 - WebView 预览（reloadToken、轮询 150 次上限、runtimeErrors 去重上限 50）
-- 中英本地化（各 243 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
+- 中英本地化（各 292 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
 - 隐私政策/用户协议 App 内展示（Documents 双语文档，文件名后缀区分语言）
 
 ### 4.2 业务常量（backend/lib/state.js，与 iOS 端保持一致）
@@ -186,15 +189,16 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 127 项，提交前必须全绿）
+## 5. 测试体系（共 132 项 + 本地化检查，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
-| `node dev/run-tests.mjs` | 39 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护、密码强度校验【leetspeak 变形/反向键盘对角线】、MIME 类型映射） |
-| `node dev/test-server.mjs` | 45 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 ZIP PHP 过滤、历史 PHP 入口 404、zip 炸弹端到端、Explorer 空目录/重命名/目录迁移/冲突、反馈限流、删号 KV 残留断言、弱口令拒绝、登录 429 限速） |
+| `node dev/run-tests.mjs` | 41 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容/异常参数、密码强度校验【leetspeak 变形/反向键盘对角线】、MIME 类型映射） |
+| `node dev/test-server.mjs` | 44 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 ZIP PHP 过滤、历史 PHP 入口 404、zip 炸弹端到端、Explorer 空目录/重命名/目录迁移/冲突、反馈限流、删号 KV 残留断言、注册下线、VIP 登录、登录 429 限速） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 25 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
-| `node dev/test-admin.mjs` | 10 | 后台（登录/哈希存储/测试账号权益/封禁下架+禁登/解封恢复/删号） |
+| `node dev/test-admin.mjs` | 14 | 后台（随机初始密码/旧默认密码兼容/哈希存储/后台转义/弱口令拒绝/VIP 权益/历史 isTest 统计兼容/封禁下架+禁登/解封恢复/删号） |
+| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 292 键） |
 
 > Node 优先用 `mcp__codex_app__load_workspace_dependencies` 返回的运行时绝对路径；
 > AGENTS 里旧版 `C:/Users/liu20/.workbuddy-ai/.../node.exe` 可能已不存在。
@@ -210,7 +214,7 @@ E:/Page-make/
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
-| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 127 项）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
+| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 132 项 + 本地化检查 + Docker 构建）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
 | keepalive.yaml | 每 10 分钟 | 探 `${PAGEMAKE_URL}/healthz`，**必须带 UA**（`-A "PageMake-Keepalive/1.0"`），并回显 /api/config 的 jwks 诊断 |
 | jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子并提交（境内拉不到 Google，只能靠 runner） |
 
@@ -245,9 +249,9 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
 | Bundle ID | com.pagemake.app（APPLE_CLIENT_ID 环境变量验 Apple 登录 aud） |
 | Google OAuth iOS Client ID | 242453650088-qm3mk3l3eg7b8ukraenl0gdufeuvc0dj.apps.googleusercontent.com |
 | iOS baseURL | https://liu20150413-page-make.ms.show（Config.swift） |
-| 管理后台 | /admin，初始密码 123456（PBKDF2 哈希，KV 无明文） |
-| 线上测试账号 | verify@example.com（早期测试残留，可忽略） |
-| 环境变量 | APPLE_CLIENT_ID / DATA_DIR / PORT(7860)；DEV_NO_AUTH 仅本地调试（=关闭鉴权，生产禁止） |
+| 管理后台 | /admin，首次启动随机初始密码（容器日志查看，PBKDF2 60 万轮，KV 无明文） |
+| 线上历史测试账号 | verify@example.com（早期 isTest 残留，只读兼容，可忽略） |
+| 环境变量 | APPLE_CLIENT_ID / DATA_DIR / PORT(7860)；PAGEMAKE_ADMIN_INITIAL_PASSWORD 可选（首次初始化，须强密码）；DEV_NO_AUTH 仅本地调试（=关闭鉴权，生产禁止） |
 | IPA | 未签名（供 iLoader/TrollStore 类工具自签）；可安装 IPA 需 Apple 签名材料，已与用户确认此边界 |
 
 ---
@@ -315,7 +319,7 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
    两者都会让「是否已引用」误判 → 重复注入 + 用户引用的文件 404。
    正确做法：先抓标签目标属性值，再按「剥查询串后的扩展名」筛选，并跳过外链/data URI
  - 加限速后跑测试套件要注意：**同套件共用一个 IP**，限速用例必须放文件最后，
-   否则会把后续用例的注册/登录一起限掉（用户登录 8 次/分、注册 20 次/小时）
+   否则会把后续用例的登录一起限掉（用户登录 8 次/分；普通注册已下线）
  - 密码不能只查长度：`password.js` 的 checkPasswordStrength 已含常见口令表、
    重复/连续序列、字符类别三类校验，新增任何设密码的入口都要复用它
  - 给已有文件加 import 时 apply_patch 可能静默失败（不报错但内容没进去）→
@@ -352,7 +356,7 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
    网关三坑规避（UA/X-Pagemake-Token/POST+action）；Liquid Glass；
    项目模式（虚拟文件夹）；平铺文件宽容识别；游客 10 分钟试用 + 后台合规；
    JWKS 三级加载修复境内 Google 登录（线上实证 google=seed/apple=live）
-3. **管理后台三件套**：测试账号（豁免大小上限）/ 封禁全登录入口拦截 / 删号强制下线；
+3. **管理后台三件套**：VIP 发号（豁免存储上限）/ 封禁全登录入口拦截 / 删号强制下线；
    修复 banUser 索引 key 二次编码存量 bug；管理员密码确认早已 PBKDF2
 4. **10-23** 全流程交付（run 39101031130 四 job 全绿；IPA 584KB 替换本地；
    创空间自动构建上线并实证 JWKS 种子回退生效）
@@ -363,7 +367,17 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
 
 ## 10. 历史里程碑（2026-10-24）
 
-5. **CSS/JS 断链第三类根因：CSS 内部 url() 未归一**（`9904695`）
+5. **VIP 发号与底部双入口遮挡收尾（本轮）**
+   - 普通邮箱注册彻底下线（路由、iOS 入口、API 方法一起删除），邮箱登录只接受
+     管理后台发放的 `role=vip` 账号；历史 `isTest` 账号继续按 VIP 兼容，不迁移、不丢失。
+   - PBKDF2 新哈希轮数 120,000 → 600,000；校验按记录轮数，缺字段按旧 12 万轮兼容，
+     异常轮数拒绝以防拒绝服务。未知账号也执行同等 PBKDF2，降低邮箱枚举时序差异。
+   - 后台新增 VIP 发号/删除与转义加固（用户、项目、封禁原因、反馈字段均不再拼接裸 HTML）。
+   - 底部双入口遮挡统一用 `WorkspaceBottomSpacer` 收尾；项目/设置页不再分散硬编码
+     84/96/104pt，最后一张卡片可完整滚动到栏体上方。
+   - 本地化 292 键、0 重复；文档与隐私/协议同步 VIP 登录与自托管状态。
+
+6. **CSS/JS 断链第三类根因：CSS 内部 url() 未归一**（`9904695`）
    - 前两轮修的是 HTML 的 `link/script` 引用字符串（`../style.css` 跳出 `/p/` 前缀）
      和 MIME 缺失（200 但 octet-stream）。这轮发现**独立第三类根因**：
      CSS 文件内部写 `url(../img/bg.png)`、`url(../fonts/f.woff2)` 时，
@@ -379,7 +393,7 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
      全量 105→108 项
    - **坑**：`localAssetRef(value, '')` 不能用——空扩展名会生成 `\.(?:[?#]|$)`
      正则，反而要求引用必须带小数点，漏判无扩展名引用。需写专用判断函数
-6. **computer-use 触发 ModelScope 重新部署的实操坑**
+7. **computer-use 触发 ModelScope 重新部署的实操坑**
    - Edge 未启动时 extension 通道不可见，必须先（提权）启动 Edge 才能
      `agent.browsers.get(id)`；`Start-Process msedge` 在沙箱内会静默失败
    - ModelScope 页面上「重新部署」文本出现多处，必须用元素**自身文本节点**

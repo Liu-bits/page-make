@@ -6,8 +6,8 @@
 //   deleteFeedback    { id }
 //   deleteProject     { projectId }
 //   setPassword       { newPassword }                管理员改自己的后台密码
-//   createTestAccount { email, password }            创建测试账号（权益最高：绕过大小限制）
-//   deleteTestAccount { userId }                     删除测试账号（= deleteUser，仅允许 isTest）
+//   createVIPUser     { email, password }            创建 VIP 用户（绕过普通用户大小限制）
+//   deleteVIPUser     { userId }                     删除 VIP 用户（= deleteUser，仅允许 VIP）
 // 合规：封号必须带原因（用户端可见），解封后项目自动恢复上架；用户可通过 App 内反馈申诉
 import { kvGet, kvPut, kvDel, kvListAll, keys, nowSeconds } from '../../lib/kv.js';
 import { decodeKey } from '../../lib/base64.js';
@@ -81,11 +81,11 @@ async function unbanUser(kv, { userId }) {
 }
 
 /** 删除账号：用户记录 + 全部项目（含文件）+ 会话（强制下线） */
-async function deleteUserAccount(kv, { userId, requireTest = false }) {
+async function deleteUserAccount(kv, { userId, requireVIP = false }) {
   if (typeof userId !== 'string' || !userId) return fail('BAD_REQUEST', 400);
   const user = await kvGet(kv, keys.user(userId));
   if (!user) return fail('NOT_FOUND', 404);
-  if (requireTest && !user.isTest) return fail('NOT_TEST_ACCOUNT', 400);
+  if (requireVIP && user.role !== 'vip' && !user.isTest) return fail('NOT_VIP_USER', 400);
 
   await forEachUserProject(kv, userId, async (projectId, indexKey) => {
     for (const siteKey of await kvListAll(kv, keys.sitePrefix(projectId))) await kvDel(kv, siteKey);
@@ -103,8 +103,8 @@ async function deleteUserAccount(kv, { userId, requireTest = false }) {
   return ok({ deleted: true, userId });
 }
 
-/** 创建测试账号（邮箱+密码，登录走邮箱密码；权益最高：绕过大小/数量限制） */
-async function createTestAccount(kv, { email, password }) {
+/** 创建 VIP 用户（后台分配账号密码，可绕过普通用户存储限制） */
+async function createVIPUser(kv, { email, password }) {
   const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
   if (!EMAIL_RE.test(cleanEmail)) return fail('BAD_REQUEST', 400);
   const strength = checkPasswordStrength(password);
@@ -116,7 +116,7 @@ async function createTestAccount(kv, { email, password }) {
     userId,
     email: cleanEmail,
     password: await hashPassword(password),
-    isTest: true,
+    role: 'vip',
     status: 'active',
     banLevel: 0,
     banUntil: null,
@@ -160,10 +160,10 @@ export async function onRequest(context) {
       return unbanUser(kv, body);
     case 'deleteUser':
       return deleteUserAccount(kv, body);
-    case 'createTestAccount':
-      return createTestAccount(kv, body);
-    case 'deleteTestAccount':
-      return deleteUserAccount(kv, { ...body, requireTest: true });
+    case 'createVIPUser':
+      return createVIPUser(kv, body);
+    case 'deleteVIPUser':
+      return deleteUserAccount(kv, { ...body, requireVIP: true });
     case 'deleteFeedback': {
       if (typeof body.id !== 'string' || !body.id) return fail('BAD_REQUEST', 400);
       await kvDel(kv, keys.feedback(body.id));

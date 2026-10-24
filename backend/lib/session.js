@@ -31,9 +31,9 @@ export function isBanned(user) {
   return !user.banUntil || user.banUntil > nowSeconds();
 }
 
-/** 测试账号（管理员后台创建）：权益最高，绕过大小/数量限制 */
-export function isTestUser(user) {
-  return Boolean(user?.isTest);
+/** VIP 用户（管理员后台创建）：可绕过普通用户的存储限制。 */
+export function isVIPUser(user) {
+  return user?.role === 'vip' || Boolean(user?.isTest);
 }
 
 /**

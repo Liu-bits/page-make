@@ -219,10 +219,11 @@
 "paste_project_name" = "Pasted page";
 "paste_size" = "Entered %@ KB / 300 KB limit";
 
-// MARK: - Email & password
-"password_login" = "Email & Password";
+// MARK: - VIP sign-in
+"vip_login" = "VIP Sign In";
+"vip_login_title" = "Continue with a VIP account";
+"vip_login_hint" = "Accounts are issued by an administrator with higher upload and editing limits. In-app registration is disabled.";
 "login" = "Log in";
-"register" = "Sign up";
 "email_label" = "Email";
 "password_label" = "Password";
 "password_placeholder" = "At least 8 characters";
@@ -233,7 +234,6 @@
 "error_weak_password_pattern" = "Avoid repeated or sequential characters like aaaaaaa or 12345678, keyboard runs like qwerty / asdf / 1qaz2wsx, or a repeated chunk";
 "error_weak_password_simple" = "Mix letters with numbers or symbols";
 "error_too_many_attempts" = "Too many attempts — try again in a minute";
-"error_email_taken" = "Email already registered — log in instead";
 "error_invalid_credentials" = "Wrong email or password";
 
 // MARK: - Google sign-in

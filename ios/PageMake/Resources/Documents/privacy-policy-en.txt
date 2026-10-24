@@ -4,7 +4,7 @@ Effective date: October 2026
 
 1. Information We Collect
 
-1.1 Account information: when you sign in with Apple, we receive your Apple user identifier (User ID) and email (if you choose to share it).
+1.1 Account information: when you sign in with Apple, we receive your Apple user identifier (User ID) and email (if you choose to share it); when you sign in with Google or a VIP account, we receive the corresponding account identifier and email.
 1.2 Uploaded content: the zip or HTML/CSS/JS files you upload, including their extracted contents.
 1.3 Usage logs: timestamps and results of operations such as upload, deploy and link refresh, used for troubleshooting.
 1.4 Feedback: messages and reports you submit via Settings > Feedback.
@@ -17,13 +17,13 @@ Effective date: October 2026
 
 3. Where Information Is Stored
 
-3.1 Your files and project data are stored on the servers of the hosting provider you choose when creating a project (EdgeOne or Cloudflare), or on your self-hosted server.
+3.1 Your files and project data are stored on the servers of the self-hosted Page-make service.
 3.2 Please note: public links are accessible to anyone while valid. Do not upload files containing sensitive information.
 3.3 When you delete a project, its files are deleted immediately. Projects taken down for policy violations keep their files for 7 days as evidence before deletion.
 
 4. Information Sharing
 
-4.1 Hosting providers (EdgeOne, Cloudflare and other infrastructure providers) necessarily have access to your file content in order to serve it.
+4.1 Infrastructure providers may access the account and file data necessary to operate the service.
 4.2 We do not disclose your information to any other third party unless required by law.
 
 5. Tracking and Advertising
@@ -33,7 +33,7 @@ This app contains no third-party analytics, advertising, or tracking SDKs.
 6. Your Rights
 
 6.1 You can delete your projects and their files at any time within the app.
-6.2 To delete your account and all associated data, contact us via Settings > Feedback.
+6.2 You can permanently delete your account and all associated data from Settings > Delete Account.
 6.3 You can sign out at any time (Settings > Sign Out).
 
 7. Protection of Minors

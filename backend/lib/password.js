@@ -1,6 +1,7 @@
 // 密码哈希：PBKDF2-SHA256（Web Crypto，容器与边缘环境通用）
 // 存储格式：{ hash: hex, salt: hex, iterations: number }
-const ITERATIONS = 120_000;
+const ITERATIONS = 600_000;
+const LEGACY_ITERATIONS = 120_000;
 const KEY_BITS = 256;
 
 function toHex(bytes) {
@@ -15,7 +16,7 @@ function fromHex(hex) {
   return bytes;
 }
 
-/** 生成密码哈希（新注册时调用） */
+/** 生成密码哈希（新账号 / 改密时调用；旧哈希按记录中的 iterations 验证） */
 export async function hashPassword(password) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const key = await crypto.subtle.importKey(
@@ -36,6 +37,11 @@ export async function hashPassword(password) {
 /** 校验密码（登录时调用，恒定时间比较） */
 export async function verifyPassword(password, stored) {
   if (!stored?.hash || !stored?.salt) return false;
+  // 早期记录没有 iterations 字段，按当时的 12 万轮回退；字段存在时必须是安全整数。
+  const iterations = stored.iterations == null ? LEGACY_ITERATIONS : Number(stored.iterations);
+  if (!Number.isSafeInteger(iterations) || iterations < LEGACY_ITERATIONS || iterations > 2_000_000) {
+    return false;
+  }
   const key = await crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(password),
@@ -44,7 +50,7 @@ export async function verifyPassword(password, stored) {
     ['deriveBits']
   );
   const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: fromHex(stored.salt), iterations: stored.iterations || ITERATIONS, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: fromHex(stored.salt), iterations, hash: 'SHA-256' },
     key,
     KEY_BITS
   );

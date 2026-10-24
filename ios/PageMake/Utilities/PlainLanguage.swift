@@ -18,7 +18,6 @@ enum PlainLanguage {
         case "WEAK_PASSWORD_PATTERN": return "error_weak_password_pattern"
         case "WEAK_PASSWORD_SIMPLE": return "error_weak_password_simple"
         case "TOO_MANY_ATTEMPTS": return "error_too_many_attempts"
-        case "EMAIL_TAKEN": return "error_email_taken"
         case "INVALID_CREDENTIALS": return "error_invalid_credentials"
         case "INVALID_GOOGLE_TOKEN": return "error_invalid_google_token"
         case "GUEST_LIMIT": return "error_guest_limit"

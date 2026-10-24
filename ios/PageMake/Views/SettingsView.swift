@@ -8,7 +8,7 @@ struct SettingsView: View {
     @State private var alertItem: AlertItem?
     @State private var showFeedback = false
     @State private var showDocument: AppDocument?
-    @State private var showPasswordAuth = false
+    @State private var showVIPLogin = false
     @State private var showDeleteAccountConfirm = false
     @State private var isDeletingAccount = false
 
@@ -27,7 +27,7 @@ struct SettingsView: View {
                     toolsCard
                     aboutCard
                     accountActions
-                    Color.clear.frame(height: 12)
+                    WorkspaceBottomSpacer()
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 10)
@@ -45,8 +45,8 @@ struct SettingsView: View {
         .sheet(item: $showDocument) { document in
             DocumentView(document: document)
         }
-        .sheet(isPresented: $showPasswordAuth) {
-            PasswordAuthView()
+        .sheet(isPresented: $showVIPLogin) {
+            VIPLoginView()
                 .environmentObject(appState)
         }
         .confirmationDialog(
@@ -252,27 +252,23 @@ struct SettingsView: View {
                 }
                 .buttonStyle(PrimaryButtonStyle())
 
-                HStack(spacing: 9) {
-                    Button {
-                        Task {
-                            if let error = await appState.signInWithGoogle() {
-                                alertItem = AlertItem(message: error)
-                            }
+                Button {
+                    Task {
+                        if let error = await appState.signInWithGoogle() {
+                            alertItem = AlertItem(message: error)
                         }
-                    } label: {
-                        Text(L10n.string("login_google"))
-                            .lineLimit(1)
                     }
-                    .buttonStyle(SecondaryButtonStyle())
-
-                    Button {
-                        showPasswordAuth = true
-                    } label: {
-                        Text(L10n.string("password_login"))
-                            .lineLimit(1)
-                    }
-                    .buttonStyle(SecondaryButtonStyle())
+                } label: {
+                    Label(L10n.string("login_google"), systemImage: "g.circle.fill")
                 }
+                .buttonStyle(SecondaryButtonStyle())
+
+                Button {
+                    showVIPLogin = true
+                } label: {
+                    Label(L10n.string("vip_login"), systemImage: "crown.fill")
+                }
+                .buttonStyle(SecondaryButtonStyle())
 
                 Button {
                     Task { await appState.signInAsGuest() }

@@ -80,6 +80,20 @@ enum PageMakeTheme {
     )
 }
 
+/// 主页面滚动区尾部留白。
+///
+/// 底部双入口通过 `safeAreaInset` 参与布局，但长列表滚到底时最后一张卡片
+/// 仍会紧贴栏体；这里统一补足一个栏体高度并随辅助字号略增，避免各页面
+/// 分散写 84/96/104pt，也确保最后一项可以完整滑到栏体上方。
+struct WorkspaceBottomSpacer: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        Color.clear
+            .frame(height: dynamicTypeSize.isAccessibilitySize ? 104 : 72)
+    }
+}
+
 /// 全局背景：用柔和光斑与细微网格建立“创作工作台”氛围，
 /// 而不是一块没有层次的纯色背景。
 struct PageMakeBackground: View {

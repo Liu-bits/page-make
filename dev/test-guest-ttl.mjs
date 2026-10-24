@@ -205,21 +205,25 @@ await test('退出后以新游客身份登录 → 重新获得 1 个创建名额
   assert(body.project.id !== project1.id, '应为全新项目');
 });
 
-// 7. 回归：登录用户（邮箱密码）不受 10 分钟限制
-await test('回归：登录用户项目无 expiresAt（链接长期有效）', async () => {
-  const email = `user-${Date.now()}@example.com`;
-  const reg = await fetch(`${BASE}/api/auth/register`, {
+// 7. 回归：新设备游客仍按 10 分钟试用
+await test('回归：新设备游客项目仍带 10 分钟 expiresAt', async () => {
+  const reg = await fetch(`${BASE}/api/auth/guest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ email, password: 'Test#Passw0rd1' }),
+    body: JSON.stringify({ deviceId: `longterm-${Date.now()}-abcdef` }),
   });
-  assertEqual(reg.status, 200, '注册应成功');
+  assertEqual(reg.status, 200, '创建测试账号应成功');
   const auth = await reg.json();
-  assert(!auth.token.startsWith('guest'), '注册用户不应是游客');
-  const res = await guestPaste(auth.token, 'user-page');
+  assert(auth.userId.startsWith('guest_'), '应创建游客会话');
+  const res = await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` },
+    body: JSON.stringify({ name: 'user-page', html: '<h1>user page</h1>' }),
+  });
   assertEqual(res.status, 200, '登录用户粘贴应成功');
   const body = await res.json();
-  assertEqual(body.project.expiresAt ?? null, null, '登录用户项目 expiresAt 应为 null');
+  const expiry = body.project.expiresAt - Math.floor(Date.now() / 1000);
+  assert(expiry > 590 && expiry <= 600, `游客项目应设置约 10 分钟过期时间，实际 ${expiry}s`);
 });
 
 // ---------------------------------------------------------------------------

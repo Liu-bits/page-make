@@ -4,7 +4,7 @@ import SwiftUI
 struct ProjectListView: View {
     @EnvironmentObject private var appState: AppState
     let onCreateTapped: () -> Void
-    @State private var showPasswordAuth = false
+    @State private var showVIPLogin = false
     @State private var alertItem: AlertItem?
     @State private var searchText = ""
     @State private var sortOrder: SortOrder = .newest
@@ -68,12 +68,12 @@ struct ProjectListView: View {
                 Task { await appState.loadProjects(isInitialRestore: true) }
             }
         }
-        .sheet(isPresented: $showPasswordAuth, onDismiss: {
+        .sheet(isPresented: $showVIPLogin, onDismiss: {
             if appState.isLoggedIn {
                 Task { await appState.loadProjects() }
             }
         }) {
-            PasswordAuthView()
+            VIPLoginView()
                 .environmentObject(appState)
         }
         .alert(item: $alertItem) { item in
@@ -142,21 +142,19 @@ struct ProjectListView: View {
                             }
                             .buttonStyle(SecondaryButtonStyle())
 
-                            HStack(spacing: 11) {
-                                Button {
-                                    showPasswordAuth = true
-                                } label: {
-                                    Label(L10n.string("password_login"), systemImage: "envelope.fill")
-                                }
-                                .buttonStyle(SecondaryButtonStyle())
-
-                                Button {
-                                    Task { await appState.signInAsGuest() }
-                                } label: {
-                                    Label(L10n.string("login_guest"), systemImage: "person.fill")
-                                }
-                                .buttonStyle(SecondaryButtonStyle())
+                            Button {
+                                showVIPLogin = true
+                            } label: {
+                                Label(L10n.string("vip_login"), systemImage: "crown.fill")
                             }
+                            .buttonStyle(SecondaryButtonStyle())
+
+                            Button {
+                                Task { await appState.signInAsGuest() }
+                            } label: {
+                                Label(L10n.string("login_guest"), systemImage: "person.fill")
+                            }
+                            .buttonStyle(SecondaryButtonStyle())
                         }
                     }
                 }
@@ -165,6 +163,7 @@ struct ProjectListView: View {
                     .font(.footnote)
                     .foregroundStyle(PageMakeTheme.inkSoft)
                     .padding(.bottom, 20)
+                WorkspaceBottomSpacer()
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
@@ -207,7 +206,7 @@ struct ProjectListView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .padding(.bottom, 24)
+                WorkspaceBottomSpacer()
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
@@ -296,10 +295,11 @@ struct ProjectListView: View {
                         }
                     }
                 }
+                WorkspaceBottomSpacer()
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
-            .padding(.bottom, 28)
+            .padding(.bottom, 20)
             .animation(.easeOut(duration: 0.24), value: visibleProjects.map(\.id))
         }
         .refreshable { await appState.retryLoadProjects() }

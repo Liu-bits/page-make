@@ -535,6 +535,41 @@ await test('前后空格被拒（避免"看似安全"实际不可用）', async 
   assert(!checkPasswordStrength('   Aa1!xyz').ok, '首部带空格应拒');
 });
 
+await test('密码哈希固定 600000 轮，异常轮数拒绝验证', async () => {
+  const { hashPassword, verifyPassword } = await import('../backend/lib/password.js');
+  const password = 'Ab1#efgh';
+  const stored = await hashPassword(password);
+  assertEqual(stored.iterations, 600_000, '新哈希应使用 600000 轮 PBKDF2');
+  assertEqual(await verifyPassword(password, stored), true, '正确密码应通过');
+  for (const iterations of ['abc', 0, 119_999, 2_000_001, Number.MAX_SAFE_INTEGER + 1]) {
+    assertEqual(await verifyPassword(password, { ...stored, iterations }), false,
+      `异常轮数 ${String(iterations)} 应拒绝`);
+  }
+});
+
+await test('旧哈希缺少 iterations 时按 12 万轮兼容验证', async () => {
+  const { verifyPassword } = await import('../backend/lib/password.js');
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode('Ab1#efgh'),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: 120_000, hash: 'SHA-256' },
+    key,
+    256
+  );
+  const record = {
+    hash: Array.from(new Uint8Array(bits)).map((b) => b.toString(16).padStart(2, '0')).join(''),
+    salt: Array.from(salt).map((b) => b.toString(16).padStart(2, '0')).join(''),
+  };
+  assertEqual(await verifyPassword('Ab1#efgh', record), true, '旧记录应可继续登录');
+  assertEqual(await verifyPassword('wrong-pass', record), false, '旧记录错误密码仍应拒绝');
+});
+
 // leetspeak 变形：P@ssw0rd / Qw3rty / L3tm31n / 4dm1n 此前全部通过校验
 // （只替换个别字符，长度与字符类别都达标），但实际强度等同原弱口令
 await test('leetspeak 变形弱口令被拒（P@ssw0rd / Qw3rty / 4dm1n）', async () => {

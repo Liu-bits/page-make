@@ -30,7 +30,7 @@
   .tag.ok { background: #dcfce7; color: #15803d; }
   .tag.banned { background: #fee2e2; color: #b91c1c; }
   .tag.guest { background: #e0e7ff; color: #4338ca; }
-  .tag.test { background: #fef3c7; color: #b45309; }
+  .tag.vip { background: #fef3c7; color: #92400e; }
   .muted { color: #94a3b8; font-size: 12px; }
   .msg { padding: 10px 12px; border-radius: 10px; margin: 10px 0; font-size: 14px; display: none; }
   .msg.err { background: #fee2e2; color: #b91c1c; }
@@ -43,7 +43,7 @@
   <!-- 登录 -->
   <div id="loginView" class="card" style="max-width:380px;margin:60px auto;">
     <h1>Page-make 管理后台</h1>
-    <p class="muted" style="margin-bottom:12px">请输入管理员密码（初始 123456，登录后请立即修改）</p>
+    <p class="muted" style="margin-bottom:12px">首次部署的随机初始密码见容器启动日志；登录后请立即修改</p>
     <input id="pwd" type="password" placeholder="管理员密码" onkeydown="if(event.key==='Enter')login()">
     <div class="row"><button style="width:100%" onclick="login()">登录</button></div>
     <div id="loginMsg" class="msg err"></div>
@@ -51,7 +51,7 @@
 
   <!-- 主界面 -->
   <div id="mainView" style="display:none">
-    <!-- 默认密码警示横幅：后台公网可达，仍在用 123456 等于门户大开 -->
+    <!-- 旧部署默认密码警示横幅：后台公网可达，仍在用 123456 等于门户大开 -->
     <div id="pwdBanner" class="card" style="display:none;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;margin-bottom:12px">
       <strong>安全提醒：</strong>您正在使用出厂默认密码 <code>123456</code>，后台地址公网可达，任何人猜到即可查看全部用户数据。
       <button class="sm" style="margin-left:8px" onclick="changePwd()">立即修改</button>
@@ -67,15 +67,15 @@
 
     <div class="card"><div class="stats" id="stats"></div></div>
 
-    <h2>测试账号（权益最高：绕过大小/数量限制，可删除）</h2>
+    <h2>VIP 用户（可绕过普通存储限制）</h2>
     <div class="card">
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <input id="testEmail" type="email" placeholder="邮箱（登录名）" style="flex:2;min-width:200px">
-        <input id="testPwd" type="text" placeholder="密码（至少 8 位）" style="flex:2;min-width:160px">
-        <button onclick="createTestAccount()" style="flex:0 0 auto">创建测试账号</button>
+        <input id="vipEmail" type="email" placeholder="登录邮箱" style="flex:2;min-width:200px">
+        <input id="vipPwd" type="password" placeholder="登录密码（至少 8 位）" style="flex:2;min-width:160px">
+        <button onclick="createVIPUser()" style="flex:0 0 auto">创建 VIP 用户</button>
       </div>
-      <p class="muted" style="margin-top:8px">测试账号用指定邮箱+密码走普通登录；权限最高，可创建任意大小/数量的项目，仅供压测。</p>
-      <table id="testTable" style="margin-top:10px">
+      <p class="muted" style="margin-top:8px">VIP 账号仅由管理员发放，不开放 App 内注册。</p>
+      <table id="vipTable" style="margin-top:10px">
         <thead><tr><th>邮箱</th><th>项目</th><th>创建时间</th><th>操作</th></tr></thead>
         <tbody></tbody>
       </table>
@@ -118,6 +118,10 @@ function msg(text, isErr) {
 }
 function fmtSize(n) { return n > 1048576 ? (n/1048576).toFixed(1)+'MB' : n > 1024 ? (n/1024).toFixed(1)+'KB' : n+'B'; }
 function fmtTime(ts) { return ts ? new Date(ts*1000).toLocaleString() : '—'; }
+function fmtNumber(n) {
+  const value = Number(n);
+  return Number.isFinite(value) && value >= 0 ? String(Math.trunc(value)) : '0';
+}
 
 async function api(url, body) {
   const res = await fetch(url, {
@@ -160,56 +164,64 @@ async function load() {
 
 function render(d) {
   document.getElementById('stats').innerHTML = [
-    ['账户', d.stats.userCount], ['游客', d.stats.guestCount], ['测试', d.stats.testCount || 0],
+    ['账户', d.stats.userCount], ['游客', d.stats.guestCount], ['VIP', d.stats.vipCount || 0],
     ['项目', d.stats.projectCount], ['反馈', d.stats.feedbackCount],
-  ].map(([l, v]) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
+  ].map(([l, v]) => `<div class="stat"><b>${escapeHtml(v)}</b><span>${escapeHtml(l)}</span></div>`).join('');
 
-  const testUsers = d.users.filter(u => u.isTest);
-  document.querySelector('#testTable tbody').innerHTML = testUsers.map(u =>
-    `<tr><td>${u.email || u.userId}</td><td>${u.projectCount}</td><td>${fmtTime(u.createdAt)}</td>
-     <td><button class="sm red" onclick="deleteTestAccount('${u.userId}')">删除</button></td></tr>`
-  ).join('') || '<tr><td colspan="4" class="muted">暂无测试账号</td></tr>';
+  const vipUsers = d.users.filter(u => u.role === 'vip');
+  document.querySelector('#vipTable tbody').innerHTML = vipUsers.map(u =>
+    `<tr><td>${escapeHtml(u.email || u.userId)}</td><td>${fmtNumber(u.projectCount)}</td><td>${escapeHtml(fmtTime(u.createdAt))}</td>
+     <td><button class="sm red" data-user-id="${escapeHtml(u.userId)}" onclick="deleteVIPUser(this.dataset.userId)">删除</button></td></tr>`
+  ).join('') || '<tr><td colspan="4" class="muted">暂无 VIP 用户</td></tr>';
 
   document.querySelector('#userTable tbody').innerHTML = d.users.map(u => {
     const statusTag = u.status === 'banned'
-      ? `<span class="tag banned">已封禁 L${u.banLevel}</span>`
+      ? `<span class="tag banned">已封禁 L${fmtNumber(u.banLevel)}</span>`
       : `<span class="tag ok">正常</span>`;
     const guestTag = u.isGuest ? ' <span class="tag guest">游客</span>' : '';
-    const testTag = u.isTest ? ' <span class="tag test">测试</span>' : '';
+    const vipTag = u.role === 'vip' ? ' <span class="tag vip">VIP</span>' : '';
     const banInfo = u.status === 'banned'
-      ? `${u.banReason || ''}<br><span class="muted">${u.banUntil ? '至 ' + fmtTime(u.banUntil) : '永久'}</span>`
+      ? `${escapeHtml(u.banReason || '')}<br><span class="muted">${u.banUntil ? '至 ' + escapeHtml(fmtTime(u.banUntil)) : '永久'}</span>`
       : '<span class="muted">—</span>';
     const action = u.status === 'banned'
-      ? `<button class="sm green" onclick="unban('${u.userId}')">解封</button>
-         <button class="sm red" onclick="deleteUser('${u.userId}')">删除账号</button>`
-      : `<button class="sm red" onclick="banPrompt('${u.userId}')">封号</button>
-         <button class="sm gray" onclick="deleteUser('${u.userId}')">删除账号</button>`;
-    return `<tr><td>${u.email || u.userId}${guestTag}${testTag}<br><span class="muted">注册 ${fmtTime(u.createdAt)}</span></td>
-      <td>${statusTag}</td><td>${u.projectCount}</td><td>${banInfo}</td><td>${action}</td></tr>`;
+      ? `<button class="sm green" data-user-id="${escapeHtml(u.userId)}" onclick="unban(this.dataset.userId)">解封</button>
+         <button class="sm red" data-user-id="${escapeHtml(u.userId)}" onclick="deleteUser(this.dataset.userId)">删除账号</button>`
+      : `<button class="sm red" data-user-id="${escapeHtml(u.userId)}" onclick="banPrompt(this.dataset.userId)">封号</button>
+         <button class="sm gray" data-user-id="${escapeHtml(u.userId)}" onclick="deleteUser(this.dataset.userId)">删除账号</button>`;
+    return `<tr><td>${escapeHtml(u.email || u.userId)}${guestTag}${vipTag}<br><span class="muted">创建 ${fmtTime(u.createdAt)}</span></td>
+      <td>${statusTag}</td><td>${fmtNumber(u.projectCount)}</td><td>${banInfo}</td><td>${action}</td></tr>`;
   }).join('') || '<tr><td colspan="5" class="muted">暂无账户</td></tr>';
 
   document.querySelector('#projectTable tbody').innerHTML = d.projects.map(p =>
-    `<tr><td>${p.name || p.id}</td><td>${p.status}</td><td>${p.sourceType || '—'}</td>
-     <td>${fmtSize(p.size)} / ${p.fileCount} 文件</td>
-     <td><button class="sm red" onclick="delProject('${p.id}')">删除</button></td></tr>`
+    `<tr><td>${escapeHtml(p.name || p.id)}</td><td>${escapeHtml(p.status)}</td><td>${escapeHtml(p.sourceType || '—')}</td>
+     <td>${escapeHtml(fmtSize(Number(p.size) || 0))} / ${fmtNumber(p.fileCount)} 文件</td>
+     <td><button class="sm red" data-project-id="${escapeHtml(p.id)}" onclick="delProject(this.dataset.projectId)">删除</button></td></tr>`
   ).join('') || '<tr><td colspan="5" class="muted">暂无项目</td></tr>';
 
   document.getElementById('feedbackList').innerHTML = d.feedback.map(f =>
     `<div style="border-bottom:1px solid #e2e8f0;padding:10px 0">
       <div style="display:flex;justify-content:space-between">
         <b style="font-size:13px">${f.type === 'report' ? '⚠️ 举报' : '💬 反馈'}</b>
-        <span class="muted">${fmtTime(f.createdAt)} · ${f.userId || '未登录'}</span>
+        <span class="muted">${escapeHtml(fmtTime(f.createdAt))} · ${escapeHtml(f.userId || '未登录')}</span>
       </div>
       <div style="margin:6px 0;font-size:14px">${escapeHtml(f.message)}</div>
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span class="muted">${f.projectId ? '项目 ' + f.projectId : ''} ${f.errorCode ? '· 错误码 ' + f.errorCode : ''}</span>
-        <button class="sm gray" onclick="delFeedback('${f.id}')">已处理，删除</button>
+        <span class="muted">${f.projectId ? '项目 ' + escapeHtml(f.projectId) : ''} ${f.errorCode ? '· 错误码 ' + escapeHtml(f.errorCode) : ''}</span>
+        <button class="sm gray" data-feedback-id="${escapeHtml(f.id)}" onclick="delFeedback(this.dataset.feedbackId)">已处理，删除</button>
       </div>
     </div>`
   ).join('') || '<p class="muted">暂无反馈</p>';
 }
 
-function escapeHtml(t) { return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escapeHtml(t) {
+  return String(t)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;')
+    .replace(/`/g,'&#96;');
+}
 
 function banPrompt(userId) {
   const reason = prompt('封号原因（必填，会展示给用户）：');
@@ -229,18 +241,18 @@ function unban(userId) {
     .catch(e => msg(e.message, true));
 }
 
-function createTestAccount() {
-  const email = document.getElementById('testEmail').value.trim();
-  const password = document.getElementById('testPwd').value;
+function createVIPUser() {
+  const email = document.getElementById('vipEmail').value.trim();
+  const password = document.getElementById('vipPwd').value;
   if (!email || !password) { msg('邮箱和密码都要填', true); return; }
-  api(API.action, { action: 'createTestAccount', email, password })
-    .then((r) => { msg(`测试账号已创建：${r.email}`); document.getElementById('testPwd').value = ''; load(); })
-    .catch(e => msg(e.message === 'USER_EXISTS' ? '该邮箱已被占用' : e.message === 'WEAK_PASSWORD' ? '密码至少 8 位' : e.message, true));
+  api(API.action, { action: 'createVIPUser', email, password })
+    .then((r) => { msg(`VIP 用户已创建：${r.email}`); document.getElementById('vipPwd').value = ''; load(); })
+    .catch(e => msg(e.message === 'USER_EXISTS' ? '该邮箱已被占用' : weakPwdHint(e.message), true));
 }
 
-function deleteTestAccount(userId) {
-  if (!confirm('删除测试账号 ' + userId + '？其全部项目将一并删除')) return;
-  api(API.action, { action: 'deleteTestAccount', userId })
+function deleteVIPUser(userId) {
+  if (!confirm('删除 VIP 用户 ' + userId + '？其全部项目将一并删除')) return;
+  api(API.action, { action: 'deleteVIPUser', userId })
     .then(() => { msg('已删除'); load(); })
     .catch(e => msg(e.message, true));
 }

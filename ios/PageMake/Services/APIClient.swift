@@ -140,14 +140,7 @@ final class APIClient {
         let idToken: String
     }
 
-    /// 邮箱 + 密码注册（注册成功即登录）
-    func register(email: String, password: String) async throws -> AuthResponse {
-        let body = try encoder.encode(PasswordAuthRequest(email: email, password: password))
-        let data = try await request("/api/auth/register", method: "POST", body: body, requiresAuth: false)
-        return try decoder.decode(AuthResponse.self, from: data)
-    }
-
-    /// 邮箱 + 密码登录
+    /// VIP 账号登录（仅后台发放的账号）
     func login(email: String, password: String) async throws -> AuthResponse {
         let body = try encoder.encode(PasswordAuthRequest(email: email, password: password))
         let data = try await request("/api/auth/login", method: "POST", body: body, requiresAuth: false)

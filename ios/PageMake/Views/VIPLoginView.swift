@@ -1,44 +1,35 @@
 import SwiftUI
 
-/// 邮箱 + 密码登录/注册页
-/// 说明：密码仅用于本 App，与邮箱本身密码无关；v1 不发送验证邮件
-struct PasswordAuthView: View {
+/// VIP 账号登录页：账号由管理后台发放，不提供 App 内注册。
+struct VIPLoginView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
-    private enum Mode: Hashable {
-        case login
-        case register
-    }
-
-    @State private var mode: Mode = .login
     @State private var email = ""
     @State private var password = ""
     @State private var isSubmitting = false
     @State private var alertItem: AlertItem?
 
     private var canSubmit: Bool {
-        // 客户端预检与后端规则保持一致：只查长度会让 Qwertyuiop12345 这类
-        // "看着很强"的密码被放行、提交后才被拒，且拒绝原因与规则对不上
-        email.contains("@") && PasswordStrength.rejection(for: password) == nil && !isSubmitting
-    }
-
-    /// 注册时才提示强度问题（登录时密码可能来自旧账号，不该拦）
-    private var strengthHint: String? {
-        guard mode == .register, !password.isEmpty else { return nil }
-        guard let rejection = PasswordStrength.rejection(for: password) else { return nil }
-        return L10n.string(PlainLanguage.messageKey(forErrorCode: rejection.rawValue))
+        email.contains("@") && !password.isEmpty && !isSubmitting
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("", selection: $mode) {
-                        Text(L10n.string("login")).tag(Mode.login)
-                        Text(L10n.string("register")).tag(Mode.register)
+                    Label {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(L10n.string("vip_login_title"))
+                                .font(.headline)
+                            Text(L10n.string("vip_login_hint"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(systemName: "crown.fill")
+                            .foregroundStyle(PageMakeTheme.gold)
                     }
-                    .pickerStyle(.segmented)
                 }
 
                 Section(L10n.string("email_label")) {
@@ -46,21 +37,12 @@ struct PasswordAuthView: View {
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .textContentType(.emailAddress)
+                        .textContentType(.username)
                 }
 
-                Section {
+                Section(L10n.string("password_label")) {
                     SecureField(L10n.string("password_placeholder"), text: $password)
                         .textContentType(.password)
-                } header: {
-                    Text(L10n.string("password_label"))
-                } footer: {
-                    if let hint = strengthHint {
-                        // 强度不达标时用具体原因替换通用说明，按钮同时置灰
-                        Text(hint).foregroundStyle(.orange)
-                    } else {
-                        Text(L10n.string("password_rule"))
-                    }
                 }
 
                 Section {
@@ -72,7 +54,7 @@ struct PasswordAuthView: View {
                             if isSubmitting {
                                 ProgressView()
                             } else {
-                                Text(mode == .login ? L10n.string("login") : L10n.string("register"))
+                                Text(L10n.string("login"))
                                     .fontWeight(.semibold)
                             }
                             Spacer()
@@ -81,7 +63,7 @@ struct PasswordAuthView: View {
                     .disabled(!canSubmit)
                 }
             }
-            .navigationTitle(L10n.string("password_login"))
+            .navigationTitle(L10n.string("vip_login"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -102,14 +84,7 @@ struct PasswordAuthView: View {
         isSubmitting = true
         defer { isSubmitting = false }
 
-        let error: String?
-        switch mode {
-        case .login:
-            error = await appState.signInWithPassword(email: email, password: password)
-        case .register:
-            error = await appState.registerWithPassword(email: email, password: password)
-        }
-
+        let error = await appState.signInWithVIP(email: email, password: password)
         if let error {
             alertItem = AlertItem(message: error)
         } else {

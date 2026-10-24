@@ -4,7 +4,7 @@
 // DELETE /api/projects/:id/files — 删除文件（body: { path }）
 // 说明：项目模式支持 .html / .css / .js；文件夹可显式创建并持久化
 import { getOwnedProject, syncProjectFiles, normalizeFolders } from '../../../lib/project.js';
-import { isTestUser } from '../../../lib/session.js';
+import { isVIPUser } from '../../../lib/session.js';
 import { keys, kvDel, kvListAll, pathFromSiteKey, kvPut } from '../../../lib/kv.js';
 import { base64ToBytes, bytesToBase64 } from '../../../lib/base64.js';
 import { ok, fail } from '../../../lib/responses.js';
@@ -208,13 +208,13 @@ export async function onRequest(context) {
     const content = body?.content;
     if (typeof content !== 'string') return fail('BAD_REQUEST', 400);
     const bytes = base64ToBytes(content);
-    // 测试账号（后台创建）权益最高：绕过单文件/项目总大小上限
-    if (!isTestUser(result.user) && bytes.length > FILE_MAX_BYTES) return fail('TOO_LARGE', 413);
+    // VIP 用户（后台创建）可绕过单文件/项目总大小上限
+    if (!isVIPUser(result.user) && bytes.length > FILE_MAX_BYTES) return fail('TOO_LARGE', 413);
 
     // 项目总大小上限（覆盖不增加占用；与上传管线 5MB 保持一致）
     const existed = project.files?.find((f) => f.path === path);
     const existingSize = existed ? existed.size : 0;
-    if (!isTestUser(result.user)
+    if (!isVIPUser(result.user)
       && (project.size || 0) - existingSize + bytes.length > MAX_TOTAL_BYTES) {
       return fail('TOO_LARGE', 413);
     }

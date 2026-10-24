@@ -1,4 +1,4 @@
-// 管理后台辅助：密码存取（PBKDF2，默认 123456，登录后可在后台修改）+ 会话校验 + 登录限速
+// 管理后台辅助：密码存取（PBKDF2，安全随机初始密码，登录后可在后台修改）+ 会话校验 + 登录限速
 // 合规说明：封号时强制填写原因与期限，用户端可见，并可通过 App 内反馈申诉（Apple 5.1.1/1.2 要求的替代方式）
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,12 +20,26 @@ export function loginRateLimited(request) {
   return rateLimited(`admin-login:${clientIp(request)}`, ADMIN_LOGIN_LIMIT, ADMIN_LOGIN_WINDOW_MS);
 }
 
-/** 管理员密码记录（首次访问时初始化为默认密码 123456 的 PBKDF2 哈希） */
+/** 生成一次性初始管理员密码：16 字符，满足强度规则。 */
+function generateInitialPassword() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return `Pm!${Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
+ * 管理员密码记录（首次访问时生成随机密码，并仅在首次初始化时打印到容器日志）。
+ * 不写固定默认口令，避免公网后台在部署后被直接接管。
+ */
 async function getPasswordRecord(kv) {
   const existing = await kvGet(kv, keys.config(ADMIN_PASSWORD_KEY));
   if (existing?.hash) return existing;
-  const record = await hashPassword('123456');
+  const configured = globalThis.process?.env?.PAGEMAKE_ADMIN_INITIAL_PASSWORD;
+  const initialPassword = configured && checkPasswordStrength(configured).ok
+    ? configured
+    : generateInitialPassword();
+  const record = await hashPassword(initialPassword);
   await kvPut(kv, keys.config(ADMIN_PASSWORD_KEY), record);
+  console.log(`[admin] 初始管理员密码（仅本次初始化输出）：${initialPassword}`);
   return record;
 }
 
@@ -34,10 +48,7 @@ export async function verifyAdminPassword(kv, password) {
   return verifyPassword(password, record);
 }
 
-/**
- * 是否仍在使用出厂默认密码（123456）
- * 后台 /admin 公网可达，默认密码等于把全部用户数据敞开的门，登录时必须强制提醒改密
- */
+/** 兼容旧部署：如果仍在使用历史默认密码 123456，登录时提示改密。 */
 export async function isDefaultAdminPassword(kv) {
   const record = await getPasswordRecord(kv);
   return verifyPassword('123456', record);

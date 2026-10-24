@@ -568,91 +568,39 @@ await test('Google 登录：非法 token 拒绝 + 参数校验', async () => {
   assertEqual(missing.error, 'BAD_REQUEST', '缺 idToken 应报 BAD_REQUEST');
 });
 
-// 密码安全：弱口令一律拒绝（长度够也不放行）
-await test('密码安全：弱口令一律拒绝，合法密码可注册', async () => {
-  // 1) 弱口令一律拒绝（长度够也不放行）
-  const weak = ['12345678', 'aaaaaaaa', 'password', '11111111', 'qwerty123',
-    'abcdefgh', 'onlyletters', 'letmein1'];
-  for (const [i, pw] of weak.entries()) {
-    const res = await fetch(`${BASE}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: `weak-${Date.now()}-${i}@t.local`, password: pw }),
-    });
-    const json = await res.json();
-    assert(!json.ok, `弱口令 ${pw} 应被拒绝`);
-    assert(json.error.startsWith('WEAK_PASSWORD'), `弱口令 ${pw} 应返回 WEAK_PASSWORD* 错误码`);
-  }
-
-  // 2) 合法密码可通过
-  const okEmail = `strong-${Date.now()}@t.local`;
-  const strong = 'Str0ng#Pass99';
-  const reg = await (await fetch(`${BASE}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: okEmail, password: strong }),
-  })).json();
-  assert(reg.ok, `合法密码应注册成功：${JSON.stringify(reg)}`);
-});
-
-await test('邮箱密码：注册 → 登录 → 错误密码', async () => {
+await test('邮箱密码：普通注册已下线，登录只接受 VIP 账号', async () => {
   const email = `user${Date.now()}@example.com`;
-  const password = 'secret-pass-123';
+  const password = 'Str0ng#Pass99';
 
-  // 注册
-  const reg = await (await fetch(`${BASE}/api/auth/register`, {
+  // 普通注册入口必须不存在（避免 App/攻击者绕过管理员发放 VIP）
+  const reg = await fetch(`${BASE}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
-  })).json();
-  assert(reg.ok, `注册应成功：${JSON.stringify(reg)}`);
-  assert(reg.token, '注册应返回 token');
-  assert(reg.userId.startsWith('email_'), 'userId 应为 email_ 前缀');
+  });
+  assertEqual(reg.status, 404, '普通注册路由应下线');
 
-  // 重复注册 → EMAIL_TAKEN
-  const dup = await (await fetch(`${BASE}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  })).json();
-  assertEqual(dup.error, 'EMAIL_TAKEN', '重复注册应报 EMAIL_TAKEN');
-
-  // 登录成功
+  // 账号不存在与密码错误统一错误码
   const login = await (await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
   })).json();
-  assert(login.ok, '登录应成功');
-  assert(login.token, '登录应返回 token');
-  assertEqual(login.userId, reg.userId, '同一邮箱 userId 应一致');
+  assertEqual(login.error, 'INVALID_CREDENTIALS', '非 VIP/账号不存在应统一返回 INVALID_CREDENTIALS');
 
-  // 密码错误 → INVALID_CREDENTIALS
-  const wrong = await (await fetch(`${BASE}/api/auth/login`, {
+  const badEmail = await (await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password: 'wrong-password-1' }),
+    body: JSON.stringify({ email: 'not-an-email', password }),
   })).json();
-  assertEqual(wrong.error, 'INVALID_CREDENTIALS', '密码错误应报 INVALID_CREDENTIALS');
+  assertEqual(badEmail.error, 'INVALID_CREDENTIALS', '非法邮箱也不应泄露校验细节');
 
-  // 参数校验
-  const badEmail = await (await fetch(`${BASE}/api/auth/register`, {
+  const missing = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'not-an-email', password: 'secret-pass-123' }),
-  })).json();
-  assertEqual(badEmail.error, 'INVALID_EMAIL', '非法邮箱应报 INVALID_EMAIL');
-
-  const weak = await (await fetch(`${BASE}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: `x${Date.now()}@example.com`, password: '1234567' }),
-  })).json();
-  assertEqual(weak.error, 'WEAK_PASSWORD', '短密码应报 WEAK_PASSWORD');
-
-  // 登录态可用：用注册 token 访问项目列表
-  const list = await fetch(`${BASE}/api/projects`, { headers: { Authorization: `Bearer ${reg.token}` } });
-  assert(list.status === 200, '注册 token 应可访问受保护接口');
+    body: JSON.stringify({}),
+  });
+  assertEqual(missing.status, 401, '缺参数应稳定返回 401');
 });
 
 await test('游客登录：设备 ID 换会话（免费 Apple ID 兜底）', async () => {
@@ -1004,15 +952,14 @@ await test('粘贴：PHP 字段被忽略 → 仍按 HTML 建站', async () => {
 });
 
 await test('账号删除：删除项目与用户 → 会话失效', async () => {
-  const email = `del-${Date.now()}@test.local`;
-  const reg = await (await fetch(`${BASE}/api/auth/register`, {
+  const guest = await (await fetch(`${BASE}/api/auth/guest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ email, password: 'Test#Passw0rd1' }),
+    body: JSON.stringify({ deviceId: `delete-${Date.now()}-abcdef` }),
   })).json();
-  assert(reg.ok, `注册应成功：${JSON.stringify(reg)}`);
+  assert(guest.ok, `创建测试用户应成功：${JSON.stringify(guest)}`);
   // DEV_NO_AUTH 下用 X-Test-User 指定身份；真实 token 一并携带（生产环境走令牌）
-  const userAuth = { 'X-Test-User': reg.userId, 'X-Pagemake-Token': reg.token };
+  const userAuth = { 'X-Test-User': guest.userId, 'X-Pagemake-Token': guest.token };
 
   // 建一个项目
   const created = await (await fetch(`${BASE}/api/projects/paste`, {
@@ -1039,7 +986,7 @@ await test('账号删除：删除项目与用户 → 会话失效', async () => 
   assert(del.ok && del.deleted === true, '删除应成功');
 
   // 用户记录应从 KV（磁盘）中消失（DEV_NO_AUTH 下令牌校验被跳过，直接查存储验证）
-  const userFile = path.join(dataDir, kvKeys.user(reg.userId));
+  const userFile = path.join(dataDir, kvKeys.user(guest.userId));
   assert(!fs.existsSync(userFile), '用户记录应已删除');
 
   // 项目相关 KV 也必须全部清除（site_ 文件 / project_ 记录 / uproject_ 索引 / meta_ 元信息）
@@ -1053,7 +1000,7 @@ await test('账号删除：删除项目与用户 → 会话失效', async () => 
   }
   assertEqual(leftovers.length, 0, `site_ 文件应全部删除，实际残留：${leftovers.join(',')}`);
 
-  const indexPrefix = kvKeys.userProject(reg.userId, '');
+  const indexPrefix = kvKeys.userProject(guest.userId, '');
   const indexLeftovers = fs.readdirSync(dataDir).filter((n) => n.startsWith(indexPrefix));
   assertEqual(indexLeftovers.length, 0, `uproject_ 索引应全部删除，实际残留：${indexLeftovers.join(',')}`);
 
@@ -1067,13 +1014,10 @@ await test('账号删除：删除项目与用户 → 会话失效', async () => 
   const pub = await fetch(`${BASE}/p/${created.project.id}`);
   assertEqual(pub.status, 404, '删号后公开链接应 404');
 
-  // 重新注册同一邮箱应成功（数据已清空）
-  const reReg = await (await fetch(`${BASE}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ email, password: 'Test#Passw0rd1' }),
-  })).json();
-  assert(reReg.ok, '删除后同邮箱应可重新注册');
+  // 用户 token 对应身份已删除；即使 DEV_NO_AUTH 放行调试身份，数据也不得复活
+  const relist = await fetch(`${BASE}/api/projects`, { headers: userAuth });
+  assertEqual(relist.status, 200, '调试模式请求可返回空列表');
+  assertEqual((await relist.json()).projects.length, 0, '删除后项目列表必须为空');
 });
 
 await test('项目模式：平铺三文件（无文件夹）→ 引用写错目录也能显示', async () => {
@@ -1159,12 +1103,6 @@ await test('服务重启后数据仍在（磁盘 KV 持久化）', async () => {
 // 登录限速放在最后：本套件所有用例共用同一 IP，先跑会占用错误密码配额影响后续用例
 await test('登录限速：连续错误密码触发 429（防暴力破解）', async () => {
   const email = `ratelimit-${Date.now()}@t.local`;
-  const reg = await (await fetch(`${BASE}/api/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password: 'Str0ng#Pass99' }),
-  })).json();
-  assert(reg.ok, `注册应成功：${JSON.stringify(reg)}`);
 
   let limited = 0;
   let unauthorized = 0;

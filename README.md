@@ -30,7 +30,11 @@
 ├── Dockerfile                  # 自托管镜像（ModelScope 创空间 / 任意容器平台）
 ├── dev/run-tests.mjs           # 后端单元测试：node dev/run-tests.mjs
 ├── dev/test-server.mjs         # 容器冒烟测试（HTTP 全流程）：node dev/test-server.mjs
+├── dev/test-guest-ttl.mjs      # 游客 10 分钟试用与身份重置
+├── dev/test-assets.mjs         # HTML/CSS/JS 引用与静态资源回归
+├── dev/test-admin.mjs          # VIP、封禁、解封、删号与后台安全
 ├── scripts/deploy-modelscope.sh # CI 部署：推送构建子集到创空间 Git
+├── scripts/check-localization.mjs # 中英本地化 key 完整性校验
 └── .github/workflows/
     ├── page-make.yaml          #   主 CI/CD（测试 + 部署）
     └── keepalive.yaml          #   保活探测（配置 PAGEMAKE_URL 变量后生效）
@@ -55,6 +59,11 @@ node dev/run-tests.mjs
 
 # 容器冒烟测试（启动真实 HTTP 服务，跑完整上传 → 公开访问全流程）
 node dev/test-server.mjs
+
+# VIP/后台、游客、静态资源与管理后台测试
+node dev/test-guest-ttl.mjs
+node dev/test-assets.mjs
+node dev/test-admin.mjs
 ```
 
 ### 本地运行容器
@@ -138,7 +147,8 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 ## 核心规则
 
 - 未登录：只能浏览公开链接，不能创建、管理、看诊断详情、选线路
-- 创建网页必须登录；公开链接任何人可访问
+- 创建网页必须登录（Apple / Google / 后台发放的 VIP 账号）；游客可限时试用
+- App 内不开放普通邮箱注册；公开链接任何人可访问
 - 单线路部署（自托管容器），创建时无需选择线路
 - 语言：跟随 iOS 系统语言（中文/英文，其他默认英文），不提供手动切换
 - 诊断详情是登录特权，未登录只显示「您的代码有错误」
@@ -155,11 +165,11 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 ## 已知限制（第一版）
 
 1. 自托管单容器：单点故障（重启秒级恢复）、无 CDN（海外慢）、容量受机器限制（约 2 核 / 8GB + 持久盘，以创空间控制台为准）
-2. 存储：每个项目 ≤ 5MB，磁盘满后无法再上传（可定期清理或扩容）
+2. 存储：普通项目 ≤ 5MB；管理后台发放的 VIP 账号可突破普通存储限制，磁盘满后无法再上传（可定期清理或扩容）
 3. 容器模式无 1MB body / 200ms CPU 限制（沿用分片协议是出于兼容）
 4. Windows 无法本地编译 iOS → 依赖 GitHub Actions macOS runner
 5. 封号：用户举报 + 人工审核（第一版不做自动扫描）
-6. 第一版不做：签名、App Store 上传、订阅、npm 后端、在线编辑
+6. 第一版不做：普通邮箱注册、签名、App Store 上传、订阅、npm 后端
 
 ## License
 

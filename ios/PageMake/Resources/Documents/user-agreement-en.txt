@@ -8,7 +8,7 @@ Page-make is a static site hosting tool: you upload a zip or individual HTML/CSS
 
 2. Accounts
 
-2.1 This service uses Sign in with Apple. Accounts are for personal use only.
+2.1 This service supports Apple, Google, administrator-issued VIP accounts, and guest access. Accounts are for personal use only.
 2.2 You are responsible for all activity under your account.
 
 3. Content Rules
@@ -36,8 +36,8 @@ Uploaded content must comply with applicable laws and public order. The followin
 6. Service Availability
 
 6.1 This is a free service with no guarantee of continuous availability; it may be interrupted or changed due to maintenance, failures, or platform policy changes.
-6.2 EdgeOne default preview domains expire after 3 hours; you can refresh the link manually in the app.
-6.3 Cloudflare default domains may be unstable within mainland China. This is a known issue.
+6.2 Public links on the self-hosted service are long-lived; guest links are limited to a 10-minute trial.
+6.3 The service runs on a single self-hosted instance and may be briefly unavailable during maintenance or failures.
 
 7. Disclaimer
 

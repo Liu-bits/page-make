@@ -1,6 +1,6 @@
 // POST /api/upload/init — 初始化分片上传
 // body: { provider, files: [{ name, size }], name? }
-import { requireAuth, isTestUser } from '../../lib/session.js';
+import { requireAuth, isVIPUser } from '../../lib/session.js';
 import { getKV, kvPut, kvGet, kvDel, kvListAll, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
 import { PROVIDERS, MAX_TOTAL_BYTES, CHUNK_BYTES, UPLOAD_TTL_SECONDS } from '../../lib/state.js';
@@ -56,8 +56,8 @@ export async function onRequest(context) {
     }
     total += file.size;
   }
-  // 测试账号（后台创建）权益最高：绕过上传总大小上限
-  if (!isTestUser(auth.user) && total > MAX_TOTAL_BYTES) return fail('TOO_LARGE', 413);
+  // VIP 用户（后台创建）可绕过上传总大小上限
+  if (!isVIPUser(auth.user) && total > MAX_TOTAL_BYTES) return fail('TOO_LARGE', 413);
 
   // 清理过期上传（轻量扫描，小规模下开销可忽略）
   await cleanupStaleUploads(auth.kv);

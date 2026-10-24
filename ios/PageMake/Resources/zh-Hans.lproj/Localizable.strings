@@ -219,10 +219,11 @@
 "paste_project_name" = "粘贴的网页";
 "paste_size" = "已输入 %@ KB / 上限 300 KB";
 
-// MARK: - 邮箱密码登录
-"password_login" = "邮箱密码登录";
+// MARK: - VIP 账号登录
+"vip_login" = "VIP 账号登录";
+"vip_login_title" = "使用 VIP 账号继续";
+"vip_login_hint" = "账号由管理员发放，可获得更高的上传与编辑容量；App 内不开放注册。";
 "login" = "登录";
-"register" = "注册";
 "email_label" = "邮箱";
 "password_label" = "密码";
 "password_placeholder" = "至少 8 位";
@@ -233,7 +234,6 @@
 "error_weak_password_pattern" = "不能用 aaaaaaa / 12345678 这类重复或连续字符，也不能用 qwerty / asdf / 1qaz2wsx 这类键盘顺序，也不能整段重复";
 "error_weak_password_simple" = "请混合使用字母和数字或符号";
 "error_too_many_attempts" = "尝试次数过多，请稍后再试";
-"error_email_taken" = "该邮箱已注册，请直接登录";
 "error_invalid_credentials" = "邮箱或密码错误";
 
 // MARK: - Google 登录

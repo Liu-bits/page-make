@@ -103,6 +103,7 @@ final class AppState: ObservableObject {
         api.setToken(nil)
         session = nil
         projects = []
+        stats = nil
         projectsLoadError = nil
         isRestoringProjects = false
         banInfo = nil
@@ -200,28 +201,10 @@ final class AppState: ObservableObject {
         }
     }
 
-    /// 邮箱密码登录；返回错误文案（nil = 成功）
-    func signInWithPassword(email: String, password: String) async -> String? {
+    /// VIP 账号登录；账号仅由管理后台发放。
+    func signInWithVIP(email: String, password: String) async -> String? {
         do {
             let response = try await api.login(email: email, password: password)
-            applySession(response)
-            await loadProjects()
-            return nil
-        } catch let error as APIError {
-            if case .banned(let ban) = error {
-                banInfo = ban
-                return nil
-            }
-            return error.errorDescription
-        } catch {
-            return L10n.string("error_generic")
-        }
-    }
-
-    /// 邮箱密码注册（成功即登录）；返回错误文案（nil = 成功）
-    func registerWithPassword(email: String, password: String) async -> String? {
-        do {
-            let response = try await api.register(email: email, password: password)
             applySession(response)
             await loadProjects()
             return nil
@@ -263,6 +246,7 @@ final class AppState: ObservableObject {
         )
         session = newSession
         api.setToken(response.token)
+        stats = nil
         KeychainStore.shared.saveSession(response)
     }
 

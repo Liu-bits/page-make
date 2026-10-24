@@ -9,7 +9,7 @@
 	<array/>
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array>
-		<!-- 邮箱：仅用于账号注册/登录（App 功能），不用于追踪 -->
+		<!-- 邮箱：仅用于登录（App 功能），不用于追踪；普通注册已在服务端下线 -->
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>
 			<string>NSPrivacyCollectedDataTypeEmailAddress</string>

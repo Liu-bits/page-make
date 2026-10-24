@@ -119,6 +119,23 @@ struct ExplorerView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                Button {
+                    Task { await publish() }
+                } label: {
+                    if isPublishing {
+                        ProgressView()
+                    } else {
+                        Text(current.publicURL == nil
+                             ? L10n.string("explorer_build")
+                             : L10n.string("explorer_rebuild"))
+                            .fontWeight(.semibold)
+                    }
+                }
+                .disabled(isPublishing)
+                .accessibilityLabel(current.publicURL == nil
+                                    ? L10n.string("explorer_build")
+                                    : L10n.string("explorer_rebuild"))
+
                 Menu {
                     Button {
                         activeSheet = .newFile
@@ -472,20 +489,14 @@ struct ExplorerView: View {
                 }
                 .accessibilityLabel(L10n.string("qr_code"))
             }
-            Button {
-                Task { await publish() }
-            } label: {
-                if isPublishing {
-                    ProgressView()
-                } else {
-                    Label(current.publicURL == nil
-                          ? L10n.string("explorer_publish")
-                          : L10n.string("explorer_republish"),
-                          systemImage: "paperplane.fill")
+            if current.publicURL != nil {
+                Button {
+                    activeSheet = .preview
+                } label: {
+                    Label(L10n.string("preview"), systemImage: "eye")
                 }
+                .buttonStyle(.bordered)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(isPublishing)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)

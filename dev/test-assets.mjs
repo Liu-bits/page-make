@@ -42,7 +42,12 @@ async function test(name, fn) {
 }
 
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pagemake-assets-'));
-const spawnEnv = { ...process.env, PORT: String(PORT), DATA_DIR: dataDir };
+const spawnEnv = {
+  ...process.env,
+  PORT: String(PORT),
+  DATA_DIR: dataDir,
+  PAGEMAKE_ADMIN_INITIAL_PASSWORD: 'Pm!TestAdmin2026',
+};
 for (const key of ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'all_proxy', 'ALL_PROXY']) {
   delete spawnEnv[key];
 }
@@ -65,12 +70,29 @@ async function waitForServer(timeoutMs = 15000) {
 }
 
 async function login() {
-  const res = await fetch(`${BASE}/api/auth/register`, {
+  const adminRes = await fetch(`${BASE}/api/admin/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ email: `assets-${Date.now()}-${Math.random().toString(36).slice(2)}@t.com`, password: 'Test#Passw0rd1' }),
+    body: JSON.stringify({ password: spawnEnv.PAGEMAKE_ADMIN_INITIAL_PASSWORD }),
   });
-  assert(res.ok, `注册失败 HTTP ${res.status}`);
+  assert(adminRes.ok, `管理员登录失败 HTTP ${adminRes.status}`);
+  const admin = await adminRes.json();
+
+  const email = `assets-${Date.now()}@test.local`;
+  const password = 'Test#Passw0rd1';
+  const created = await fetch(`${BASE}/api/admin/action`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': admin.token },
+    body: JSON.stringify({ action: 'createVIPUser', email, password }),
+  });
+  assert(created.ok, `创建资源测试 VIP 失败 HTTP ${created.status}`);
+
+  const res = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  assert(res.ok, `VIP 登录失败 HTTP ${res.status}`);
   const body = await res.json();
   return { token: body.token, email: body.email };
 }

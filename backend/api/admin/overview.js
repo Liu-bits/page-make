@@ -10,7 +10,7 @@ function publicUser(u) {
     userId: u.userId,
     email: u.email ?? null,
     isGuest: Boolean(u.userId?.startsWith('guest_')),
-    isTest: Boolean(u.isTest),
+    role: u.role === 'vip' || u.isTest ? 'vip' : 'user',
     status: u.status ?? 'active',
     banLevel: u.banLevel ?? 0,
     banReason: u.banReason ?? null,
@@ -59,7 +59,9 @@ export async function onRequest(context) {
     const u = await kv.get(key, { type: 'json' });
     if (!u) continue;
     u._projectCount = projectCountByUser.get(u.userId) || 0;
-    users.push(publicUser(u));
+    const publicRecord = publicUser(u);
+    publicRecord.legacyIsTest = Boolean(u.isTest);
+    users.push(publicRecord);
   }
   users.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
@@ -75,7 +77,7 @@ export async function onRequest(context) {
     stats: {
       userCount: users.length,
       guestCount: users.filter((u) => u.isGuest).length,
-      testCount: users.filter((u) => u.isTest).length,
+      vipCount: users.filter((u) => u.role === 'vip').length,
       projectCount: projects.length,
       feedbackCount: feedback.length,
     },
