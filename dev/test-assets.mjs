@@ -454,6 +454,52 @@ await test('粘贴：CSS @import 字符串形式归一后可访问', async () =>
   assertEqual(rewriteCssRefs('@media screen { .a { color: red } }').trim(), '@media screen { .a { color: red } }', '@media 不能被误改');
 });
 
+// ⑧-b 注释与普通字符串不能被引用归一变坏
+await test('CSS 引用归一：注释与 content 字符串保持原样', async () => {
+  const { rewriteCssRefs, rewriteLocalRefs } = await import('../backend/lib/paths.js');
+  // 注释与字符串里的示例不能被当成真实引用改写
+  assertEqual(
+    rewriteCssRefs('/* url(../old.png) @import "../old.css"; */\n.a{background:url(../bg.png)}').trim(),
+    '/* url(../old.png) @import "../old.css"; */\n.a{background:url(bg.png)}',
+    'CSS 注释内容必须原样保留'
+  );
+  assertEqual(
+    rewriteCssRefs('.a::before{content:"url(../x.png) @import \\"../y.css\\";"}').trim(),
+    '.a::before{content:"url(../x.png) @import \\"../y.css\\";"}',
+    'CSS 字符串内容必须原样保留（含转义引号）'
+  );
+  assertEqual(
+    rewriteCssRefs('@import url("../a.css"); /* url(../b.png) */').trim(),
+    '@import url("a.css"); /* url(../b.png) */',
+    '@import url() 与注释应各自处理'
+  );
+  assertEqual(
+    rewriteCssRefs('@import/*x*/"../a.css";').trim(),
+    '@import/*x*/"a.css";',
+    '@import 与路径之间夹注释时，注释必须保留'
+  );
+  assertEqual(
+    rewriteCssRefs('@IMPORT "../a.css";').trim(),
+    '@IMPORT "a.css";',
+    '@import 关键字大小写必须保留'
+  );
+  assertEqual(
+    rewriteCssRefs('.a{background:url(../bg.png)}').trim(),
+    '.a{background:url(bg.png)}',
+    '无引号 url() 必须归一'
+  );
+  assertEqual(
+    rewriteCssRefs('.a::before{content:"url(../x.png)"}').trim(),
+    '.a::before{content:"url(../x.png)"}',
+    'content 字符串里的 url() 不能误改'
+  );
+  assertEqual(
+    rewriteLocalRefs('<div style="content:&quot;url(../x.png)&quot;"></div>').trim(),
+    '<div style="content:&quot;url(../x.png)&quot;"></div>',
+    'HTML 内联 style 的 content 实体文本不能误改'
+  );
+});
+
 // ⑥-b 上传 ZIP 链路：ZIP 里的 style.css 内部 url() 同样要归一
 // （HTML 侧归一覆盖不到 CSS 文件内容，上传管线必须单独处理）
 await test('上传 ZIP：CSS 内部 url() 归一后可访问', async () => {

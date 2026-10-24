@@ -186,14 +186,14 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 114 项，提交前必须全绿）
+## 5. 测试体系（共 115 项，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
 | `node dev/run-tests.mjs` | 39 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护、密码强度校验【leetspeak 变形/反向键盘对角线】、MIME 类型映射） |
 | `node dev/test-server.mjs` | 38 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 zip 炸弹端到端、反馈限流、删号 KV 残留断言、弱口令拒绝、登录 429 限速） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
-| `node dev/test-assets.mjs` | 19 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式归一**） |
+| `node dev/test-assets.mjs` | 20 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
 | `node dev/test-admin.mjs` | 10 | 后台（登录/哈希存储/测试账号权益/封禁下架+禁登/解封恢复/删号） |
 
 > Node 用 managed 绝对路径运行。测试脚本坑：`fail()` 的 error 字段是错误码字符串本身；

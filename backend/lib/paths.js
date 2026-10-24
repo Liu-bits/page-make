@@ -170,6 +170,10 @@ export function rewriteLocalRefs(html) {
   // 内联 style 属性里的 url()（与 CSS 文件内部同一处理）
   out = out.replace(/(<[a-z][^>]*\sstyle\s*=\s*)(["'])([^"']*)\2/gi,
     (whole, prefix, quote, value) => {
+      // HTML 实体引号（&quot;）会让属性值里出现嵌套文本，外层截取只能拿到
+      // content:&quot;url(../x)&quot; 这一段。这里先按属性名判断，
+      // 文本类属性（content/quotes/counter-*）整体跳过，避免改写展示文字。
+      if (/^\s*(?:content|quotes|counter-[a-z-]+)\s*:/i.test(value)) return whole;
       const rewritten = rewriteCssRefs(value);
       return rewritten === value ? whole : `${prefix}${quote}${rewritten}${quote}`;
     });
@@ -192,7 +196,8 @@ const CSS_URL_RE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)/gi;
 
 // CSS @import 的字符串形式：@import "a.css"; / @import 'a.css' screen;
 // 与 url() 是两个独立语法，此前只处理了 url()，字符串形式整段漏过
-const CSS_IMPORT_RE = /@import\s+(?:"([^"]*)"|'([^']*)')/gi;
+// 允许 @import 与路径之间夹注释（CSS 规范允许，压缩器也常这么输出）
+const CSS_IMPORT_RE = /@import(?:[ \t\r\n\f]|\/\*[\s\S]*?\*\/)+(?:"([^"]*)"|'([^']*)')/gi;
 
 /**
  * 把 CSS 里的本地 url() 引用改写成与存储路径一致的形式
@@ -211,22 +216,117 @@ const CSS_IMPORT_RE = /@import\s+(?:"([^"]*)"|'([^']*)')/gi;
  * 这里只判断「是不是本地引用」，不限定扩展名。
  */
 export function rewriteCssRefs(css) {
-  let out = String(css ?? '').replace(CSS_URL_RE, (whole, dq, sq, bare) => {
+  const source = String(css ?? '');
+  const mask = cssCodeMask(source);
+  const isCode = (offset, length) => {
+    for (let i = offset; i < offset + length; i++) {
+      if (!mask[i]) return false;
+    }
+    return true;
+  };
+  return source.replace(CSS_URL_RE, (whole, dq, sq, bare, offset) => {
+    if (!isCode(offset, whole.length)) return whole;
+    if (isTextProperty(source, offset)) return whole;
     const value = dq ?? sq ?? bare ?? '';
     const quote = dq !== undefined ? '"' : (sq !== undefined ? "'" : '');
     const normalized = cssLocalRef(value);
     if (!normalized || normalized === value.trim()) return whole;
     return `url(${quote}${normalized}${quote})`;
-  });
-  // @import 字符串形式（@charset 等其它 @ 规则不受影响：正则要求 import 关键字）
-  out = out.replace(CSS_IMPORT_RE, (whole, dq, sq) => {
+  }).replace(CSS_IMPORT_RE, (whole, dq, sq, offset) => {
+    // @import 与路径之间可能有注释；注释本身不可改，但关键字与路径字符串可改。
+    // 只校验首尾（关键字 + 路径），避免把合法写法误判为注释而跳过。
+    if (!isCode(offset, '@import'.length)) return whole;
+    const pathStart = offset + whole.length - (dq ?? sq ?? '').length - 2;
+    if (!isCode(pathStart, (dq ?? sq ?? '').length + 2)) return whole;
     const value = dq ?? sq ?? '';
     const quote = dq !== undefined ? '"' : "'";
     const normalized = cssLocalRef(value);
     if (!normalized || normalized === value.trim()) return whole;
-    return `@import ${quote}${normalized}${quote}`;
+    // 只替换路径字符串，保留 @import 后的原始空白/注释（如 @import/*x*/"a.css"）
+    const pathLiteral = `${quote}${value}${quote}`;
+    return whole.slice(0, whole.length - pathLiteral.length) + `${quote}${normalized}${quote}`;
   });
-  return out;
+}
+
+/**
+ * 判断某个位置是否处于 content / quotes / counter-* 属性的值中
+ * 这些属性的值是文本，里面的 url(...) 只是文字内容，不能当资源引用改写。
+ * 支持普通 CSS 与 HTML 内联 style 的 &quot; 实体形式。
+ */
+function isTextProperty(source, offset) {
+  // 从当前声明的起始（; 或 {）到 offset 之间取属性名。
+  // 允许值与 url() 之间夹引号、HTML 实体等文本，不要求紧邻。
+  let i = offset - 1;
+  while (i >= 0 && source[i] !== ';' && source[i] !== '{') i--;
+  const decl = source.slice(i + 1, offset);
+  const m = decl.match(/^\s*([a-z-]+)\s*:/i);
+  if (!m) return false;
+  const prop = m[1].toLowerCase();
+  return prop === 'content' || prop === 'quotes' || prop.startsWith('counter-');
+}
+
+/**
+ * 标记 CSS 中每个字符能否参与引用改写
+ *
+ * 不能直接对整个 CSS 跑 url()/@import 正则：注释里写的示例
+ * `/* url(../old.png) *\/` 会被误改。但字符串不能整体跳过，因为
+ * `url("../a.png")` 和 `@import "../a.css"` 的路径本身就在字符串里。
+ * 因此逐字符扫描：注释整段标 false；字符串只在紧跟 url( 或 @import
+ * 时标 true，其它普通字符串标 false，避免 content 示例被误改。
+ */
+function cssCodeMask(source) {
+  const mask = new Array(source.length).fill(true);
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === '/' && source[i + 1] === '*') {
+      const end = source.indexOf('*/', i + 2);
+      const stop = end === -1 ? source.length : end + 2;
+      mask.fill(false, i, stop);
+      i = stop;
+      continue;
+    }
+    if (ch === '/' && source[i + 1] === '/') {
+      const end = source.indexOf('\n', i + 2);
+      const stop = end === -1 ? source.length : end;
+      mask.fill(false, i, stop);
+      i = stop;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      let j = i + 1;
+      while (j < source.length) {
+        if (source[j] === '\\') {
+          j += 2;
+          continue;
+        }
+        if (source[j] === ch) {
+          j++;
+          break;
+        }
+        j++;
+      }
+      const before = source.slice(Math.max(0, i - 256), i);
+      // 只有 url( 与 @import 后面的字符串是引用语法，其它字符串（content 等）跳过
+      const isRefString = /url\([ \t\r\n\f]*$/i.test(before)
+        || /@import(?:[ \t\r\n\f]|\/\*[\s\S]*?\*\/)+$/i.test(before);
+      if (!isRefString) {
+        const prop = before.match(/(?:^|[;{])\s*([a-z-]+)\s*:\s*$/i)?.[1]?.toLowerCase();
+        // 引号本身保留为可改，避免整段 url("...") 因端点被屏蔽而漏判；
+        // 但 content/quotes/counter-* 的文本值整段保护，防止示例被改写
+        if (prop === 'content' || prop === 'quotes' || prop?.startsWith('counter-')) {
+          mask.fill(false, i, j);
+        } else {
+          mask.fill(false, i + 1, Math.max(i + 1, j - 1));
+        }
+      }
+      i = j;
+      continue;
+    }
+    // HTML 实体引号不是 CSS 字符串边界，由 isTextProperty 按属性名兜底判断
+    i++;
+  }
+  return mask;
 }
 
 /** CSS url() 专用：只判本地引用，不限扩展名 */
