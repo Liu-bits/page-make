@@ -38,27 +38,30 @@ struct FilePickerView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                Picker("", selection: $mode) {
-                    Text(L10n.string("pick_mode_files")).tag(Mode.files)
-                    Text(L10n.string("pick_mode_paste")).tag(Mode.paste)
-                    Text(L10n.string("mode_explorer")).tag(Mode.explorer)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.top, 8)
+            ZStack {
+                PageMakeBackground()
+                VStack(spacing: 0) {
+                    modeChooser
+                        .padding(.horizontal, 16)
+                        .padding(.top, 10)
 
-                switch mode {
-                case .files:
-                    filesMode
-                case .paste:
-                    pasteMode
-                case .explorer:
-                    explorerMode
+                    Group {
+                        switch mode {
+                        case .files:
+                            filesMode
+                        case .paste:
+                            pasteMode
+                        case .explorer:
+                            explorerMode
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .navigationTitle(L10n.string("add_project"))
+            .navigationTitle(L10n.string("creation_studio"))
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string("cancel")) { dismiss() }
@@ -83,61 +86,126 @@ struct FilePickerView: View {
         }
     }
 
+    // MARK: - 创建模式选择
+
+    private var modeChooser: some View {
+        HStack(spacing: 7) {
+            modeButton(.files, icon: "doc.badge.plus", titleKey: "pick_mode_files")
+            modeButton(.paste, icon: "chevron.left.forwardslash.chevron.right", titleKey: "pick_mode_paste")
+            modeButton(.explorer, icon: "folder.badge.plus", titleKey: "mode_explorer")
+        }
+        .padding(5)
+        .background(.white.opacity(0.72), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .stroke(PageMakeTheme.ink.opacity(0.07), lineWidth: 1)
+        }
+    }
+
+    private func modeButton(_ value: Mode, icon: String, titleKey: String) -> some View {
+        Button {
+            withAnimation(.snappy(duration: 0.24)) {
+                mode = value
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(L10n.string(titleKey))
+                    .font(.caption2.bold())
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9)
+            .background(
+                mode == value ? PageMakeTheme.ink : Color.clear,
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .foregroundStyle(mode == value ? .white : PageMakeTheme.inkSoft)
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - 文件模式
 
     private var filesMode: some View {
-        VStack(spacing: 24) {
-            Spacer()
-            Image(systemName: "folder.badge.plus")
-                .font(.system(size: 56))
-                .foregroundStyle(.secondary)
-            Text(L10n.string("pick_files_title"))
-                .font(.title2.bold())
-            Text(L10n.string("pick_files_hint"))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-            Button {
-                showPicker = true
-            } label: {
-                Text(L10n.string("pick_files_action"))
-                    .frame(maxWidth: .infinity)
+        ScrollView {
+            VStack(spacing: 18) {
+                creationHero(
+                    icon: "shippingbox.fill",
+                    eyebrowKey: "creation_zip_eyebrow",
+                    titleKey: "pick_files_title",
+                    detailKey: "pick_files_hint",
+                    tint: PageMakeTheme.gold
+                )
+
+                PageMakeCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Label(L10n.string("creation_zip_note"), systemImage: "checkmark.circle.fill")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(PageMakeTheme.ink)
+                        Text(L10n.string("creation_zip_detail"))
+                            .font(.caption)
+                            .foregroundStyle(PageMakeTheme.inkSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Button {
+                            showPicker = true
+                        } label: {
+                            Label(L10n.string("pick_files_action"), systemImage: "folder")
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                    }
+                }
             }
-            .buttonStyle(.glassProminent)
-            .padding(.horizontal, 32)
-            Spacer()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 18)
         }
     }
 
     // MARK: - 项目模式
 
     private var explorerMode: some View {
-        VStack(spacing: 20) {
-            Spacer()
-            Image(systemName: "folder.badge.gearshape")
-                .font(.system(size: 56))
-                .foregroundStyle(.secondary)
-            Text(L10n.string("mode_explorer"))
-                .font(.title2.bold())
-            Text(L10n.string("explorer_intro"))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-            TextField(L10n.string("explorer_name_placeholder"), text: $explorerName)
-                .textFieldStyle(.roundedBorder)
-                .padding(.horizontal, 32)
-            Button {
-                let name = explorerName.trimmingCharacters(in: .whitespacesAndNewlines)
-                onPick(.explorer(name: name.isEmpty ? L10n.string("explorer_default_name") : name))
-            } label: {
-                Text(L10n.string("explorer_create"))
-                    .frame(maxWidth: .infinity)
+        ScrollView {
+            VStack(spacing: 18) {
+                creationHero(
+                    icon: "folder.fill",
+                    eyebrowKey: "creation_folder_eyebrow",
+                    titleKey: "mode_explorer",
+                    detailKey: "explorer_intro",
+                    tint: PageMakeTheme.sea
+                )
+
+                PageMakeCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(L10n.string("explorer_name_placeholder"))
+                            .font(.caption.bold())
+                            .foregroundStyle(PageMakeTheme.inkSoft)
+                            .textCase(.uppercase)
+                            .tracking(0.5)
+
+                        TextField(L10n.string("explorer_name_placeholder"), text: $explorerName)
+                            .font(.system(.body, design: .rounded, weight: .medium))
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 12)
+                            .background(PageMakeTheme.paperWarm, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(PageMakeTheme.ink.opacity(0.08), lineWidth: 1)
+                            }
+
+                        Button {
+                            let name = explorerName.trimmingCharacters(in: .whitespacesAndNewlines)
+                            onPick(.explorer(name: name.isEmpty ? L10n.string("explorer_default_name") : name))
+                        } label: {
+                            Label(L10n.string("explorer_create"), systemImage: "arrow.right")
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                    }
+                }
             }
-            .buttonStyle(.glassProminent)
-            .padding(.horizontal, 32)
-            Spacer()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 18)
         }
     }
 
@@ -146,9 +214,13 @@ struct FilePickerView: View {
     private var pasteMode: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(L10n.string("paste_hint"))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                creationHero(
+                    icon: "chevron.left.forwardslash.chevron.right",
+                    eyebrowKey: "creation_code_eyebrow",
+                    titleKey: "pick_mode_paste",
+                    detailKey: "paste_hint",
+                    tint: PageMakeTheme.coral
+                )
 
                 templatesRow
 
@@ -173,18 +245,26 @@ struct FilePickerView: View {
 
                 Text(sizeText)
                     .font(.caption)
-                    .foregroundStyle(isTooLarge ? .red : .secondary)
+                    .foregroundStyle(isTooLarge ? PageMakeTheme.coral : PageMakeTheme.inkSoft)
             }
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.vertical, 18)
         }
         .safeAreaInset(edge: .bottom) {
-            Button(L10n.string("paste_create")) {
-                submitPaste()
+            VStack(spacing: 0) {
+                Divider().overlay(PageMakeTheme.ink.opacity(0.06))
+                Button {
+                    submitPaste()
+                } label: {
+                    Label(L10n.string("paste_create"), systemImage: "sparkles")
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .disabled(!pasteContent.hasContent)
+                .opacity(pasteContent.hasContent ? 1 : 0.42)
             }
-            .buttonStyle(.glassProminent)
-            .padding()
-            .disabled(!pasteContent.hasContent)
-            .opacity(pasteContent.hasContent ? 1 : 0.4)
+            .background(.ultraThinMaterial)
         }
     }
 
@@ -193,7 +273,8 @@ struct FilePickerView: View {
     private var templatesRow: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.string("templates"))
-                .font(.subheadline.bold())
+                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                .foregroundStyle(PageMakeTheme.ink)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(PasteTemplates.all) { tpl in
@@ -202,15 +283,21 @@ struct FilePickerView: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(L10n.string(tpl.nameKey))
-                                    .font(.subheadline.bold())
+                                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                                    .foregroundStyle(PageMakeTheme.ink)
                                 Text(L10n.string("use_template"))
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(PageMakeTheme.inkSoft)
                             }
                             .padding(12)
                             .frame(width: 150, alignment: .leading)
-                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+                            .background(.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                    .stroke(PageMakeTheme.ink.opacity(0.07), lineWidth: 1)
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 2)
@@ -225,9 +312,20 @@ struct FilePickerView: View {
     }
 
     private func editor(title: String, text: Binding<String>, placeholder: String, minHeight: CGFloat) -> some View {
+        let isRequired = title == L10n.string("paste_html")
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.subheadline.bold())
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(editorTint(title))
+                    .frame(width: 7, height: 7)
+                Text(title)
+                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .foregroundStyle(PageMakeTheme.ink)
+                Spacer()
+                Text(L10n.string(isRequired ? "editor_required" : "editor_optional"))
+                    .font(.caption2)
+                    .foregroundStyle(isRequired ? PageMakeTheme.coral : PageMakeTheme.inkSoft.opacity(0.8))
+            }
             ZStack(alignment: .topLeading) {
                 TextEditor(text: text)
                     .font(.system(.footnote, design: .monospaced))
@@ -237,7 +335,7 @@ struct FilePickerView: View {
                 if text.wrappedValue.isEmpty {
                     Text(placeholder)
                         .font(.system(.footnote, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(PageMakeTheme.inkSoft.opacity(0.55))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 14)
                         .allowsHitTesting(false)
@@ -245,7 +343,60 @@ struct FilePickerView: View {
             }
         }
         .padding(12)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+        .background(.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(PageMakeTheme.ink.opacity(0.07), lineWidth: 1)
+        }
+    }
+
+    private func editorTint(_ title: String) -> Color {
+        switch title {
+        case L10n.string("paste_html"): return PageMakeTheme.coral
+        case L10n.string("paste_css"): return PageMakeTheme.sea
+        default: return PageMakeTheme.gold
+        }
+    }
+
+    private func creationHero(
+        icon: String,
+        eyebrowKey: String,
+        titleKey: String,
+        detailKey: String,
+        tint: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 45, height: 45)
+                    .background(.white.opacity(0.11), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                Spacer()
+                Text(L10n.string(eyebrowKey))
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .tracking(0.8)
+                    .textCase(.uppercase)
+                    .foregroundStyle(.white.opacity(0.58))
+            }
+            Text(L10n.string(titleKey))
+                .font(.system(size: 28, weight: .bold, design: .serif))
+                .foregroundStyle(.white)
+            Text(L10n.string(detailKey))
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.68))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(19)
+        .background(PageMakeTheme.heroGradient, in: RoundedRectangle(cornerRadius: 23, style: .continuous))
+        .overlay(alignment: .topTrailing) {
+            Circle()
+                .fill(tint.opacity(0.26))
+                .frame(width: 110, height: 110)
+                .blur(radius: 28)
+                .offset(x: 28, y: -36)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
     }
 
     private var isTooLarge: Bool {

@@ -8,6 +8,7 @@ struct PageMakeApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(appState)
+                .tint(PageMakeTheme.coral)
         }
     }
 }

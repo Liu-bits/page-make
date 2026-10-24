@@ -21,6 +21,8 @@
 "welcome_subtitle" = "Upload a zip or single HTML/CSS/JS files to get a public link for your static page";
 "login_apple" = "Sign in with Apple";
 "public_links_note" = "Public links work without signing in";
+"login_choose_title" = "Start your next web page";
+"login_choose_hint" = "Sign in to keep projects, maintain public links, and continue editing from any device.";
 "sign_out" = "Sign Out";
 "account_section" = "Account";
 "account_label" = "Account";
@@ -58,11 +60,36 @@
 "confirm" = "Confirm";
 "refresh" = "Refresh";
 "preview" = "Preview";
+"studio_badge" = "Web creation studio";
+"studio_headline" = "Give every idea a public address.";
+"studio_subtitle" = "Start from code, an archive, or a blank folder and publish a static site in minutes.";
+"dashboard_projects" = "projects";
+"dashboard_files" = "files";
+"dashboard_space" = "used";
+"library_title" = "My Work";
+"library_count" = "%d projects";
+"quick_start_title" = "Start with a blank canvas";
+"quick_start_hint" = "Choose the workflow you know. No server, domain, or complex setup — publish and share.";
+"search_empty" = "No matching projects";
+"clear_search" = "Clear search";
+"more_actions" = "More actions";
+"project_kind_zip" = "Archive project";
+"project_kind_paste" = "Code project";
+"project_kind_explorer" = "Project Mode";
+"project_link_pending" = "Creating public link";
 
 // MARK: - File picker
 "pick_files_title" = "Select Files";
 "pick_files_action" = "Select Files";
 "pick_files_hint" = "Supports .zip, .html, .css, .js. Multiple selection, 5MB total max";
+"creation_studio" = "New Project";
+"creation_zip_eyebrow" = "File upload";
+"creation_zip_note" = "Bring your existing site in";
+"creation_zip_detail" = "Upload a full ZIP project or select HTML, CSS, and JS files. The entry page and asset references are detected automatically.";
+"creation_folder_eyebrow" = "Project mode";
+"creation_code_eyebrow" = "Online editor";
+"editor_optional" = "Optional";
+"editor_required" = "Required";
 "validation_empty" = "Please select at least one file";
 "validation_extension" = "Unsupported file type: .%@ (only .zip, .html, .css, .js)";
 "validation_too_large" = "Total size %.1f MB exceeds the 5MB limit";
@@ -221,6 +248,15 @@
 "stats_projects" = "Projects";
 "stats_files" = "Files";
 "stats_size" = "Total size";
+"stats_section_hint" = "Projects and storage used by this account";
+"tools_section_hint" = "Export diagnostics or contact us";
+"about_section_hint" = "Privacy, terms, and version";
+"version_label" = "Version";
+"account_signed_in" = "Signed in";
+"account_guest" = "Guest session";
+"account_signed_out_hint" = "Sign in to sync your projects and public links";
+"account_guest_detail" = "Guest projects expire according to the trial rules";
+"account_protected" = "Account and work are safely stored";
 
 // MARK: - Paste code (placeholders)
 "paste_css_placeholder" = "Optional: saved as the file you link (e.g. style.css)";

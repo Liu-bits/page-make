@@ -69,18 +69,16 @@ struct RootView: View {
     private var mainContent: some View {
         NavigationStack {
             ProjectListView(
-                showFilePicker: Binding(
-                    get: { activeSheet?.id == "filePicker" },
-                    set: { if !$0, activeSheet?.id == "filePicker" { activeSheet = nil } }
-                ),
-                showSettings: Binding(
-                    get: { activeSheet?.id == "settings" },
-                    set: { if !$0, activeSheet?.id == "settings" { activeSheet = nil } }
-                )
-            )
-                .navigationDestination(item: $explorerProject) { project in
-                    ExplorerView(project: project)
+                onCreateTapped: {
+                    activeSheet = .filePicker
+                },
+                onSettingsTapped: {
+                    activeSheet = .settings
                 }
+            )
+            .navigationDestination(item: $explorerProject) { project in
+                ExplorerView(project: project)
+            }
         }
     }
 

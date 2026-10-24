@@ -21,6 +21,8 @@
 "welcome_subtitle" = "上传 zip 或单个 HTML/CSS/JS 文件，生成可公开访问的静态网页链接";
 "login_apple" = "通过 Apple 登录";
 "public_links_note" = "公开链接无需登录即可访问";
+"login_choose_title" = "开始你的网页作品";
+"login_choose_hint" = "登录后可保存项目、长期维护公开链接，并在任意设备继续编辑。";
 "sign_out" = "退出登录";
 "account_section" = "账号";
 "account_label" = "账号";
@@ -58,11 +60,36 @@
 "confirm" = "确定";
 "refresh" = "刷新";
 "preview" = "预览";
+"studio_badge" = "网页创作工作台";
+"studio_headline" = "让每一个想法，都有公开地址。";
+"studio_subtitle" = "从代码、压缩包或空白文件夹开始，几分钟内发布你的静态网页。";
+"dashboard_projects" = "个项目";
+"dashboard_files" = "个文件";
+"dashboard_space" = "已用空间";
+"library_title" = "我的作品";
+"library_count" = "共 %d 个项目";
+"quick_start_title" = "从一个空白画布开始";
+"quick_start_hint" = "选择你熟悉的创作方式。无需服务器、域名或复杂配置，发布后即可分享。";
+"search_empty" = "没有找到匹配的项目";
+"clear_search" = "清除搜索";
+"more_actions" = "更多操作";
+"project_kind_zip" = "文件上传项目";
+"project_kind_paste" = "在线代码项目";
+"project_kind_explorer" = "项目模式";
+"project_link_pending" = "公开链接生成中";
 
 // MARK: - 选文件
 "pick_files_title" = "选择文件";
 "pick_files_action" = "选择文件";
 "pick_files_hint" = "支持 .zip、.html、.css、.js，可多选，总大小不超过 5MB";
+"creation_studio" = "新建作品";
+"creation_zip_eyebrow" = "文件上传";
+"creation_zip_note" = "直接把现有网页搬进来";
+"creation_zip_detail" = "可以上传完整 ZIP 项目，也可以多选 HTML、CSS、JS 文件。系统会自动识别入口页与资源引用。";
+"creation_folder_eyebrow" = "项目模式";
+"creation_code_eyebrow" = "在线编辑";
+"editor_optional" = "可选";
+"editor_required" = "必填";
 "validation_empty" = "请先选择文件";
 "validation_extension" = "不支持的文件类型：.%@（仅支持 .zip、.html、.css、.js）";
 "validation_too_large" = "文件总大小 %.1f MB，超过 5MB 上限";
@@ -221,6 +248,15 @@
 "stats_projects" = "项目数";
 "stats_files" = "文件数";
 "stats_size" = "总大小";
+"stats_section_hint" = "当前账号的作品与存储占用";
+"tools_section_hint" = "导出诊断记录或联系我们";
+"about_section_hint" = "隐私、条款与版本信息";
+"version_label" = "当前版本";
+"account_signed_in" = "已登录";
+"account_guest" = "当前为访客";
+"account_signed_out_hint" = "登录后同步你的项目与公开链接";
+"account_guest_detail" = "访客项目会按规则自动过期";
+"account_protected" = "账号与作品已安全保存";
 
 // MARK: - 粘贴代码（占位符）
 "paste_css_placeholder" = "可选：保存为你在 <link> 里引用的文件名（如 style.css）";
