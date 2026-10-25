@@ -2,13 +2,13 @@ import Foundation
 
 /// 全局配置（第一版）
 enum Config {
-    /// 后端地址（ModelScope 创空间自托管，已上线验证）
+    /// 后端地址（私有部署，已上线验证）
     static var baseURL: URL = URL(string: "https://liu20150413-page-make.ms.show")!
 
     /// Google OAuth iOS 客户端 ID（Google Cloud Console 创建，完全免费）
     static let googleClientID = "242453650088-qm3mk3l3eg7b8ukraenl0gdufeuvc0dj.apps.googleusercontent.com"
 
-    /// 分片大小：EdgeOne Functions 单请求 body 上限 1MB，留出 base64 开销余量
+    /// 分片大小：单请求 body 上限 1MB，留出 base64 开销余量
     static let chunkSize = 600 * 1024
 
     /// 状态轮询间隔（秒）：上传完成后轮询后台处理状态

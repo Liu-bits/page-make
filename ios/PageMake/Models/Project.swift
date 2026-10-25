@@ -2,7 +2,7 @@ import Foundation
 
 /// 托管线路
 enum HostProvider: String, Codable, CaseIterable, Identifiable {
-    /// 自托管（ModelScope 创空间）——当前唯一线路
+    /// 私有部署线路——当前唯一线路
     case local
     case edgeone
     case cloudflare

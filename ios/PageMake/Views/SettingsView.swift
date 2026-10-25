@@ -11,6 +11,8 @@ struct SettingsView: View {
     @State private var showDeleteAccountConfirm = false
     @State private var isDeletingAccount = false
     @State private var showVIPApplication = false
+    @State private var isRefreshingVIPRequest = false
+    @State private var showVIPApplication = false
 
     var body: some View {
         ZStack {
@@ -166,8 +168,31 @@ struct SettingsView: View {
                     )
                 }
                 .buttonStyle(PrimaryButtonStyle())
+
+                // 审核是后台人工处理的，App 不会收到推送；批准后必须主动拉一次
+                // 角色快照，否则用户看不到「已升级」，项目数/链接限制也不会解除。
+                Button {
+                    Task { await refreshVIPRequest() }
+                } label: {
+                    if isRefreshingVIPRequest {
+                        ProgressView().tint(PageMakeTheme.inkSoft)
+                    } else {
+                        Label(L10n.string("vip_request_refresh"), systemImage: "arrow.clockwise")
+                            .font(.system(.caption, design: .rounded, weight: .semibold))
+                            .foregroundStyle(PageMakeTheme.inkSoft)
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(isRefreshingVIPRequest)
             }
         }
+    }
+
+    /// 拉取最新角色与申请状态：管理员批准后用户点一下即可立刻拿到 VIP 权益。
+    private func refreshVIPRequest() async {
+        isRefreshingVIPRequest = true
+        defer { isRefreshingVIPRequest = false }
+        await appState.refreshAccountRole()
     }
 
     private func vipRequestStatusText(_ request: VIPUpgradeRequest) -> String {

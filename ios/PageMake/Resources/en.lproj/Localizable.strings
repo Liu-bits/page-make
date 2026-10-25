@@ -356,3 +356,4 @@
 "delete_account_confirm_title" = "Permanently delete your account?";
 "delete_account_button" = "Delete Account";
 "delete_account_confirm_message" = "All your projects and account data will be deleted permanently. This cannot be undone.";
+"vip_request_refresh" = "Refresh status";

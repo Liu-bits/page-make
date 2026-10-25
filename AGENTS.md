@@ -27,11 +27,11 @@
 
 - **是什么**：iOS App + 自托管后端，让用户在手机上创建/发布静态网页（类轻量 Netlify）。
   上传 ZIP、粘贴 HTML/CSS/JS、或虚拟文件夹管理器三种方式建站，生成公开链接分享。
-- **仓库**：https://github.com/Liu-bits/page-make （公开，GPL-3.0）
+- **仓库**：私有仓库（专有软件，保留所有权利）
 - **技术栈**：
   - iOS：SwiftUI + XcodeGen（`ios/project.yml` 描述工程），最低 iOS 27.0，无第三方 SDK
     （Google 登录用 ASWebAuthenticationSession + PKCE 手写；二维码用 CoreImage）
-  - 后端：Node.js **零 npm 依赖**（仅标准库），EdgeOne Pages Functions 风格 handler
+  - 后端：Node.js **零 npm 依赖**（仅标准库），Pages Functions 风格 handler
     （`backend/index.js`），同一份代码跑在 ModelScope 创空间 Docker 容器
     （`docker/server.mjs` = Node HTTP 适配层 + DiskKV 磁盘 KV，API 与线上 KV 一致）
   - 存储：容器内 DiskKV（`DATA_DIR` 目录 JSON 文件，key 经 `encodeKey` hex 编码为文件名）
@@ -152,6 +152,16 @@ E:/Page-make/
   `upgradeVIP`（原地写 role=vip + vipSince、删 isTest、**不换 userId、不销毁会话**），
   驳回写 status=rejected + reviewNote；非 pending 记录 409 `VIP_REQUEST_ALREADY_REVIEWED`
 
+**VIP 权益变更必须同步项目链接（本轮修复）**
+- `upgradeVIP` / `reviewVIPRequest(approve)` 批准时会调用 `clearGuestLinkExpiry`，
+  把该账号全部项目的 `expiresAt` 置 null（返回 `linksRenewed` 计数）。
+  不清的话游客期创建的项目仍带旧 10 分钟时间戳，升级成功后公开页照样 410，
+  用户看到「已升级但旧链接打不开」
+- `downgradeVIP` 会调用 `reapplyGuestLinkExpiry`，**仅对 `guest_` 前缀账号**重新加上
+  10 分钟过期（返回 `linksLimited`）；Apple / Google 普通账号链接本就不设过期，不受影响。
+  未到期项目保留原剩余时间，避免一刀切
+- 后台三处操作的成功提示都会带上清理/恢复的项目数
+
 **建站（3 种方式）**
 - 上传 ZIP：分片 600KB × N（base64 后约 800KB/片），项目总上限 5MB；异步处理 + 轮询
 - 粘贴代码：HTML 必填 + CSS/JS 可选（合计 300KB）；css/js 文件名自动跟随 HTML 的
@@ -206,7 +216,7 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 141 项 + 本地化检查，提交前必须全绿）
+## 5. 测试体系（共 143 项 + 本地化检查，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
@@ -214,8 +224,8 @@ E:/Page-make/
 | `node dev/test-server.mjs` | 43 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 ZIP PHP 过滤、历史 PHP 入口 404、zip 炸弹端到端、Explorer 空目录/重命名/目录迁移/冲突、反馈限流、删号 KV 残留断言、登录 429 限速） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 25 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
-| `node dev/test-admin.mjs` | 24 | 后台（随机初始密码/旧默认密码兼容/哈希存储/后台转义/弱口令拒绝/VIP 权益/历史 isTest 统计兼容/封禁下架+禁登/解封恢复/删号/邮箱密码入口彻底删除/后台不再暴露历史邮箱清理/**VIP 升级申请：提交去重/仅普通游客/批准即时生效/驳回保留限制可重提/审核不存在 404**） |
-| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 310 键） |
+| `node dev/test-admin.mjs` | 26 | 后台（随机初始密码/旧默认密码兼容/哈希存储/后台转义/弱口令拒绝/VIP 权益/历史 isTest 统计兼容/封禁下架+禁登/解封恢复/删号/邮箱密码入口彻底删除/后台不再暴露历史邮箱清理/**VIP 升级申请：提交去重/仅普通游客/批准即时生效/驳回保留限制可重提/审核不存在 404/升级即清旧游客项目 expiresAt 且公开页可访问/降级即给游客身份重新加 10 分钟过期**） |
+| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 311 键） |
 
 > Node 优先用 `mcp__codex_app__load_workspace_dependencies` 返回的运行时绝对路径；
 > AGENTS 里旧版 `C:/Users/liu20/.workbuddy-ai/.../node.exe` 可能已不存在。
@@ -460,3 +470,39 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
      10 分钟失效/退出重置身份提示）被误删后未恢复 → 游客不知道退出会重置身份。已补回。
    - **坑 2**：驳回用例里直接粘贴会成功（该游客此前没建过项目，第一次本来就不受限），
      断言 `GUEST_LIMIT` 得到 `undefined`。写「仍受限」用例必须先建满第 1 个项目。
+
+---
+
+## 12. 历史里程碑（2026-10-25 后半程）
+
+9. **VIP 权益变更必须同步项目链接过期时间（本轮修复的两个真实 bug）**
+   - **升级侧**：`upgradeVIP` / `reviewVIPRequest(approve)` 现在调用
+     `clearGuestLinkExpiry`，把该账号全部项目的 `expiresAt` 置 null 并返回
+     `linksRenewed` 计数。修之前游客期创建的项目仍带旧 10 分钟时间戳，
+     升级成功后公开页照样 410 —— 用户看到「已升级但旧链接打不开」。
+     这是最容易被漏掉的一类：只改用户记录、不碰项目记录。
+   - **降级侧**：`downgradeVIP` 调用 `reapplyGuestLinkExpiry`，**仅对 `guest_`
+     前缀账号**重新加 10 分钟过期（返回 `linksLimited`）。修之前原本长期有效的
+     链接降级后仍无限期可访问，等于绕过试用期限制。Apple / Google 普通账号
+     链接本就不设过期，不受影响；未到期项目保留原剩余时间，避免一刀切。
+   - 后台 `upgradeVIP` / `downgradeVIP` / `reviewVIP` 三处成功提示都带上清理/恢复
+     的项目数，管理员能直接看到影响面。
+   - 测试新增 2 组（test-admin 24→26，全量 141→143），都直接打 `/p/<id>` 公开页
+     验证，不只看项目记录字段——字段对了但公开页仍 410 就是没修干净。
+10. **审核措辞收敛（用户要求：提审材料不得出现开源/仓库/平台自建等表述）**
+    - `README.md` 去掉 GPL-3.0 / 公开仓库 / GitHub Actions 命名，改为「专有软件，
+      保留所有权利」+「CI」；部署章节改为中性「私有容器」表述
+    - `AGENTS.md` 第 1 节仓库描述同步改为私有仓库
+    - iOS 代码注释里的平台名清掉（`Config.swift` / `Project.swift` /
+      `ProviderSelectView.swift`）。`Documents/` 四份审核文档本就干净，
+      `scripts/check-localization.mjs` 已断言 App 可见文案不含这些字样并持续通过
+    - `PasteTemplates.swift` 里 `<a href="#">GitHub</a>` 是个人主页模板的社交链接
+      占位（无实际跳转），属用户自建站点常规示例内容，保留
+    - 后端 `purgePasswordUsers` 与 `lib/admin-users.js` **有意保留**：它是删历史
+      邮箱密码账号的安全清理工具，线上留着 `email_` 账号反而是数据泄露风险，
+      且不影响 App 功能。只是前端入口已移除。
+11. **iOS：VIP 申请状态可手动刷新**
+    - 审核是后台人工处理，App 收不到推送。批准后若不主动拉角色快照，用户看不到
+      「已升级」，项目数/链接限制也不会解除。`SettingsView.vipUpgradeCard` 新增
+      「刷新审核状态」按钮，点击即 `refreshAccountRole()`。
+    - 新增本地化键 `vip_request_refresh`（中英 311 键，232 个引用全部存在）。

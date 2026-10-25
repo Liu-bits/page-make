@@ -356,3 +356,4 @@
 "delete_account_confirm_title" = "永久删除账号？";
 "delete_account_button" = "删除账号";
 "delete_account_confirm_message" = "将删除你的全部项目与账号数据，且无法恢复。此操作不可撤销。";
+"vip_request_refresh" = "刷新审核状态";

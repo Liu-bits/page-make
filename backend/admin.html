@@ -272,14 +272,22 @@ function kindLabel(kind) {
 function upgradeVIP(userId) {
   if (!confirm('将账号 ' + userId + ' 升级为 VIP？\n账号、项目与当前会话都会保留。')) return;
   api(API.action, { action: 'upgradeVIP', userId })
-    .then(() => { msg('已升级为 VIP，用户无需重新登录'); load(); })
+    .then((d) => {
+      const extra = d.linksRenewed ? `，${d.linksRenewed} 个旧项目的 10 分钟链接限制已解除` : '';
+      msg('已升级为 VIP，用户无需重新登录' + extra);
+      load();
+    })
     .catch(e => msg(e.message === 'ALREADY_VIP' ? '该账号已经是 VIP' : e.message, true));
 }
 
 function downgradeVIP(userId) {
   if (!confirm('取消账号 ' + userId + ' 的 VIP 权益？\n账号与项目会保留。')) return;
   api(API.action, { action: 'downgradeVIP', userId })
-    .then(() => { msg('已取消 VIP'); load(); })
+    .then((d) => {
+      const extra = d.linksLimited ? `，${d.linksLimited} 个项目的链接已恢复 10 分钟限制` : '';
+      msg('已取消 VIP' + extra);
+      load();
+    })
     .catch(e => msg(e.message, true));
 }
 
@@ -288,7 +296,13 @@ function reviewVIP(userId, approve) {
   if (!confirm(`${label}账号 ${userId} 的 VIP 申请？`)) return;
   const note = approve ? '' : (prompt('驳回原因（可选，仅管理员可见）：') || '');
   api(API.action, { action: 'reviewVIPRequest', userId, approve, note })
-    .then(() => { msg(approve ? '已批准，用户无需重新登录' : '已驳回'); load(); })
+    .then((d) => {
+      const extra = approve && d.linksRenewed
+        ? `，${d.linksRenewed} 个旧项目的 10 分钟链接限制已解除`
+        : '';
+      msg((approve ? '已批准，用户无需重新登录' : '已驳回') + extra);
+      load();
+    })
     .catch(e => msg(e.message, true));
 }
 
