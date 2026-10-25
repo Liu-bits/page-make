@@ -71,6 +71,9 @@ jobs:
       - name: 校验中英本地化 key 完整且无重复
         run: node scripts/check-localization.mjs
 
+      - name: 校验 Swift 无同作用域重复声明（本地无 iOS SDK，替代 -typecheck）
+        run: node scripts/check-swift-decls.mjs
+
       - name: 校验 Docker 镜像可构建
         run: docker build -t pagemake-test .
 
