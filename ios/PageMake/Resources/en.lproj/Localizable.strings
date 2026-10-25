@@ -1,7 +1,6 @@
 /* Localizable.strings — English (fallback for non-Chinese system languages) */
 
 // MARK: - Common
-"app_projects" = "My Projects";
 "cancel" = "Cancel";
 "done" = "Done";
 "retry" = "Retry";
@@ -12,13 +11,10 @@
 "session_expired" = "Your session has expired. Please sign in again";
 "login_canceled" = "Sign-in cancelled";
 "login_guest" = "Continue as guest";
-"guest_login_hint" = "Try the app without an account. Upgrading to VIP keeps your guest identity and projects.";
 "guest_signout_hint" = "Standard guest links expire after 10 minutes. Signing out resets the guest identity. Upgrading to VIP keeps your account and projects.";
 "error_apple_authorization_failed" = "Sign-in failed (code %@), please try again";
 
 // MARK: - Sign in
-"welcome_title" = "Page-make";
-"welcome_subtitle" = "Upload a zip or single HTML/CSS/JS files to get a public link for your static page";
 "login_apple" = "Sign in with Apple";
 "public_links_note" = "Public links work without signing in";
 "login_choose_title" = "Start your next web page";
@@ -30,15 +26,10 @@
 "about_section" = "About";
 
 // MARK: - Project list
-"empty_projects_title" = "No projects yet";
-"empty_projects_subtitle" = "Upload your first static page to get a public link";
 "add_project" = "New Project";
 "file_count" = "%d files";
-"file_count_unit" = "files";
 "created_at" = "Created %@";
 "expires_at" = "Expires %@";
-"created_at_label" = "Created";
-"expires_at_label" = "Expires";
 "delete_project" = "Delete Project";
 "delete_confirm_title" = "Delete project?";
 "delete_confirm_button" = "Delete";
@@ -99,8 +90,6 @@
 "validation_too_large" = "Total size %.1f MB exceeds the 5MB limit";
 
 // MARK: - Provider selection
-"choose_provider" = "Choose Hosting Provider";
-"next_step" = "Next";
 
 // MARK: - Upload queue
 "upload_queue" = "Upload Queue";
@@ -147,7 +136,6 @@
 "delete_file_confirm" = "Delete this file?";
 
 // MARK: - Settings
-"settings" = "Settings";
 "export_logs" = "Export Logs";
 "feedback" = "Feedback";
 "feedback_type" = "Type";
@@ -181,7 +169,6 @@
 "error_bad_zip" = "The zip file is corrupted, try repacking it";
 "error_storage_error" = "Storage error, please try again later";
 "error_db_error" = "Service error, please try again later";
-"error_invalid_provider" = "Please choose a hosting provider first";
 "error_expired" = "Link expired — tap to refresh";
 "error_upload_timeout" = "Processing timed out (over 5 minutes), please retry";
 "error_project_gone" = "Project no longer exists or was deleted";
@@ -207,10 +194,8 @@
 "paste_js" = "JavaScript";
 "paste_html_placeholder" = "Paste your HTML here…";
 "paste_create" = "Create page";
-"paste_html_required" = "Please paste HTML first";
 "paste_content_required" = "Please paste HTML first";
 "paste_too_large" = "Code exceeds the 300KB limit";
-"paste_project_name" = "Pasted page";
 "paste_size" = "Entered %@ KB / 300 KB limit";
 
 // MARK: - Google sign-in
@@ -282,8 +267,6 @@
 // MARK: - Project mode (explorer)
 "mode_explorer" = "Project Mode";
 "explorer_intro" = "Start from blank: create virtual folders and files (html / css / js), edit online, then publish one public link";
-"explorer_name_placeholder" = "Project name";
-"explorer_default_name" = "Untitled Project";
 "explorer_create" = "Create Blank Project";
 "explorer_empty_title" = "Empty Folder";
 "explorer_empty_hint" = "Easy steps: ① tap + to create index.html as your home page → ② add style.css if needed (no folders required) → ③ tap the prominent \"Build\" button at the top of the page";
@@ -313,22 +296,17 @@
 "explorer_kind_html" = "HTML Page";
 "explorer_kind_css" = "CSS Stylesheet";
 "explorer_kind_js" = "JavaScript";
-"explorer_item_count" = "%d items";
 "explorer_back" = "Back";
-"explorer_link_section" = "Public Link";
 "explorer_build" = "Build";
 "explorer_rebuild" = "Rebuild";
 "explorer_not_built" = "Not built yet";
 "explorer_built" = "Published";
 "explorer_entry_summary" = "Entry: %@";
 "explorer_no_entry_summary" = "Add an HTML file to build";
-"explorer_publish" = "Publish Link";
-"explorer_republish" = "Update Published Content";
 "explorer_publishing" = "Publishing…";
 "explorer_publish_done" = "Link ready! Copy it or scan the QR code to share";
 "explorer_issues_title" = "%d minor issue(s) found (page still works — worth a look)";
 "explorer_need_entry" = "No HTML file yet: create an index.html first, then publish";
-"explorer_delete_file_title" = "Delete this file?";
 "explorer_delete_title" = "Delete this item?";
 "explorer_delete_file_message" = "Delete %@? The published page will no longer include this file.";
 "explorer_delete_folder_message" = "Delete folder %@ and all files inside it? This cannot be undone.";

@@ -1,7 +1,6 @@
 /* Localizable.strings — 简体中文（跟随 iOS 系统语言，不提供手动切换） */
 
 // MARK: - 通用
-"app_projects" = "我的项目";
 "cancel" = "取消";
 "done" = "完成";
 "retry" = "重试";
@@ -12,13 +11,10 @@
 "session_expired" = "登录已过期，请重新登录";
 "login_canceled" = "已取消登录";
 "login_guest" = "以游客身份继续";
-"guest_login_hint" = "无需账号即可体验；升级 VIP 后会保留当前游客身份与作品";
 "guest_signout_hint" = "普通游客链接 10 分钟后自动失效；退出后将重置为新的游客身份。升级 VIP 后会保留账号与作品";
 "error_apple_authorization_failed" = "登录失败（错误码 %@），请重试";
 
 // MARK: - 登录
-"welcome_title" = "Page-make";
-"welcome_subtitle" = "上传 zip 或单个 HTML/CSS/JS 文件，生成可公开访问的静态网页链接";
 "login_apple" = "通过 Apple 登录";
 "public_links_note" = "公开链接无需登录即可访问";
 "login_choose_title" = "开始你的网页作品";
@@ -30,15 +26,10 @@
 "about_section" = "关于";
 
 // MARK: - 项目列表
-"empty_projects_title" = "还没有项目";
-"empty_projects_subtitle" = "上传你的第一个静态网页，生成公开链接";
 "add_project" = "新建项目";
 "file_count" = "%d 个文件";
-"file_count_unit" = "个文件";
 "created_at" = "创建于 %@";
 "expires_at" = "过期时间 %@";
-"created_at_label" = "创建时间";
-"expires_at_label" = "过期时间";
 "delete_project" = "删除项目";
 "delete_confirm_title" = "删除项目？";
 "delete_confirm_button" = "删除";
@@ -99,8 +90,6 @@
 "validation_too_large" = "文件总大小 %.1f MB，超过 5MB 上限";
 
 // MARK: - 线路选择
-"choose_provider" = "选择托管线路";
-"next_step" = "下一步";
 
 // MARK: - 上传队列
 "upload_queue" = "上传队列";
@@ -147,7 +136,6 @@
 "delete_file_confirm" = "删除这个文件？";
 
 // MARK: - 设置
-"settings" = "设置";
 "export_logs" = "导出日志";
 "feedback" = "反馈";
 "feedback_type" = "类型";
@@ -181,7 +169,6 @@
 "error_bad_zip" = "压缩包损坏了，重新打包试试";
 "error_storage_error" = "存储出错了，稍后重试";
 "error_db_error" = "服务出错了，稍后重试";
-"error_invalid_provider" = "请先选择托管线路";
 "error_expired" = "链接已过期，点击刷新";
 "error_upload_timeout" = "处理超时（超过 5 分钟），请重试";
 "error_project_gone" = "项目不存在或已删除";
@@ -207,10 +194,8 @@
 "paste_js" = "JavaScript";
 "paste_html_placeholder" = "在这里粘贴 HTML 代码…";
 "paste_create" = "创建网页";
-"paste_html_required" = "请先粘贴 HTML 代码";
 "paste_content_required" = "请先粘贴 HTML 代码";
 "paste_too_large" = "代码超过 300KB 上限，请精简后再试";
-"paste_project_name" = "粘贴的网页";
 "paste_size" = "已输入 %@ KB / 上限 300 KB";
 
 // MARK: - Google 登录
@@ -282,8 +267,6 @@
 // MARK: - 项目模式
 "mode_explorer" = "项目模式";
 "explorer_intro" = "从空白开始：创建虚拟文件夹和文件（支持 html / css / js），在线编辑，最后统一生成公开链接";
-"explorer_name_placeholder" = "项目名称";
-"explorer_default_name" = "未命名项目";
 "explorer_create" = "创建空白项目";
 "explorer_empty_title" = "空文件夹";
 "explorer_empty_hint" = "照着做就行：① 点右上角 + 新建 index.html 作为主页 → ② 需要样式再新建 style.css（不用建文件夹）→ ③ 点页面顶部醒目的「构建」";
@@ -313,22 +296,17 @@
 "explorer_kind_html" = "HTML 网页";
 "explorer_kind_css" = "CSS 样式表";
 "explorer_kind_js" = "JavaScript 脚本";
-"explorer_item_count" = "%d 个项目";
 "explorer_back" = "返回上级";
-"explorer_link_section" = "公开链接";
 "explorer_build" = "构建";
 "explorer_rebuild" = "重新构建";
 "explorer_not_built" = "尚未构建";
 "explorer_built" = "已发布";
 "explorer_entry_summary" = "入口：%@";
 "explorer_no_entry_summary" = "添加 HTML 后即可构建";
-"explorer_publish" = "生成链接";
-"explorer_republish" = "更新链接内容";
 "explorer_publishing" = "正在生成链接…";
 "explorer_publish_done" = "链接已生成！复制链接或扫二维码，分享给朋友吧";
 "explorer_issues_title" = "发现 %d 个小问题（页面仍可访问，建议看看）";
 "explorer_need_entry" = "还没有 HTML 文件：先新建一个 index.html，再生成链接";
-"explorer_delete_file_title" = "删除这个文件？";
 "explorer_delete_title" = "确认删除？";
 "explorer_delete_file_message" = "将删除 %@，删除后公开页面将不再包含这个文件。";
 "explorer_delete_folder_message" = "将删除文件夹 %@ 及其中的全部文件，且无法恢复。";
