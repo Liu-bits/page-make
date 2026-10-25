@@ -21,9 +21,14 @@ function walk(dir) {
   });
 }
 
+// 覆盖 App 与测试两个 target：测试里引用的键同样是活的
 let swift = '';
-for (const file of walk(path.join(root, 'ios'))) {
-  if (file.endsWith('.swift')) swift += fs.readFileSync(file, 'utf8') + '\n';
+for (const dir of ['ios/PageMake', 'ios/PageMakeTests']) {
+  const full = path.join(root, dir);
+  if (!fs.existsSync(full)) continue;
+  for (const file of walk(full)) {
+    if (file.endsWith('.swift')) swift += fs.readFileSync(file, 'utf8') + '\n';
+  }
 }
 
 // 前缀动态拼接的键：源码里形如 "<prefix>\(rawValue)" / "<prefix>\(...)"

@@ -10,7 +10,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
-const srcRoot = path.join(root, 'ios', 'PageMake');
+// 必须同时覆盖 PageMakeTests：CI 的 iOS job 编译 App + 测试两个 target，
+// 只扫 App 会漏掉测试里的编译错误（2026-10-25 实测：删 HostProvider.cloudflare
+// 后 App 与 IPA job 都通过，只有测试 target 炸，白跑一轮 macOS runner）。
+const srcRoots = [
+  path.join(root, 'ios', 'PageMake'),
+  path.join(root, 'ios', 'PageMakeTests'),
+].filter((dir) => fs.existsSync(dir));
 
 function walk(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -31,7 +37,8 @@ const scopeRe = /^(?:private\s+|fileprivate\s+|public\s+|internal\s+)*(?:final\s
 let problems = 0;
 let files = 0;
 
-for (const file of walk(srcRoot)) {
+for (const srcRoot of srcRoots) {
+  for (const file of walk(srcRoot)) {
   if (!file.endsWith('.swift')) continue;
   files += 1;
   const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
@@ -57,6 +64,7 @@ for (const file of walk(srcRoot)) {
       seen.set(name, index + 1);
     }
   });
+  }
 }
 
 console.log(`扫描 ${files} 个 Swift 文件`);

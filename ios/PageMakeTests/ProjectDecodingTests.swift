@@ -32,12 +32,30 @@ final class ProjectDecodingTests: XCTestCase {
         let data = projectJSON()
         let project = try JSONDecoder().decode(Project.self, from: data)
         XCTAssertEqual(project.id, "abc123")
-        XCTAssertEqual(project.provider, .cloudflare)
+        // 历史项目里可能存着已下线的线路值（edgeone / cloudflare），
+        // 必须归一为当前唯一线路，否则界面会显示一个不存在的假入口
+        XCTAssertEqual(project.provider, .local)
         XCTAssertEqual(project.status, .ready)
         XCTAssertEqual(project.publicURL?.absoluteString, "https://pagemake.example.com/p/abc123")
         XCTAssertEqual(project.fileCount, 0)
         XCTAssertEqual(project.diagnostics, [])
         XCTAssertNotNil(project.createdAt)
+    }
+
+    func testLegacyProviderNormalizesToLocal() throws {
+        // 逐条覆盖历史值与缺失值：全部归一到 .local
+        for legacy in ["edgeone", "cloudflare", "local", "unknown-provider", ""] {
+            let data = projectJSON(provider: legacy)
+            let project = try JSONDecoder().decode(Project.self, from: data)
+            XCTAssertEqual(project.provider, .local, "provider=\(legacy) 应归一为 local")
+        }
+        // provider 字段整体缺失时同样归一
+        let json = """
+        { "id": "abc123", "status": "ready" }
+        """.data(using: .utf8)!
+        let project = try JSONDecoder().decode(Project.self, from: json)
+        XCTAssertEqual(project.provider, .local, "缺失 provider 应归一为 local")
+        XCTAssertEqual(project.provider.titleKey, "provider_local_name")
     }
 
     func testDecodesExpiryDate() throws {
