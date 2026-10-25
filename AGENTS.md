@@ -225,7 +225,8 @@ E:/Page-make/
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 25 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
 | `node dev/test-admin.mjs` | 26 | 后台（随机初始密码/旧默认密码兼容/哈希存储/后台转义/弱口令拒绝/VIP 权益/历史 isTest 统计兼容/封禁下架+禁登/解封恢复/删号/邮箱密码入口彻底删除/后台不再暴露历史邮箱清理/**VIP 升级申请：提交去重/仅普通游客/批准即时生效/驳回保留限制可重提/审核不存在 404/升级即清旧游客项目 expiresAt 且公开页可访问/降级即给游客身份重新加 10 分钟过期**） |
-| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 311 键） |
+| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 283 键） |
+| `node scripts/check-dead-strings.mjs` | 1 | 死文案键扫描：查无 Swift 引用的本地化键。对 `status_/account_/template_/project_kind_/ban_level_` 前缀插值引用的键单列为「动态引用，需人工确认」，不计入死键 |
 | `node scripts/check-swift-decls.mjs` | 1 | Swift 同作用域属性包装器重复声明扫描（替代本地缺失的 `-typecheck`；已接入 CI backend-test job） |
 
 > Node 优先用 `mcp__codex_app__load_workspace_dependencies` 返回的运行时绝对路径；
@@ -242,7 +243,7 @@ E:/Page-make/
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
-| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 132 项 + 本地化检查 + Docker 构建）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
+| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 143 项 + 本地化检查 + 死键扫描 + 重复声明扫描 + Docker 构建）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
 | keepalive.yaml | 每 10 分钟 | 探 `${PAGEMAKE_URL}/healthz`，**必须带 UA**（`-A "PageMake-Keepalive/1.0"`），并回显 /api/config 的 jwks 诊断 |
 | jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子并提交（境内拉不到 Google，只能靠 runner） |
 
@@ -363,6 +364,15 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
 - Swift 计算属性块内不能有以 `get` 开头的方法调用（get 是访问器关键字）
 - 本地验语法：`swiftc -parse`，**先删大写 HTTPS_PROXY/HTTP_PROXY/ALL_PROXY**
   （大小写重复键导致 Swift runtime 崩溃）
+- **本地校验必须覆盖 `ios/PageMakeTests`，不能只扫 `ios/PageMake`**：
+  CI 的 iOS job 编译 App + 测试两个 target，而 **IPA job 只归档 App**，
+  所以测试 target 的编译错误只有 iOS job 能抓到。2026-10-25 连续两次踩到：
+  删 `HostProvider.cloudflare` 后 App 和 IPA job 全绿，测试 target 报
+  `type 'HostProvider' has no member 'cloudflare'` → iOS job exit 65、
+  deploy 跳过。`swiftc -parse` 与 `check-swift-decls.mjs` /
+  `check-dead-strings.mjs` 现在都扫 `ios/` 整个目录（41 个文件）。
+- **删 enum case / 删本地化键前，先在全仓库（含测试）搜引用**：
+  `rg "<case 名>" ios/` 与 `node scripts/check-dead-strings.mjs` 都要跑。
 - **`swiftc -parse` 只查语法，查不出重复声明**：`-parse` 不建符号表，
   `invalid redeclaration of 'xxx'` 这类语义错误本地全绿、CI 才炸（exit 65），
   而且 iOS job 一失败，ipa 和 deploy 跟着失败/跳过，后端 143 项全绿也白搭。
@@ -517,4 +527,4 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
     - 审核是后台人工处理，App 收不到推送。批准后若不主动拉角色快照，用户看不到
       「已升级」，项目数/链接限制也不会解除。`SettingsView.vipUpgradeCard` 新增
       「刷新审核状态」按钮，点击即 `refreshAccountRole()`。
-    - 新增本地化键 `vip_request_refresh`（中英 311 键，232 个引用全部存在）。
+    - 新增本地化键 `vip_request_refresh`（中英 283 键，引用全部存在）。
