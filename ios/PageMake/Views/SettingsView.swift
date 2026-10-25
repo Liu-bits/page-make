@@ -12,7 +12,6 @@ struct SettingsView: View {
     @State private var isDeletingAccount = false
     @State private var showVIPApplication = false
     @State private var isRefreshingVIPRequest = false
-    @State private var showVIPApplication = false
 
     var body: some View {
         ZStack {
