@@ -9,7 +9,8 @@ Page-make is a static site hosting tool: you upload a zip or individual HTML/CSS
 2. Accounts
 
 2.1 This service supports Apple, Google, and guest access. VIP is a benefit level for an existing account; it does not create a separate account or password. Accounts are for personal use only.
-2.2 You are responsible for all activity under your account.
+2.2 VIP benefits require submitting a request from Settings > Upgrade to VIP in the app and are granted after human review. They are not enabled automatically, and this service offers no paid option. If a request is declined, the reason is shown and you may revise and resubmit.
+2.3 You are responsible for all activity under your account.
 
 3. Content Rules
 
