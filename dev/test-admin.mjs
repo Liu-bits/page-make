@@ -466,7 +466,154 @@ await test('管理后台页面不再出现 VIP 邮箱密码创建入口', async 
   assert(!html.includes('createVIPUser'), '后台不得再创建邮箱 VIP');
   assert(!html.includes('vipPwd'), '后台不得再有 VIP 密码输入框');
   assert(html.includes("action: 'upgradeVIP'"), '后台应改为升级现有账号');
-  assert(html.includes('purgePasswordUsers'), '后台应提供历史邮箱账号清理');
+  assert(!html.includes('purgePasswordUsers'), '后台界面不得再暴露历史邮箱账号清理');
+  assert(html.includes("action: 'reviewVIPRequest'"), '后台应提供 VIP 申请审核');
+  assert(html.includes('id="vipRequestTable"'), '后台应展示待审核申请列表');
+});
+
+// 6. 游客 VIP 升级申请：提交 → 去重 → 后台批准 → 原会话立即生效
+await test('游客提交 VIP 升级申请：状态 pending，重复提交返回同一记录', async () => {
+  const guest = await guestLogin('vip-request');
+  const created = await json(fetch(`${BASE}/api/vip-request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Pagemake-Token': guest.token },
+    body: JSON.stringify({ note: '想创建更多页面' }),
+  }));
+  assertEqual(created.status, 200, `提交申请应成功，实际 ${created.status} ${JSON.stringify(created.body)}`);
+  assertEqual(created.body.request.status, 'pending', '初始状态应为 pending');
+  assertEqual(created.body.submitted, true, '首次提交应标记 submitted');
+  assertEqual(created.body.request.note, '想创建更多页面', '申请说明应原样保留');
+  assert(created.body.request.createdAt > 0, '应记录申请时间');
+
+  const duplicate = await json(fetch(`${BASE}/api/vip-request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Pagemake-Token': guest.token },
+    body: JSON.stringify({ note: '再次提交' }),
+  }));
+  assertEqual(duplicate.status, 200, '待审核期间重复提交不应报错');
+  assertEqual(duplicate.body.duplicate, true, '重复提交应标记 duplicate');
+  assertEqual(duplicate.body.request.note, '想创建更多页面', '重复提交不得覆盖原说明');
+
+  const read = await json(fetch(`${BASE}/api/vip-request`, {
+    headers: { 'X-Pagemake-Token': guest.token },
+  }));
+  assertEqual(read.status, 200, '读取申请状态应成功');
+  assertEqual(read.body.request.status, 'pending', '读取应返回 pending');
+
+  const ov = await overview(adminToken);
+  assert(ov.body.vipRequests.some((r) => r.userId === guest.userId), '后台应看到该申请');
+  assert(ov.body.stats.vipRequestCount >= 1, '待审核计数应至少为 1');
+});
+
+await test('升级申请仅对普通游客开放：VIP 与登录账号不得提交', async () => {
+  const vipGuest = await guestLogin('vip-request-already');
+  const upgraded = await adminAction(adminToken, { action: 'upgradeVIP', userId: vipGuest.userId });
+  assertEqual(upgraded.status, 200, '应先升级为 VIP');
+  const blocked = await json(fetch(`${BASE}/api/vip-request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Pagemake-Token': vipGuest.token },
+    body: JSON.stringify({ note: '重复申请' }),
+  }));
+  assertEqual(blocked.status, 409, 'VIP 账号不得重复申请');
+  assertEqual(blocked.body.error, 'ALREADY_VIP', '错误码应为 ALREADY_VIP');
+
+  const anonymous = await json(fetch(`${BASE}/api/vip-request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note: '未登录' }),
+  }));
+  assertEqual(anonymous.status, 401, '未登录不得提交申请');
+});
+
+await test('后台批准 VIP 申请：原游客会话立即获得 VIP 权益', async () => {
+  const guest = await guestLogin('vip-request-approve');
+  const first = await paste(guest.token, { name: 'before', html: '<h1>before</h1>' });
+  assertEqual(first.status, 200, '升级前应能建第 1 个项目');
+  const second = await paste(guest.token, { name: 'blocked', html: '<h1>x</h1>' });
+  assertEqual(second.body.error, 'GUEST_LIMIT', '升级前第 2 个项目应被拒');
+
+  await json(fetch(`${BASE}/api/vip-request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Pagemake-Token': guest.token },
+    body: JSON.stringify({ note: '用于作品集' }),
+  }));
+
+  const approved = await adminAction(adminToken, {
+    action: 'reviewVIPRequest',
+    userId: guest.userId,
+    approve: true,
+    note: '审核通过',
+  });
+  assertEqual(approved.status, 200, `批准应成功，实际 ${approved.status} ${JSON.stringify(approved.body)}`);
+  assertEqual(approved.body.approved, true, '应标记已批准');
+  assertEqual(approved.body.role, 'vip', '角色应为 vip');
+  assertEqual(approved.body.accountKind, 'guest-vip', '应保留游客 VIP 类型');
+
+  const after = await json(fetch(`${BASE}/api/projects`, {
+    headers: { 'X-Pagemake-Token': guest.token },
+  }));
+  assertEqual(after.body.role, 'vip', '原 token 应立即读到 VIP');
+  assertEqual(after.body.accountKind, 'guest-vip', '原 token 应立即读到 guest-vip');
+  const third = await paste(guest.token, { name: 'after', html: '<h1>after</h1>' });
+  assertEqual(third.status, 200, `批准后第 2 个项目应成功，实际 ${third.status} ${JSON.stringify(third.body)}`);
+  assertEqual(third.body.project.expiresAt, null, 'VIP 新项目应为长期链接');
+
+  const again = await adminAction(adminToken, {
+    action: 'reviewVIPRequest',
+    userId: guest.userId,
+    approve: true,
+  });
+  assertEqual(again.status, 409, '重复审核应被拒绝');
+  assertEqual(again.body.error, 'VIP_REQUEST_ALREADY_REVIEWED', '错误码应为已审核');
+});
+
+await test('后台驳回 VIP 申请：保留游客限制，可带原因', async () => {
+  const guest = await guestLogin('vip-request-reject');
+  const keep = await paste(guest.token, { name: 'keep', html: '<h1>keep</h1>' });
+  assertEqual(keep.status, 200, '驳回前应能建第 1 个项目');
+  await json(fetch(`${BASE}/api/vip-request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Pagemake-Token': guest.token },
+    body: JSON.stringify({ note: '批量建站' }),
+  }));
+
+  const rejected = await adminAction(adminToken, {
+    action: 'reviewVIPRequest',
+    userId: guest.userId,
+    approve: false,
+    note: '用途不符合规范',
+  });
+  assertEqual(rejected.status, 200, '驳回应成功');
+  assertEqual(rejected.body.approved, false, '应标记未批准');
+
+  const status = await json(fetch(`${BASE}/api/vip-request`, {
+    headers: { 'X-Pagemake-Token': guest.token },
+  }));
+  assertEqual(status.body.request.status, 'rejected', '状态应为 rejected');
+  assertEqual(status.body.request.reviewNote, '用途不符合规范', '应记录驳回原因');
+
+  const stillLimited = await paste(guest.token, { name: 'still', html: '<h1>x</h1>' });
+  assertEqual(stillLimited.status, 403, '驳回后第 2 个项目应被拒绝');
+  assertEqual(stillLimited.body.error, 'GUEST_LIMIT', '驳回后仍受游客限制');
+
+  // 被驳回后可重新提交，覆盖上一次申请
+  const resubmit = await json(fetch(`${BASE}/api/vip-request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Pagemake-Token': guest.token },
+    body: JSON.stringify({ note: '已了解规范，用于个人作品' }),
+  }));
+  assertEqual(resubmit.status, 200, '被驳回后应能重新提交');
+  assertEqual(resubmit.body.request.status, 'pending', '重新提交应为 pending');
+});
+
+await test('审核不存在的申请：404', async () => {
+  const ghost = await guestLogin('vip-request-ghost');
+  const res = await adminAction(adminToken, {
+    action: 'reviewVIPRequest',
+    userId: ghost.userId,
+    approve: true,
+  });
+  assertEqual(res.status, 404, '没有申请记录应 404');
 });
 
 server.kill();

@@ -132,6 +132,8 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 | `POST /api/auth` | Sign in with Apple 换 7 天会话凭证 |
 | `POST /api/auth/guest` | 游客登录（设备 ID 免密，免费 Apple ID 兜底） |
 | `POST /api/auth/google` | Google 登录（校验 id_token） |
+| `GET /api/vip-request` | 读取当前账号的 VIP 升级申请状态（仅游客） |
+| `POST /api/vip-request` | 提交 / 重新提交 VIP 升级申请（仅普通游客，同 IP 每分 5 次） |
 | `POST /api/upload/init` | 初始化分片上传（校验线路选择，5MB 上限） |
 | `POST /api/upload/chunk` | 上传分片（600KB/片） |
 | `POST /api/upload/finish` | 完成上传，后台处理（processing → ready/failed） |
@@ -151,6 +153,8 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 - 未登录：只能浏览公开链接，不能创建、管理、看诊断详情、选线路
 - 创建网页必须登录（Apple / Google）或使用游客试用；游客由管理员升级 VIP 后保留原身份与作品
 - VIP 是现有 Apple / Google / 游客账号的附加权益，不提供独立 VIP 账号或邮箱密码登录
+- 升级链路：App 内设置页「升级 VIP」→ 提交申请（可附 300 字说明）→ 管理后台 `/admin`
+  审核（批准保留原 userId / token / 项目，权益即时生效；驳回可附原因并允许重新提交）
 - 单线路部署（自托管容器），创建时无需选择线路
 - 语言：跟随 iOS 系统语言（中文/英文，其他默认英文），不提供手动切换
 - 诊断详情是登录特权，未登录只显示「您的代码有错误」

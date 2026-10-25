@@ -145,3 +145,39 @@ struct AccountSnapshot: Decodable, Equatable {
     let role: AccountRole
     let accountKind: AccountKind
 }
+
+/// 游客 VIP 升级申请状态；状态由后端审核，客户端只展示结果。
+enum VIPUpgradeStatus: String, Codable {
+    case pending
+    case approved
+    case rejected
+}
+
+struct VIPUpgradeRequest: Decodable, Equatable {
+    let status: VIPUpgradeStatus
+    let note: String
+    let createdAt: Date?
+    let reviewedAt: Date?
+    let reviewNote: String
+
+    enum CodingKeys: String, CodingKey {
+        case status, note, createdAt, reviewedAt, reviewNote
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        status = try c.decode(VIPUpgradeStatus.self, forKey: .status)
+        note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
+        createdAt = Self.decodeDate(c, .createdAt)
+        reviewedAt = Self.decodeDate(c, .reviewedAt)
+        reviewNote = try c.decodeIfPresent(String.self, forKey: .reviewNote) ?? ""
+    }
+
+    private static func decodeDate(
+        _ c: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Date? {
+        guard let seconds = try? c.decode(Int.self, forKey: key) else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(seconds))
+    }
+}

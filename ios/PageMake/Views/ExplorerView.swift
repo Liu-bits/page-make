@@ -111,9 +111,9 @@ struct ExplorerView: View {
         VStack(spacing: 0) {
             addressBar
             Divider()
-            content
+            buildBar
             Divider()
-            statusBar
+            content
         }
         .navigationTitle(current.name)
         .navigationBarTitleDisplayMode(.inline)
@@ -135,13 +135,11 @@ struct ExplorerView: View {
                 }
                 .accessibilityLabel(L10n.string("explorer_new"))
             }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button {
-                    Task { await publish() }
-                } label: {
-                    if isPublishing {
-                        ProgressView()
-                    } else {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button {
+                        Task { await publish() }
+                    } label: {
                         Label(
                             current.publicURL == nil
                                 ? L10n.string("explorer_build")
@@ -149,15 +147,8 @@ struct ExplorerView: View {
                             systemImage: "hammer.fill"
                         )
                     }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(PageMakeTheme.coral)
-                .disabled(isPublishing)
-                .accessibilityLabel(current.publicURL == nil
-                                    ? L10n.string("explorer_build")
-                                    : L10n.string("explorer_rebuild"))
+                    .disabled(isPublishing)
 
-                Menu {
                     Button {
                         activeSheet = .preview
                     } label: {
@@ -475,6 +466,18 @@ struct ExplorerView: View {
                 Button(L10n.string("explorer_new_folder")) { activeSheet = .newFolder }
                     .buttonStyle(.bordered)
             }
+            Button {
+                Task { await publish() }
+            } label: {
+                Label(
+                    current.publicURL == nil
+                        ? L10n.string("explorer_build")
+                        : L10n.string("explorer_rebuild"),
+                    systemImage: "hammer.fill"
+                )
+            }
+            .buttonStyle(.bordered)
+            .disabled(isPublishing)
             Spacer()
         }
     }
@@ -493,51 +496,97 @@ struct ExplorerView: View {
         }
     }
 
-    private var statusBar: some View {
-        HStack(spacing: 12) {
-            Text(L10n.format("explorer_item_count", entries.folders.count + entries.files.count))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer()
+    /// 构建操作栏必须独立于导航栏和底栏：这两处在窄屏、动态字体或分享
+    /// 按钮较多时都会压缩子视图，用户会误以为「没有构建按钮」。
+    private var buildBar: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(current.publicURL == nil ? PageMakeTheme.gold : PageMakeTheme.sea)
+                            .frame(width: 7, height: 7)
+                        Text(current.publicURL == nil
+                             ? L10n.string("explorer_not_built")
+                             : L10n.string("explorer_built"))
+                            .font(.system(.caption, design: .rounded, weight: .bold))
+                            .foregroundStyle(PageMakeTheme.ink)
+                    }
+                    Text(entrySummary)
+                        .font(.caption2)
+                        .foregroundStyle(PageMakeTheme.inkSoft)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 6)
+
+                Button {
+                    Task { await publish() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if isPublishing {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "hammer.fill")
+                        }
+                        Text(isPublishing
+                             ? L10n.string("explorer_publishing")
+                             : (current.publicURL == nil
+                                ? L10n.string("explorer_build")
+                                : L10n.string("explorer_rebuild")))
+                            .font(.system(.caption, design: .rounded, weight: .bold))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(PageMakeTheme.coral,
+                                in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                .disabled(isPublishing)
+                .accessibilityLabel(current.publicURL == nil
+                                    ? L10n.string("explorer_build")
+                                    : L10n.string("explorer_rebuild"))
+            }
+
             if let url = current.publicURL {
-                Button {
-                    UIPasteboard.general.string = url.absoluteString
-                    alertItem = AlertItem(message: L10n.string("link_copied"), titleKey: "alert_tip")
-                } label: {
-                    Image(systemName: "doc.on.doc")
+                HStack(spacing: 8) {
+                    Text(url.absoluteString)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(PageMakeTheme.inkSoft)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    Button {
+                        UIPasteboard.general.string = url.absoluteString
+                        alertItem = AlertItem(message: L10n.string("link_copied"), titleKey: "alert_tip")
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .accessibilityLabel(L10n.string("copy_link"))
+                    Button {
+                        activeSheet = .qr
+                    } label: {
+                        Image(systemName: "qrcode")
+                    }
+                    .accessibilityLabel(L10n.string("qr_code"))
                 }
-                .accessibilityLabel(L10n.string("copy_link"))
-                Button {
-                    activeSheet = .qr
-                } label: {
-                    Image(systemName: "qrcode")
-                }
-                .accessibilityLabel(L10n.string("qr_code"))
+                .font(.caption)
+                .foregroundStyle(PageMakeTheme.inkSoft)
             }
-            Button {
-                Task { await publish() }
-            } label: {
-                if isPublishing {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Label(
-                        current.publicURL == nil
-                            ? L10n.string("explorer_build")
-                            : L10n.string("explorer_rebuild"),
-                        systemImage: "hammer.fill"
-                    )
-                    .font(.caption.bold())
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(PageMakeTheme.coral)
-            .controlSize(.small)
-            .disabled(isPublishing)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(.bar)
+        .padding(.vertical, 9)
+        .background(PageMakeTheme.surfaceSoft)
+    }
+
+    private var entrySummary: String {
+        if let entry = current.entryPath, !entry.isEmpty {
+            return L10n.format("explorer_entry_summary", entry)
+        }
+        return L10n.string("explorer_no_entry_summary")
     }
 
     // MARK: - 操作

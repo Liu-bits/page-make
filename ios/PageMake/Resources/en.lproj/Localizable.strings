@@ -257,6 +257,29 @@
 "account_guest_vip_detail" = "Guest VIP · permanent links and higher limits";
 "vip_active_hint" = "VIP benefits are active. Your account and projects are preserved.";
 "account_protected" = "Account and work are safely stored";
+"vip_upgrade_title" = "Upgrade to VIP";
+"vip_upgrade_subtitle" = "Keep your guest identity and projects while unlocking more projects, permanent links, and higher limits";
+"vip_request_action" = "Request upgrade";
+"vip_request_view" = "View request status";
+"vip_request_pending" = "Under review · Check back later";
+"vip_request_approved" = "VIP is active";
+"vip_request_rejected" = "Request declined. You can revise the note and submit again";
+"vip_request_rejected_reason" = "Request declined: %@";
+"vip_request_benefits_title" = "What you unlock";
+"vip_request_benefits" = "Upgrading keeps your account and work. VIP unlocks more projects, permanent public links, higher storage limits, and Project Mode.";
+"vip_request_pending_title" = "Request submitted";
+"vip_request_pending_detail" = "After review, this account refreshes automatically. No need to sign in again.";
+"vip_request_approved_title" = "Upgrade complete";
+"vip_request_approved_detail" = "This account is now VIP. Your identity and projects are preserved.";
+"vip_request_rejected_title" = "Request declined";
+"vip_request_rejected_detail" = "You can add more context and submit another request.";
+"vip_request_note_label" = "Notes (optional)";
+"vip_request_note_hint" = "Briefly describe how you plan to use the service, up to 300 characters.";
+"vip_request_submit" = "Submit upgrade request";
+"vip_request_guest_only" = "Only standard guest accounts can request an upgrade";
+"vip_request_submitted_title" = "Request submitted";
+"vip_request_submitted_message" = "After review, this account will be upgraded without signing in again.";
+"vip_request_privacy_note" = "No email account or password is created, and your application notes are not public.";
 
 // MARK: - Paste code (placeholders)
 "paste_css_placeholder" = "Optional: saved as the file you link (e.g. style.css)";
@@ -269,7 +292,7 @@
 "explorer_default_name" = "Untitled Project";
 "explorer_create" = "Create Blank Project";
 "explorer_empty_title" = "Empty Folder";
-"explorer_empty_hint" = "Easy steps: ① tap + to create index.html as your home page → ② add style.css if needed (no folders required) → ③ tap \"Build\" at top right";
+"explorer_empty_hint" = "Easy steps: ① tap + to create index.html as your home page → ② add style.css if needed (no folders required) → ③ tap the prominent \"Build\" button at the top of the page";
 "explorer_empty_folder" = "This folder is empty";
 "explorer_new" = "New";
 "explorer_new_file" = "New File";
@@ -301,6 +324,10 @@
 "explorer_link_section" = "Public Link";
 "explorer_build" = "Build";
 "explorer_rebuild" = "Rebuild";
+"explorer_not_built" = "Not built yet";
+"explorer_built" = "Published";
+"explorer_entry_summary" = "Entry: %@";
+"explorer_no_entry_summary" = "Add an HTML file to build";
 "explorer_publish" = "Publish Link";
 "explorer_republish" = "Update Published Content";
 "explorer_publishing" = "Publishing…";

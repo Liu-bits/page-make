@@ -77,6 +77,23 @@ export async function onRequest(context) {
   }
   feedback.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
+  // ---- VIP 升级申请（vipreq_ 前缀，按用户去重） ----
+  const vipRequests = [];
+  for (const key of await kvListAll(kv, 'vipreq_')) {
+    const record = await kv.get(key, { type: 'json' });
+    if (!record?.userId) continue;
+    const user = users.find((item) => item.userId === record.userId);
+    vipRequests.push({
+      ...record,
+      email: user?.email ?? null,
+      accountKind: user?.accountKind ?? record.accountKind ?? null,
+      role: user?.role ?? null,
+      projectCount: user?.projectCount ?? 0,
+      userStatus: user?.status ?? null,
+    });
+  }
+  vipRequests.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
   return ok({
     stats: {
       userCount: users.length,
@@ -84,9 +101,11 @@ export async function onRequest(context) {
       vipCount: users.filter((u) => u.role === 'vip').length,
       projectCount: projects.length,
       feedbackCount: feedback.length,
+      vipRequestCount: vipRequests.filter((item) => item.status === 'pending').length,
     },
     users: users.slice(0, 500),
     projects: projects.slice(0, 500),
     feedback: feedback.slice(0, 200),
+    vipRequests: vipRequests.slice(0, 200),
   });
 }

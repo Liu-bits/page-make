@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var showDocument: AppDocument?
     @State private var showDeleteAccountConfirm = false
     @State private var isDeletingAccount = false
+    @State private var showVIPApplication = false
 
     var body: some View {
         ZStack {
@@ -18,6 +19,9 @@ struct SettingsView: View {
                 VStack(spacing: 16) {
                     profileCard
                     if appState.isLoggedIn {
+                        if appState.session?.isGuestLimited == true {
+                            vipUpgradeCard
+                        }
                         usageCard
                     } else {
                         signInCard
@@ -43,6 +47,9 @@ struct SettingsView: View {
         }
         .sheet(item: $showDocument) { document in
             DocumentView(document: document)
+        }
+        .sheet(isPresented: $showVIPApplication) {
+            VIPUpgradeApplicationView()
         }
         .confirmationDialog(
             L10n.string("delete_account_confirm_title"),
@@ -131,6 +138,66 @@ struct SettingsView: View {
     }
 
     // MARK: - 用量
+
+    private var vipUpgradeCard: some View {
+        PageMakeCard {
+            VStack(alignment: .leading, spacing: 12) {
+                sectionHeading(
+                    icon: "crown.fill",
+                    title: L10n.string("vip_upgrade_title"),
+                    subtitle: L10n.string("vip_upgrade_subtitle"),
+                    tint: PageMakeTheme.gold
+                )
+
+                if let request = appState.vipUpgradeRequest {
+                    Label(vipRequestStatusText(request), systemImage: vipRequestStatusIcon(request))
+                        .font(.caption.bold())
+                        .foregroundStyle(vipRequestStatusColor(request))
+                }
+
+                Button {
+                    showVIPApplication = true
+                } label: {
+                    Label(
+                        appState.vipUpgradeRequest?.status == .pending
+                            ? L10n.string("vip_request_view")
+                            : L10n.string("vip_request_action"),
+                        systemImage: "arrow.up.right.circle.fill"
+                    )
+                }
+                .buttonStyle(PrimaryButtonStyle())
+            }
+        }
+    }
+
+    private func vipRequestStatusText(_ request: VIPUpgradeRequest) -> String {
+        switch request.status {
+        case .pending:
+            return L10n.string("vip_request_pending")
+        case .approved:
+            return L10n.string("vip_request_approved")
+        case .rejected:
+            return request.reviewNote.isEmpty
+                ? L10n.string("vip_request_rejected")
+                : L10n.format("vip_request_rejected_reason", request.reviewNote)
+        }
+    }
+
+    private func vipRequestStatusIcon(_ request: VIPUpgradeRequest) -> String {
+        switch request.status {
+        case .pending: return "clock.fill"
+        case .approved: return "checkmark.seal.fill"
+        case .rejected: return "xmark.circle.fill"
+        }
+    }
+
+    private func vipRequestStatusColor(_ request: VIPUpgradeRequest) -> Color {
+        switch request.status {
+        case .pending: return PageMakeTheme.gold
+        case .approved: return PageMakeTheme.sea
+        case .rejected: return PageMakeTheme.coral
+        }
+    }
 
     private var appearanceCard: some View {
         PageMakeCard {

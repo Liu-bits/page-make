@@ -11,6 +11,8 @@ final class AppState: ObservableObject {
     @Published var banInfo: BanInfo?
     /// 启动恢复会话时拉取项目失败：用于列表页非阻塞提示 + 重试，不弹全局弹窗
     @Published var projectsLoadError: String?
+    /// 当前游客的 VIP 升级申请状态；nil = 尚未提交或读取失败。
+    @Published var vipUpgradeRequest: VIPUpgradeRequest?
 
     private let auth = AuthService()
     private let googleAuth = GoogleAuthService()
@@ -111,6 +113,7 @@ final class AppState: ObservableObject {
         isRestoringProjects = false
         isRefreshingRole = false
         banInfo = nil
+        vipUpgradeRequest = nil
     }
 
     /// 删除账号：服务端清除全部项目与用户记录；成功后清空本地会话
@@ -182,6 +185,9 @@ final class AppState: ObservableObject {
     func loadStats() async {
         stats = try? await api.stats()
         await refreshAccountRole()
+        if session?.isGuestLimited == true {
+            await refreshVIPUpgradeRequest()
+        }
     }
 
     // MARK: - 项目模式
@@ -249,6 +255,46 @@ final class AppState: ObservableObject {
         defer { isRefreshingRole = false }
         guard let snapshot = try? await api.accountSnapshot() else { return }
         applyAccountSnapshot(snapshot, matching: existing)
+        // 角色变化时立即丢弃旧申请状态；仍为游客则后台加载一次最新审核结果。
+        if session?.isVIP == true {
+            vipUpgradeRequest = nil
+        } else {
+            await refreshVIPUpgradeRequest()
+        }
+    }
+
+    /// 读取游客升级申请状态。VIP / 普通登录账号不需要请求；游客才展示申请入口。
+    func refreshVIPUpgradeRequest() async {
+        guard let current = session, current.isGuestLimited else {
+            vipUpgradeRequest = nil
+            return
+        }
+        let expected = current
+        guard let request = try? await api.vipUpgradeRequest() else { return }
+        guard let latest = session,
+              latest.userId == expected.userId,
+              latest.token == expected.token,
+              latest.isGuestLimited else { return }
+        vipUpgradeRequest = request
+    }
+
+    /// 提交游客 VIP 升级申请；返回错误文案（nil = 成功）。
+    func submitVIPUpgradeRequest(note: String) async -> String? {
+        guard let current = session, current.isGuestLimited else {
+            return L10n.string("vip_request_guest_only")
+        }
+        do {
+            vipUpgradeRequest = try await api.submitVIPUpgradeRequest(note: note)
+            return nil
+        } catch let error as APIError {
+            if case .banned(let ban) = error {
+                banInfo = ban
+                return nil
+            }
+            return error.errorDescription
+        } catch {
+            return L10n.string("error_network")
+        }
     }
 
     /// 将服务端角色的最新快照合并到当前会话；不新建 token、不触碰项目数据。

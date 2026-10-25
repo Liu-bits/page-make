@@ -71,11 +71,13 @@ E:/Page-make/
 │   ├── admin.html           #   管理后台单页（/admin，PBKDF2 登录，token 存 sessionStorage）
 │   ├── api/                 #   API 路由
 │   │   ├── auth.js          #     Apple 登录（identityToken → JWKS 验签）
-│   │   ├── auth/            #     delete(删账号) / google / guest / login(VIP)
+│   │   ├── auth/            #     delete(删账号) / google / guest（邮箱密码已删除）
+│   │   ├── vip-request.js   #     游客 VIP 升级申请（GET 状态 / POST 提交）
 │   │   ├── config.js        #     公开配置 + JWKS 诊断（source=live/disk/seed）
 │   │   ├── feedback.js      #     用户反馈（= 封禁申诉入口）
-│   │   ├── admin/           #     login / action(ban/unban/deleteUser/createVIPUser/
-│   │   │                    #       deleteVIPUser/deleteProject/setPassword) / overview
+│   │   ├── admin/           #     login / action(ban/unban/deleteUser/upgradeVIP/
+│   │   │                    #       downgradeVIP/reviewVIPRequest/deleteProject/
+│   │   │                    #       purgePasswordUsers/setPassword) / overview
 │   │   ├── projects.js      #     项目列表
 │   │   ├── projects/        #     paste(粘贴建站) / explorer(项目模式) / [id].js(rename/delete)
 │   │   │   └── [id]/        #       files(GET/POST) / refresh(刷新区间链接) / status
@@ -84,7 +86,8 @@ E:/Page-make/
 │   ├── lib/                 #   核心库
 │   │   ├── kv.js            #     KV 抽象（EdgeOne KV / DiskKV 双实现）+ keys() 键空间
 │   │   ├── state.js         #     全部业务常量（见第 4 节）
-│   │   ├── session.js       #     会话（7 天 TTL）、requireAuth、isBanned、isVIPUser
+│   │   ├── session.js       #     会话（7 天 TTL）、requireAuth、isBanned、isVIPUser、
+│   │   │                    #     isGuestLimited（权益判断统一入口）
 │   │   ├── password.js      #     PBKDF2（60 万轮+盐+恒定时间比较）
 │   │   ├── jwks.js          #     JWKS 三级加载器（live 5s → 磁盘缓存 → 内置种子）
 │   │   ├── google-auth.js / apple-auth.js   # 登录验签
@@ -96,19 +99,19 @@ E:/Page-make/
 │   ├── p/                   #   公开页路由：/p/<projectId>（含 [[default]] 宽容回退）
 │   └── data/                #   JWKS 内置种子（apple/google-jwks.json，随镜像分发）
 ├── docker/server.mjs        # 容器入口：Node HTTP + DiskKV，ROOT 自动探测两种布局
-├── ios/PageMake/            # iOS 端（37 个 Swift 文件）
-│   ├── App/AppState.swift   #   全局状态、登录（Apple/Google/邮箱/游客）、封禁弹窗
+├── ios/PageMake/            # iOS 端（36 个 Swift 文件）
+│   ├── App/AppState.swift   #   全局状态、登录（Apple/Google/游客）、VIP 申请、封禁弹窗
 │   ├── Models/              #   Project / Session / CreateSource / PasteTemplates(三套模板)
 │   ├── Services/            #   APIClient(自定义头 X-Pagemake-Token) / AuthService /
 │   │                        #   GoogleAuthService(ASWebAuthenticationSession+PKCE) /
 │   │                        #   KeychainStore(deviceId 持久化) / UploadService
 │   ├── Utilities/           #   Config(baseURL/ClientID) / L10n / PlainLanguage(错误码→人话) /
-│   │                        #   DocumentStore(中英隐私政策) / FileValidator / LogStore /
-│   │                        #   PasswordStrength(客户端与服务端同规则预检)
+│   │                        #   DocumentStore(中英隐私政策) / FileValidator / LogStore
 │   ├── Views/               #   RootView / ProjectListView(搜索排序重命名) / FilePickerView
 │   │                        #   (上传+粘贴+模板) / ExplorerView(虚拟文件夹) / PreviewView /
 │   │                        #   WebView / QRCodeView / BannedView / SettingsView
-│   │                        #   (统计/删账号/游客提示) / VIPLoginView / UploadQueueView
+│   │                        #   (统计/删账号/游客提示/VIP 申请) / UploadQueueView /
+│   │                        #   VIPUpgradeApplicationView
 │   ├── Resources/           #   Documents/(中英 .txt) + en/zh-Hans.lproj（各 292 键，0 重复）
 │   ├── PageMake.entitlements  # applesignin（免费 Apple ID 用不了，游客登录兜底）
 │   └── PrivacyInfo.xcprivacy  # 隐私清单（过审）
@@ -133,10 +136,21 @@ E:/Page-make/
 - Sign in with Apple（entitlement 已配；免费 Apple ID 无法启用该能力 → 游客兜底）
 - Google OAuth（iOS Client ID `242453650088-...apps.googleusercontent.com`，已填 Config +
   后端 aud；ASWebAuthenticationSession + PKCE 手写，无 SDK）
-- VIP 邮箱密码（仅管理后台发号；PBKDF2 60 万轮哈希，旧哈希按记录轮数兼容验证；
-  用户不存在/非 VIP/密码错误统一错误码并做等代价计算，降低枚举与时序泄漏）
+- VIP（权益等级，非独立账号）：后台 upgradeVIP / reviewVIPRequest 对**现有** Apple/Google/
+  游客账号原地授予；升级后保留 userId、token、项目与作品，权益即时生效
 - 游客登录（deviceId → SHA-256 派生 `guest_<hash>`；**限 1 个项目；链接 10 分钟过期**；
-  退出登录时清除 deviceId 重置身份；没有 App 内普通邮箱注册，邮箱密码仅用于后台发放的 VIP）
+  退出登录时清除 deviceId 重置身份；App 内**不提供邮箱注册与邮箱密码登录**）
+
+**VIP 升级申请链路（App 内唯一升级入口）**
+- App：设置页「升级 VIP」卡 → `VIPUpgradeApplicationView` 提交（可选 300 字说明）→ 轮询状态
+- 接口：`GET /api/vip-request` 读当前状态；`POST /api/vip-request` 提交/重提交（同 IP 每分 5 次）
+- 规则：仅 `isGuestLimited()` 的普通游客可提交；已是 VIP → 409 `ALREADY_VIP`；
+  pending 重复提交返回原记录（`duplicate: true`，不覆盖说明）；approved 后再提交 409；
+  rejected 可重新提交
+- 后台：`/admin` 概览扫描 `vipreq_` 前缀列出申请（含 email/accountKind/role/项目数/账号状态）
+  与 `stats.vipRequestCount`；`reviewVIPRequest { userId, approve, note }` 审核，批准走同一套
+  `upgradeVIP`（原地写 role=vip + vipSince、删 isTest、**不换 userId、不销毁会话**），
+  驳回写 status=rejected + reviewNote；非 pending 记录 409 `VIP_REQUEST_ALREADY_REVIEWED`
 
 **建站（3 种方式）**
 - 上传 ZIP：分片 600KB × N（base64 后约 800KB/片），项目总上限 5MB；异步处理 + 轮询
@@ -160,16 +174,19 @@ E:/Page-make/
 - 封号 L1-L4（必填原因，用户端 BannedView 可见原因/等级/解封时间；封号同时全部项目
   下架，解封自动恢复——注意索引 key 取项目 ID 必须 decodeKey，曾有二次编码 bug）
 - 删除账号（deleteUser：用户 + 全部项目含文件 + 全部会话 = 强制下线）
-- VIP 用户（createVIPUser：管理员指定邮箱+密码；role=vip **豁免粘贴/上传/文件三处
-  大小上限**；deleteVIPUser 仅允许删 VIP；历史 isTest 账号只读兼容，不迁移也不丢失）
-- 解封前所有登录入口（邮箱/Google/游客）均拦截
+- VIP 用户（upgradeVIP 将现有 Apple/Google/游客账号原地升级，保留 userId/token/项目；
+  role=vip **豁免粘贴/上传/文件三处大小上限**；downgradeVIP 降级后账号与作品保留、
+  限制恢复；历史 isTest 账号只读兼容，不迁移也不丢失）
+- VIP 升级申请审核（vipRequests 表 + 待审计数，见上「VIP 升级申请链路」）
+- 解封前所有登录入口（Apple/Google/游客）均拦截
 
 **iOS 端**
 - Liquid Glass（iOS 26+ 原生 API：GlassEffectContainer / .glassEffect / .glassProminent）
 - 项目列表搜索 + 排序（最新/最旧/名称/大小）+ 滑动重命名
 - 二维码分享（CoreImage CIFilter.qrCodeGenerator + ShareLink）
 - WebView 预览（reloadToken、轮询 150 次上限、runtimeErrors 去重上限 50）
-- 中英本地化（各 292 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
+- 中英本地化（各 310 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
+- 设置页 VIP 升级卡（皇冠图标 + 申请状态 + 申请/查看进度）；项目模式顶部固定构建栏
 - 隐私政策/用户协议 App 内展示（Documents 双语文档，文件名后缀区分语言）
 
 ### 4.2 业务常量（backend/lib/state.js，与 iOS 端保持一致）
@@ -189,16 +206,16 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 132 项 + 本地化检查，提交前必须全绿）
+## 5. 测试体系（共 141 项 + 本地化检查，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
 | `node dev/run-tests.mjs` | 41 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容/异常参数、密码强度校验【leetspeak 变形/反向键盘对角线】、MIME 类型映射） |
-| `node dev/test-server.mjs` | 44 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 ZIP PHP 过滤、历史 PHP 入口 404、zip 炸弹端到端、Explorer 空目录/重命名/目录迁移/冲突、反馈限流、删号 KV 残留断言、注册下线、VIP 登录、登录 429 限速） |
+| `node dev/test-server.mjs` | 43 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 ZIP PHP 过滤、历史 PHP 入口 404、zip 炸弹端到端、Explorer 空目录/重命名/目录迁移/冲突、反馈限流、删号 KV 残留断言、登录 429 限速） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 25 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
-| `node dev/test-admin.mjs` | 14 | 后台（随机初始密码/旧默认密码兼容/哈希存储/后台转义/弱口令拒绝/VIP 权益/历史 isTest 统计兼容/封禁下架+禁登/解封恢复/删号） |
-| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 292 键） |
+| `node dev/test-admin.mjs` | 24 | 后台（随机初始密码/旧默认密码兼容/哈希存储/后台转义/弱口令拒绝/VIP 权益/历史 isTest 统计兼容/封禁下架+禁登/解封恢复/删号/邮箱密码入口彻底删除/后台不再暴露历史邮箱清理/**VIP 升级申请：提交去重/仅普通游客/批准即时生效/驳回保留限制可重提/审核不存在 404**） |
+| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 310 键） |
 
 > Node 优先用 `mcp__codex_app__load_workspace_dependencies` 返回的运行时绝对路径；
 > AGENTS 里旧版 `C:/Users/liu20/.workbuddy-ai/.../node.exe` 可能已不存在。
@@ -406,3 +423,40 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
      解法：先 `edge.user.claimTab` 重载页面，等提示消失再验证
    - Edge 扩展通道会断（`Browser is not available`），重启 Edge 后 browser id
      会变（3→4），需重新 `agent.browsers.list()` 取新 id
+
+---
+
+## 11. 历史里程碑（2026-10-25）
+
+8. **游客无法升级 → VIP 升级申请链路全通（App 内唯一升级入口）**
+   - 问题：后端 VIP 只能由管理后台 `upgradeVIP` 手动发号，App 内**没有任何升级入口**，
+     游客在客户端完全看不到「升级」这件事，只能等管理员操作。这是「游客无法升级」
+     的直接原因（不是接口不通，是没有入口）。
+   - 新增 `backend/api/vip-request.js`：`GET` 读状态 / `POST` 提交。仅 `isGuestLimited()`
+     的普通游客可提交；VIP → 409 `ALREADY_VIP`；未登录 401；`note` 上限 300 字；
+     复用 `lib/ratelimit.js`（同 IP 每分 5 次，组键 `userId+IP`）。
+     pending 重复提交返回原记录（`duplicate: true`，不覆盖说明）；approved 后再提交 409
+     不覆盖留档；rejected 后可重新提交回 pending。
+   - 后台 `/admin`：概览扫描 `vipreq_` 前缀返回 `vipRequests`（email/accountKind/role/
+     projectCount/userStatus）+ `stats.vipRequestCount`（pending 数）；新增「VIP 升级申请」
+     卡片与 `reviewVIPRequest { userId, approve, note }`。批准走同一套 `upgradeVIP`
+     （原地写 role=vip + vipSince、删 isTest、**不换 userId、不销毁会话**），
+     驳回写 status=rejected + reviewNote；非 pending → 409 `VIP_REQUEST_ALREADY_REVIEWED`，
+     记录不存在 404。**移除了「清理历史邮箱密码账号」按钮与 `purgePasswordUsers()` 前端函数**；
+     后端 action 与 `lib/admin-users.js` 保留未删（有意决定，别顺手删）。
+   - iOS：`Session.swift` 加 `VIPUpgradeStatus`/`VIPUpgradeRequest`；`APIClient` 加
+     `vipUpgradeRequest()` / `submitVIPUpgradeRequest(note:)`；`AppState` 加
+     `vipUpgradeRequest` + `refreshVIPUpgradeRequest()` / `submitVIPUpgradeRequest(note:)`
+     （带 session userId/token 防旧响应覆盖新账号，同 `applyAccountSnapshot` 思路），
+     `loadStats()` 与 `refreshAccountRole()` 只在 `isGuestLimited` 时拉取，
+     已升级为 VIP 时置空；新增 `VIPUpgradeApplicationView`；`SettingsView` 在登录且
+     `isGuestLimited` 时插入 `vipUpgradeCard`。
+   - 项目模式：**删除底部 statusBar**，改为内容区上方独立固定 `buildBar`
+     （未构建/已发布圆点 + 入口摘要 + 珊瑚色「构建/重新构建」主按钮；已发布时第二行
+     显示 URL + 复制 + 二维码），导航栏 trailing 菜单保留构建项作冗余入口。
+     解决窄屏/动态字体/分享按钮把构建按钮挤出屏幕的问题。
+   - 测试新增 5 组（test-admin 14→24），全量 132→141 项；本地化 292→310 键。
+   - **坑 1**：`SettingsView.accountActions` 里原有的 `guest_signout_hint`（游客链接
+     10 分钟失效/退出重置身份提示）被误删后未恢复 → 游客不知道退出会重置身份。已补回。
+   - **坑 2**：驳回用例里直接粘贴会成功（该游客此前没建过项目，第一次本来就不受限），
+     断言 `GUEST_LIMIT` 得到 `undefined`。写「仍受限」用例必须先建满第 1 个项目。

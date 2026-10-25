@@ -69,12 +69,19 @@
 
     <div class="card"><div class="stats" id="stats"></div></div>
 
-    <h2>VIP 权益（升级现有账号，不创建邮箱账号）</h2>
+    <h2>VIP 升级申请</h2>
+    <div class="card" style="overflow-x:auto">
+      <p class="muted">用户在 App 内提交申请后，可在这里审核。批准会原地升级现有账号，保留 userId、项目与当前会话。</p>
+      <table id="vipRequestTable" style="margin-top:10px">
+        <thead><tr><th>账号</th><th>类型</th><th>说明</th><th>申请时间</th><th>操作</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <h2>VIP 权益（升级现有账号）</h2>
     <div class="card">
       <p class="muted">在下表点击“升级 VIP”即可让该 Apple / Google / 游客账号获得长期链接与更高容量；
         userId、项目、会话均保持不变。</p>
-      <p class="muted" style="margin-top:6px">历史邮箱密码账号不再具备登录能力，可在此彻底清理其账号、项目与会话。</p>
-      <button class="red sm" style="margin-top:10px" onclick="purgePasswordUsers()">清理历史邮箱密码账号</button>
       <table id="vipTable" style="margin-top:10px">
         <thead><tr><th>账号</th><th>类型</th><th>项目</th><th>升级时间</th><th>操作</th></tr></thead>
         <tbody></tbody>
@@ -165,8 +172,16 @@ async function load() {
 function render(d) {
   document.getElementById('stats').innerHTML = [
     ['账户', d.stats.userCount], ['游客', d.stats.guestCount], ['VIP', d.stats.vipCount || 0],
-    ['项目', d.stats.projectCount], ['反馈', d.stats.feedbackCount],
+    ['待审', d.stats.vipRequestCount || 0], ['项目', d.stats.projectCount], ['反馈', d.stats.feedbackCount],
   ].map(([l, v]) => `<div class="stat"><b>${escapeHtml(v)}</b><span>${escapeHtml(l)}</span></div>`).join('');
+
+  const pendingRequests = (d.vipRequests || []).filter((r) => r.status === 'pending');
+  document.querySelector('#vipRequestTable tbody').innerHTML = pendingRequests.map((r) =>
+    `<tr><td>${escapeHtml(r.email || r.userId)}</td><td>${escapeHtml(kindLabel(r.accountKind))}</td>
+     <td>${escapeHtml(r.note || '—')}</td><td>${escapeHtml(fmtTime(r.createdAt))}</td>
+     <td><button class="sm green" data-user-id="${escapeHtml(r.userId)}" onclick="reviewVIP(this.dataset.userId, true)">批准</button>
+     <button class="sm red" data-user-id="${escapeHtml(r.userId)}" onclick="reviewVIP(this.dataset.userId, false)">驳回</button></td></tr>`
+  ).join('') || '<tr><td colspan="5" class="muted">暂无待审核申请</td></tr>';
 
   const vipUsers = d.users.filter(u => u.role === 'vip');
   document.querySelector('#vipTable tbody').innerHTML = vipUsers.map(u =>
@@ -268,10 +283,12 @@ function downgradeVIP(userId) {
     .catch(e => msg(e.message, true));
 }
 
-function purgePasswordUsers() {
-  if (!confirm('彻底清理全部历史邮箱密码账号？\n其项目、文件与会话会一并删除，且不可恢复。')) return;
-  api(API.action, { action: 'purgePasswordUsers' })
-    .then((r) => { msg(`已清理 ${fmtNumber(r.deleted)} 个历史邮箱密码账号`); load(); })
+function reviewVIP(userId, approve) {
+  const label = approve ? '批准' : '驳回';
+  if (!confirm(`${label}账号 ${userId} 的 VIP 申请？`)) return;
+  const note = approve ? '' : (prompt('驳回原因（可选，仅管理员可见）：') || '');
+  api(API.action, { action: 'reviewVIPRequest', userId, approve, note })
+    .then(() => { msg(approve ? '已批准，用户无需重新登录' : '已驳回'); load(); })
     .catch(e => msg(e.message, true));
 }
 

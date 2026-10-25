@@ -257,6 +257,29 @@
 "account_guest_vip_detail" = "游客 VIP · 长期链接与更高容量";
 "vip_active_hint" = "VIP 权益已生效，当前账号与作品均已保留";
 "account_protected" = "账号与作品已安全保存";
+"vip_upgrade_title" = "升级 VIP";
+"vip_upgrade_subtitle" = "保留当前游客身份与作品，申请更多项目、长期链接和更高容量";
+"vip_request_action" = "申请升级";
+"vip_request_view" = "查看申请进度";
+"vip_request_pending" = "申请审核中 · 请稍后回来查看";
+"vip_request_approved" = "VIP 已生效";
+"vip_request_rejected" = "申请未通过，可修改说明后重新提交";
+"vip_request_rejected_reason" = "申请未通过：%@";
+"vip_request_benefits_title" = "升级后可以做什么";
+"vip_request_benefits" = "升级不会更换账号，也不会删除作品。VIP 可创建更多项目、使用长期公开链接与更大存储空间，并可使用项目模式。";
+"vip_request_pending_title" = "申请已提交";
+"vip_request_pending_detail" = "管理员审核后，当前账号会自动刷新权益，无需重新登录。";
+"vip_request_approved_title" = "升级成功";
+"vip_request_approved_detail" = "当前账号已升级为 VIP，身份与作品均已保留。";
+"vip_request_rejected_title" = "申请未通过";
+"vip_request_rejected_detail" = "你可以补充说明后再次提交。";
+"vip_request_note_label" = "申请说明（可选）";
+"vip_request_note_hint" = "可简要说明用途或升级需求，最多 300 字。";
+"vip_request_submit" = "提交升级申请";
+"vip_request_guest_only" = "只有普通游客账号需要申请升级";
+"vip_request_submitted_title" = "申请已提交";
+"vip_request_submitted_message" = "管理员审核后会为当前账号升级，无需重新登录。";
+"vip_request_privacy_note" = "不会创建邮箱账号或密码，也不会公开你的申请说明。";
 
 // MARK: - 粘贴代码（占位符）
 "paste_css_placeholder" = "可选：保存为你在 <link> 里引用的文件名（如 style.css）";
@@ -269,7 +292,7 @@
 "explorer_default_name" = "未命名项目";
 "explorer_create" = "创建空白项目";
 "explorer_empty_title" = "空文件夹";
-"explorer_empty_hint" = "照着做就行：① 点右上角 + 新建 index.html 作为主页 → ② 需要样式再新建 style.css（不用建文件夹）→ ③ 点右上角「构建」";
+"explorer_empty_hint" = "照着做就行：① 点右上角 + 新建 index.html 作为主页 → ② 需要样式再新建 style.css（不用建文件夹）→ ③ 点页面顶部醒目的「构建」";
 "explorer_empty_folder" = "这个文件夹是空的";
 "explorer_new" = "新建";
 "explorer_new_file" = "新建文件";
@@ -301,6 +324,10 @@
 "explorer_link_section" = "公开链接";
 "explorer_build" = "构建";
 "explorer_rebuild" = "重新构建";
+"explorer_not_built" = "尚未构建";
+"explorer_built" = "已发布";
+"explorer_entry_summary" = "入口：%@";
+"explorer_no_entry_summary" = "添加 HTML 后即可构建";
 "explorer_publish" = "生成链接";
 "explorer_republish" = "更新链接内容";
 "explorer_publishing" = "正在生成链接…";

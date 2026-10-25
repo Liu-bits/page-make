@@ -9,6 +9,7 @@
 //   upgradeVIP        { userId }                     将现有 Apple/Google/游客账号升级为 VIP
 //   downgradeVIP      { userId }                     取消 VIP（保留账号与项目）
 //   deleteVIPUser     { userId }                     删除 VIP 用户（= deleteUser，仅允许 VIP）
+//   reviewVIPRequest  { userId, approve, note? }     审核游客 VIP 升级申请
 //   purgePasswordUsers {}                             删除历史邮箱密码账号及其数据与会话
 // 合规：封号必须带原因（用户端可见），解封后项目自动恢复上架；用户可通过 App 内反馈申诉
 import { kvGet, kvPut, kvDel, kvListAll, keys, nowSeconds } from '../../lib/kv.js';
@@ -126,6 +127,43 @@ async function downgradeVIP(kv, { userId }) {
   return ok({ downgraded: true, userId });
 }
 
+/** 审核 VIP 升级申请：批准时调用同一套 upgradeVIP，保留账号、项目与会话。 */
+async function reviewVIPRequest(kv, { userId, approve, note }) {
+  if (typeof userId !== 'string' || !userId) return fail('BAD_REQUEST', 400);
+  const record = await kvGet(kv, keys.vipRequest(userId));
+  if (!record) return fail('NOT_FOUND', 404);
+  if (record.status !== 'pending') return fail('VIP_REQUEST_ALREADY_REVIEWED', 409);
+
+  const user = await kvGet(kv, keys.user(userId));
+  if (!user) return fail('NOT_FOUND', 404);
+  const cleanNote = typeof note === 'string' ? note.trim().slice(0, 200) : '';
+  const now = nowSeconds();
+
+  if (approve === true) {
+    if (!isVIPUser(user)) {
+      user.role = 'vip';
+      user.vipSince = now;
+      delete user.isTest;
+      await kvPut(kv, keys.user(userId), user);
+    }
+    record.status = 'approved';
+  } else {
+    record.status = 'rejected';
+  }
+  record.reviewedAt = now;
+  record.reviewNote = cleanNote;
+  await kvPut(kv, keys.vipRequest(userId), record);
+  return ok({
+    reviewed: true,
+    approved: approve === true,
+    userId,
+    role: isVIPUser(user) ? 'vip' : 'user',
+    accountKind: user.userId?.startsWith('guest_')
+      ? (isVIPUser(user) ? 'guest-vip' : 'guest')
+      : (isVIPUser(user) ? 'vip' : 'user'),
+  });
+}
+
 /** 删除项目（管理员强制下架清理） */
 async function deleteProjectAdmin(kv, { projectId }) {
   const project = await kvGet(kv, keys.project(projectId));
@@ -165,6 +203,8 @@ export async function onRequest(context) {
       return downgradeVIP(kv, body);
     case 'deleteVIPUser':
       return deleteUserFromAdmin(kv, { ...body, requireVIP: true });
+    case 'reviewVIPRequest':
+      return reviewVIPRequest(kv, body);
     case 'purgePasswordUsers':
       return ok({ deleted: await purgePasswordUsers(kv) });
     case 'deleteFeedback': {

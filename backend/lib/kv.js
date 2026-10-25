@@ -34,6 +34,7 @@ export const keys = {
   siteMeta: (projectId) => `meta_${encodeKey(projectId)}`,
   log: (id) => `log_${encodeKey(id)}`,
   feedback: (id) => `feedback_${encodeKey(id)}`,
+  vipRequest: (userId) => `vipreq_${encodeKey(userId)}`,
   ban: (id) => `ban_${encodeKey(id)}`,
   config: (name) => `config_${encodeKey(name)}`,
 };

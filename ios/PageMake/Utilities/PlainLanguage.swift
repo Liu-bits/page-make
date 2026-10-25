@@ -15,6 +15,7 @@ enum PlainLanguage {
         case "INVALID_GOOGLE_TOKEN": return "error_invalid_google_token"
         case "GUEST_LIMIT": return "error_guest_limit"
         case "GUEST_NO_EXPLORER": return "error_guest_no_explorer"
+        case "VIP_REQUEST_GUEST_ONLY": return "vip_request_guest_only"
         default: return ""
         }
     }

@@ -429,6 +429,33 @@ final class APIClient {
         return try decoder.decode(ProjectPayload.self, from: data).project
     }
 
+    // MARK: - VIP 升级申请
+
+    struct VIPRequestPayload: Decodable {
+        let request: VIPUpgradeRequest?
+    }
+
+    struct VIPRequestEnvelope: Encodable {
+        let note: String
+    }
+
+    /// 读取当前账号的升级申请状态。
+    func vipUpgradeRequest() async throws -> VIPUpgradeRequest? {
+        let data = try await request("/api/vip-request")
+        return try decoder.decode(VIPRequestPayload.self, from: data).request
+    }
+
+    /// 提交升级申请；重复提交时后端返回原记录，不会生成重复工单。
+    @discardableResult
+    func submitVIPUpgradeRequest(note: String) async throws -> VIPUpgradeRequest {
+        let body = try encoder.encode(VIPRequestEnvelope(note: note))
+        let data = try await request("/api/vip-request", method: "POST", body: body)
+        guard let result = try decoder.decode(VIPRequestPayload.self, from: data).request else {
+            throw APIError.decoding
+        }
+        return result
+    }
+
     // MARK: - 账号删除（App Store 5.1.1(v) 要求）
 
     struct DeleteAccountRequest: Encodable {
