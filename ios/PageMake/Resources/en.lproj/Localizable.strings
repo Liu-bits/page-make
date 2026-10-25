@@ -100,12 +100,6 @@
 
 // MARK: - Provider selection
 "choose_provider" = "Choose Hosting Provider";
-"provider_intro" = "You must choose a provider for every deployment (no default, no memory of last choice)";
-"provider_edgeone_name" = "EdgeOne";
-"provider_edgeone_detail" = "Faster in China: fast domestically, average overseas — for mainly Chinese audiences";
-"provider_cloudflare_name" = "Cloudflare";
-"provider_cloudflare_detail" = "Global first choice: fast overseas, unstable in China — for mainly international audiences";
-"provider_no_default" = "No default, no memory of last choice";
 "next_step" = "Next";
 
 // MARK: - Upload queue

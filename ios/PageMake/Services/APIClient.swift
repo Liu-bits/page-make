@@ -17,7 +17,7 @@ enum APIError: LocalizedError, Equatable {
     }
 }
 
-/// 后端 API 客户端（EdgeOne Pages Functions）
+/// 后端 API 客户端
 final class APIClient {
     static let shared = APIClient()
 
@@ -51,7 +51,7 @@ final class APIClient {
         guard let url = URL(string: path, relativeTo: baseURL) else {
             throw APIError.invalidURL
         }
-        // 读请求允许短暂重试：ModelScope 冷启动时网关会先返回 502/503，
+        // 读请求允许短暂重试：服务冷启动时网关会先返回 502/503，
         // 首开直接弹“网络出错”其实是可恢复的启动抖动。写请求绝不自动重试，
         // 避免重复创建项目或重复上传分片。
         let attempts = max(1, maxAttempts ?? ((method == "GET" || method == "HEAD") ? 3 : 1))
@@ -68,7 +68,7 @@ final class APIClient {
                 if let contentType { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
             }
             if requiresAuth, let token {
-                // 自定义头：ModelScope 网关会拦截 Authorization（误判为 SDK Token）
+                // 自定义头：网关会拦截 Authorization（误判为 SDK Token）
                 req.setValue(token, forHTTPHeaderField: "X-Pagemake-Token")
             }
 
@@ -213,7 +213,7 @@ final class APIClient {
         return AccountSnapshot(role: role, accountKind: accountKind)
     }
 
-    /// 删除项目（ModelScope 网关拦截 DELETE 方法，改用 POST + action）
+    /// 删除项目（网关拦截 DELETE 方法，改用 POST + action）
     func deleteProject(_ id: String) async throws {
         let body = try encoder.encode(ActionRequest(action: "delete"))
         _ = try await request("/api/projects/\(id)", method: "POST", body: body)
@@ -267,7 +267,7 @@ final class APIClient {
         return try decoder.decode(ProjectStatusResponse.self, from: data)
     }
 
-    // MARK: - 上传（分片，规避 EdgeOne Functions 1MB body 限制）
+    // MARK: - 上传（分片，规避单请求 1MB body 限制）
 
     struct UploadInitRequest: Encodable {
         let provider: String

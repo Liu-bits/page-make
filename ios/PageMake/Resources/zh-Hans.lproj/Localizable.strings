@@ -100,12 +100,6 @@
 
 // MARK: - 线路选择
 "choose_provider" = "选择托管线路";
-"provider_intro" = "每次创建都必须选择线路（不设默认值，不记住上次选择）";
-"provider_edgeone_name" = "EdgeOne";
-"provider_edgeone_detail" = "中国用户更快：国内访问快、海外一般，适合主要给国内用户看";
-"provider_cloudflare_name" = "Cloudflare";
-"provider_cloudflare_detail" = "国际首选：海外访问快、国内不稳定，适合主要给海外用户看";
-"provider_no_default" = "不设默认值，不记住上次选择";
 "next_step" = "下一步";
 
 // MARK: - 上传队列

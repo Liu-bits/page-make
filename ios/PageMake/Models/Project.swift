@@ -1,28 +1,24 @@
 import Foundation
 
-/// 托管线路
+/// 托管线路：当前只有单一私有部署线路。
+///
+/// 早期版本曾支持 EdgeOne / Cloudflare 两条线路，后端已彻底移除（`PROVIDERS`
+/// 只剩 local，服务端不再读取 provider 字段做任何分支）。这里同样只保留 local：
+/// 历史项目里若存着 edgeone / cloudflare，解码时统一归一为 local——那些项目
+/// 实际就是由当前这套服务提供的，界面显示别的线路名会让用户以为还能选，
+/// 而选择器早已不存在，等于给了个点了没反应的假入口。
 enum HostProvider: String, Codable, CaseIterable, Identifiable {
-    /// 私有部署线路——当前唯一线路
     case local
-    case edgeone
-    case cloudflare
 
     var id: String { rawValue }
 
-    var titleKey: String {
-        switch self {
-        case .local: return "provider_local_name"
-        case .edgeone: return "provider_edgeone_name"
-        case .cloudflare: return "provider_cloudflare_name"
-        }
-    }
+    var titleKey: String { "provider_local_name" }
 
-    var detailKey: String {
-        switch self {
-        case .local: return "provider_local_detail"
-        case .edgeone: return "provider_edgeone_detail"
-        case .cloudflare: return "provider_cloudflare_detail"
-        }
+    var detailKey: String { "provider_local_detail" }
+
+    /// 历史值归一：任何非 local 的旧线路都按当前唯一线路处理。
+    init(rawProvider: String?) {
+        self = .local
     }
 }
 
@@ -141,7 +137,8 @@ struct Project: Identifiable, Codable, Equatable, Hashable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? id
-        provider = (try? c.decode(HostProvider.self, forKey: .provider)) ?? .edgeone
+        // 历史项目的 provider 可能是 edgeone / cloudflare，统一归一为当前唯一线路
+        provider = HostProvider(rawProvider: try? c.decode(String.self, forKey: .provider))
         status = (try? c.decode(ProjectStatus.self, forKey: .status)) ?? .processing
         errorCode = try c.decodeIfPresent(String.self, forKey: .errorCode)
         entryPath = try c.decodeIfPresent(String.self, forKey: .entryPath)
