@@ -216,12 +216,13 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 143 项 + 本地化检查，提交前必须全绿）
+## 5. 测试体系（共 146 项 + 本地化检查，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
 | `node dev/run-tests.mjs` | 41 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容/异常参数、密码强度校验【leetspeak 变形/反向键盘对角线】、MIME 类型映射） |
-| `node dev/test-server.mjs` | 43 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 ZIP PHP 过滤、历史 PHP 入口 404、zip 炸弹端到端、Explorer 空目录/重命名/目录迁移/冲突、反馈限流、删号 KV 残留断言、登录 429 限速） |
+| `node dev/test-server.mjs` | 45 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 ZIP PHP 过滤、历史 PHP 入口 404、zip 炸弹端到端、Explorer 空目录/重命名/目录迁移/冲突、反馈限流、删号 KV 残留断言、登录 429 限速、**Apple/Google 合法 token 全链路登录**（现场签 JWT + 预置 JWKS 磁盘缓存，抓「handler 漏 import → 500 INTERNAL_ERROR」）） |
+| `node dev/check-handler-imports.mjs` | 1 | 静态扫「被调用但未 import/未定义」的标识符（ESM 惰性绑定让这类错误只在运行时炸成 500；已接入 CI） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 25 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
 | `node dev/test-admin.mjs` | 26 | 后台（随机初始密码/旧默认密码兼容/哈希存储/后台转义/弱口令拒绝/VIP 权益/历史 isTest 统计兼容/封禁下架+禁登/解封恢复/删号/邮箱密码入口彻底删除/后台不再暴露历史邮箱清理/**VIP 升级申请：提交去重/仅普通游客/批准即时生效/驳回保留限制可重提/审核不存在 404/升级即清旧游客项目 expiresAt 且公开页可访问/降级即给游客身份重新加 10 分钟过期**） |
@@ -243,7 +244,7 @@ E:/Page-make/
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
-| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 143 项 + 本地化检查 + 死键扫描 + 重复声明扫描 + Docker 构建）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
+| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 146 项 + 本地化检查 + 死键扫描 + 重复声明扫描 + Docker 构建）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
 | keepalive.yaml | 每 10 分钟 | 探 `${PAGEMAKE_URL}/healthz`，**必须带 UA**（`-A "PageMake-Keepalive/1.0"`），并回显 /api/config 的 jwks 诊断 |
 | jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子并提交（境内拉不到 Google，只能靠 runner） |
 
@@ -354,6 +355,30 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
  - 给已有文件加 import 时 apply_patch 可能静默失败（不报错但内容没进去）→
    改动后用 `node -e "import('file:///...').then(m=>console.log(...))"` 冒烟验证，
    否则会出现 `xxx is not defined` 且只在运行时暴露
+- **「调用了未 import 的函数」是线上最贵的一类 bug，必须靠静态扫描兜底**：
+  2026-10-25 实例：`backend/api/auth/google.js` 调 `isVIPUser()` 但漏 import。
+  **ESM 的 import 绑定是惰性的**，`import('./google.js')` 照样成功、本地单测全绿，
+  只有真正执行到那一行才 ReferenceError → `docker/server.mjs` 的 catch 全部包成
+  `500 INTERNAL_ERROR`。症状极具误导性：OAuth 授权页正常打开、邮件也收到了、
+  就是登录失败，App 侧只拿到一个 `INTERNAL_ERROR` 码，完全定位不到根因。
+  - 现有测试覆盖不到：`非法 token` / `缺参数` 两个用例都在漏 import 的那行**之前**返回。
+  - 修复三件套（都已落地）：
+    1. `dev/check-handler-imports.mjs` 静态扫「被调用但未 import/未定义」的标识符，
+       已接入 CI。必须收集**函数参数名**（回调参数如 `await fn(x)` 会误报）与
+       **对象字面量方法**（`status() { ... }` 不是调用）。
+    2. `dev/test-server.mjs` 新增 Apple / Google **合法 token 全链路**用例：起独立实例 +
+       预置 `DATA_DIR/jwks/<name>-jwks.json` 磁盘缓存 + 让实时拉取必然失败，
+       用 `crypto.subtle.generateKey` 现场签一把合规 JWT，打真实 HTTP 端点。
+       已验证把 import 删掉后该用例复现 `500 INTERNAL_ERROR`。
+    3. `GOOGLE_CLIENT_ID` / `GOOGLE_JWKS_URL` / `APPLE_JWKS_URL` 加进
+       `docker/server.mjs` 的 env 白名单（之前只透传 `APPLE_CLIENT_ID`，
+       `env.GOOGLE_CLIENT_ID` 永远是 undefined → aud 校验静默失败）。
+  - **三个登录入口的 VIP 判定必须统一走 `isVIPUser(user)`**：`auth.js` / `guest.js`
+    原先内联 `user.role === 'vip' || user.isTest`，与 `google.js` 不同源，
+    这正是能漏掉 import 的土壤。已全部收敛到 `lib/session.js` 的唯一实现。
+  - **JWT 签名段 base64url 编码必须走原始字节**：`String.fromCharCode(...bytes)`
+    再过 `TextEncoder` 会把非 Latin1 字节改成多字节序列 → 验签必然失败
+    （`GOOGLE_INVALID_SIGNATURE`）。用 `bytesToBase64()` 直接编码 `Uint8Array`。
 - JWKS：Node fetch 无默认超时，境内连 googleapis 挂 75s+ → 三级加载（live 5s →
   DATA_DIR 磁盘缓存 → 内置种子）；种子由 CI/runner 刷新，**沙箱自己拉不到 Google**
 - Dockerfile 的 `data/` ignore 只匹配根级，`backend/data/` 种子不受影响
@@ -492,6 +517,37 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
      10 分钟失效/退出重置身份提示）被误删后未恢复 → 游客不知道退出会重置身份。已补回。
    - **坑 2**：驳回用例里直接粘贴会成功（该游客此前没建过项目，第一次本来就不受限），
      断言 `GUEST_LIMIT` 得到 `undefined`。写「仍受限」用例必须先建满第 1 个项目。
+
+---
+
+## 12.5 历史里程碑（2026-10-25 深夜：Google 登录 500 根因）
+
+12. **线上 bug：Google 登录报 `INTERNAL-ERROR`，但 OAuth 全流程都正常**
+    - **根因**：`backend/api/auth/google.js` 调 `isVIPUser()` 却漏 import。
+      ESM 绑定惰性 → 模块加载不报错 → 执行到那一行 ReferenceError →
+      `docker/server.mjs` catch 包成 `500 INTERNAL_ERROR`。
+    - **为什么极难定位**：授权网页正常打开、Google 邮件也收到了、网络也没问题，
+      唯一线索是 App 上一个没有上下文的 `INTERNAL_ERROR` 码。
+    - **为什么测试没抓到**：原有两条用例（非法 token / 缺 idToken）都在漏 import
+      的那行之前 return，永远走不到。
+    - **顺带修的真实配置缺口**：`docker/server.mjs` 的 env 白名单只有
+      `APPLE_CLIENT_ID`，没有 `GOOGLE_CLIENT_ID` → `env.GOOGLE_CLIENT_ID`
+      永远是 `undefined`，只能回落到硬编码默认值；多客户端场景下 aud 校验会静默失配。
+      现已补 `GOOGLE_CLIENT_ID` / `GOOGLE_JWKS_URL` / `APPLE_JWKS_URL`。
+    - **修复三件套**：
+      1. 补 import（1 行）；
+      2. 新增 `dev/check-handler-imports.mjs` 静态扫描（已接入 CI）——
+         扫「被调用但未 import/未定义」的标识符；
+      3. 新增 Apple / Google **合法 token 全链路** e2e 用例（现场签 JWT +
+         预置 JWKS 磁盘缓存 + 打真实 HTTP），并验证删掉 import 后能复现
+         `500 INTERNAL_ERROR`。
+    - **统一 VIP 判定**：`auth.js` / `guest.js` 原先内联
+      `user.role === 'vip' || user.isTest`，与 `google.js` 不同源；
+      三处现已全部收敛到 `lib/session.js` 的 `isVIPUser()`。
+    - **用户可感知的改进**：`PlainLanguage` 新增 12 个登录链路细粒度错误码
+      （`GOOGLE_INVALID_AUD` / `GOOGLE_KEY_NOT_FOUND` / `APPLE_INVALID_NONCE` /
+      `INTERNAL_ERROR` 等），不再把用户丢给一个裸错误码；中英各 294 键。
+    - 测试 143 → 145 项（新增 Apple / Google 合法 token 两条全链路用例）。
 
 ---
 

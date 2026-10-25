@@ -9,7 +9,18 @@ import path from 'node:path';
 
 import { buildZip } from './make-zip.mjs';
 import { keys as kvKeys } from '../backend/lib/kv.js';
-import { textToBase64, base64ToText } from '../backend/lib/base64.js';
+import { textToBase64, base64ToText, bytesToBase64 } from '../backend/lib/base64.js';
+
+// base64url 编码（JWT 段必须无 padding、无 +/）
+function toBase64Url(text) {
+  return textToBase64(text).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+// base64url 编码二进制（JWT 签名段用；必须走原始字节，
+// 不能 String.fromCharCode 后再 TextEncoder——非 Latin1 字节会被改成多字节序列）
+function bytesToBase64Url(bytes) {
+  return bytesToBase64(bytes).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
 
 const PORT = 18786;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -568,6 +579,104 @@ await test('Google 登录：非法 token 拒绝 + 参数校验', async () => {
   assertEqual(missing.error, 'BAD_REQUEST', '缺 idToken 应报 BAD_REQUEST');
 });
 
+// ---------------------------------------------------------------------------
+// Google 登录完整链路（含「handler 用了未 import 的函数」这一类回归）
+// 背景：2026-10-25 线上 bug —— backend/api/auth/google.js 调用 isVIPUser() 但漏
+// import。ESM 绑定是惰性的，`import('./google.js')` 照样成功，只有真正执行到那一行
+// 才 ReferenceError → 容器 catch 全部 500 INTERNAL_ERROR。
+// 表现为「OAuth 网页正常打开、邮件也到了、就是登录报 INTERNAL-ERROR」。
+// 上面两个用例（非法 token / 缺参数）都在 isVIPUser 之前就返回，完全覆盖不到，
+// 所以必须用一把真实签名的合法 token 跑完整链路。
+// 实现：起独立实例 + 预置 DATA_DIR/jwks/google-jwks.json 磁盘缓存（JWKS 三级加载的
+// 第二级，真实生产路径），并让实时拉取必然失败 → 走磁盘缓存验签。
+// ---------------------------------------------------------------------------
+await test('Google 登录：合法 token 走完整链路（VIP 判定不 500）', async () => {
+  const keyPair = await crypto.subtle.generateKey(
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    },
+    true,
+    ['sign', 'verify']
+  );
+  const publicJwk = {
+    ...(await crypto.subtle.exportKey('jwk', keyPair.publicKey)),
+    kid: 'test-google-kid',
+    alg: 'RS256',
+    use: 'sig',
+  };
+
+  const googleDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pagemake-google-'));
+  // 预置 JWKS 磁盘缓存：实时拉取失败时加载器会读这里（生产同一条路径）
+  fs.mkdirSync(path.join(googleDataDir, 'jwks'), { recursive: true });
+  fs.writeFileSync(
+    path.join(googleDataDir, 'jwks', 'google-jwks.json'),
+    JSON.stringify({ keys: [publicJwk] })
+  );
+
+  const googlePort = PORT + 2;
+  const googleEnv = {
+    ...spawnEnv,
+    PORT: String(googlePort),
+    DATA_DIR: googleDataDir,
+    GOOGLE_CLIENT_ID: 'test-client.apps.googleusercontent.com',
+    // 让实时拉取必然失败（连不通的地址），确保走磁盘缓存分支
+    GOOGLE_JWKS_URL: 'https://127.0.0.1:1/unreachable-jwks',
+  };
+  const googleServer = spawn(process.execPath, [path.resolve('docker/server.mjs')], {
+    env: googleEnv,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  googleServer.stderr.on('data', (d) => process.stderr.write(`[google-server] ${d}`));
+  try {
+    const gbase = `http://127.0.0.1:${googlePort}`;
+    for (let i = 0; i < 50; i++) {
+      try { if ((await fetch(`${gbase}/healthz`)).ok) break; } catch {}
+      await sleep(200);
+    }
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const header = toBase64Url(JSON.stringify({ alg: 'RS256', kid: 'test-google-kid', typ: 'JWT' }));
+    const payload = toBase64Url(JSON.stringify({
+      iss: 'https://accounts.google.com',
+      aud: 'test-client.apps.googleusercontent.com',
+      sub: 'google-test-sub-123',
+      email: 'google.tester@example.com',
+      name: 'Google Tester',
+      iat: nowSec,
+      exp: nowSec + 600,
+    }));
+    const signingInput = `${header}.${payload}`;
+    const signature = await crypto.subtle.sign(
+      'RSASSA-PKCS1-v1_5',
+      keyPair.privateKey,
+      new TextEncoder().encode(signingInput)
+    );
+    const idToken = `${signingInput}.${bytesToBase64Url(new Uint8Array(signature))}`;
+
+    const res = await fetch(`${gbase}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken }),
+    });
+    const body = await res.json();
+    assertEqual(
+      res.status,
+      200,
+      `合法 Google token 应登录成功；实际 ${res.status} ${JSON.stringify(body)}（INTERNAL_ERROR 通常是 handler 漏 import）`
+    );
+    assert(body.token, '应返回会话 token');
+    assertEqual(body.userId, 'google_google-test-sub-123', 'userId 应为 google_<sub>');
+    assertEqual(body.email, 'google.tester@example.com', '应回传邮箱');
+    assert(['user', 'vip'].includes(body.role), `role 应为 user/vip，实际 ${body.role}`);
+  } finally {
+    googleServer.kill();
+    fs.rmSync(googleDataDir, { recursive: true, force: true });
+  }
+});
+
 await test('邮箱密码体系已彻底删除（注册与登录路由均 404）', async () => {
   for (const path of ['/api/auth/register', '/api/auth/login']) {
     const res = await fetch(`${BASE}${path}`, {
@@ -606,6 +715,97 @@ await test('游客登录：设备 ID 换会话（免费 Apple ID 兜底）', asy
     body: JSON.stringify({ deviceId: 'x' }),
   });
   assertEqual((await bad.json()).error, 'BAD_REQUEST', '非法 deviceId 应 400');
+});
+
+// ---------------------------------------------------------------------------
+// Apple 登录完整链路（与 Google 同源：handler 漏 import 只会在合法 token 时暴露）
+// ---------------------------------------------------------------------------
+await test('Apple 登录：合法 identityToken 走完整链路（VIP 判定不 500）', async () => {
+  const keyPair = await crypto.subtle.generateKey(
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    },
+    true,
+    ['sign', 'verify']
+  );
+  const publicJwk = {
+    ...(await crypto.subtle.exportKey('jwk', keyPair.publicKey)),
+    kid: 'test-apple-kid',
+    alg: 'RS256',
+    use: 'sig',
+  };
+
+  const appleDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pagemake-apple-'));
+  fs.mkdirSync(path.join(appleDataDir, 'jwks'), { recursive: true });
+  fs.writeFileSync(
+    path.join(appleDataDir, 'jwks', 'apple-jwks.json'),
+    JSON.stringify({ keys: [publicJwk] })
+  );
+
+  const applePort = PORT + 3;
+  const appleServer = spawn(process.execPath, [path.resolve('docker/server.mjs')], {
+    env: {
+      ...spawnEnv,
+      PORT: String(applePort),
+      DATA_DIR: appleDataDir,
+      APPLE_CLIENT_ID: 'com.pagemake.app',
+      APPLE_JWKS_URL: 'https://127.0.0.1:1/unreachable-jwks',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  appleServer.stderr.on('data', (d) => process.stderr.write(`[apple-server] ${d}`));
+  try {
+    const abase = `http://127.0.0.1:${applePort}`;
+    for (let i = 0; i < 50; i++) {
+      try { if ((await fetch(`${abase}/healthz`)).ok) break; } catch {}
+      await sleep(200);
+    }
+
+    const nonce = 'test-nonce-abc';
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(nonce));
+    const nonceHash = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const header = toBase64Url(JSON.stringify({ alg: 'RS256', kid: 'test-apple-kid', typ: 'JWT' }));
+    const payload = toBase64Url(JSON.stringify({
+      iss: 'https://appleid.apple.com',
+      aud: 'com.pagemake.app',
+      sub: 'apple-test-sub-001',
+      email: 'apple.tester@example.com',
+      nonce: nonceHash,
+      iat: nowSec,
+      exp: nowSec + 600,
+    }));
+    const signingInput = `${header}.${payload}`;
+    const signature = await crypto.subtle.sign(
+      'RSASSA-PKCS1-v1_5',
+      keyPair.privateKey,
+      new TextEncoder().encode(signingInput)
+    );
+    const identityToken = `${signingInput}.${bytesToBase64Url(new Uint8Array(signature))}`;
+
+    const res = await fetch(`${abase}/api/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identityToken, nonce }),
+    });
+    const body = await res.json();
+    assertEqual(
+      res.status,
+      200,
+      `合法 Apple token 应登录成功；实际 ${res.status} ${JSON.stringify(body)}`
+    );
+    assert(body.token, '应返回会话 token');
+    assertEqual(body.userId, 'apple-test-sub-001', 'userId 应为 Apple sub');
+    assertEqual(body.email, 'apple.tester@example.com', '应回传邮箱');
+    assert(['user', 'vip'].includes(body.role), `role 应为 user/vip，实际 ${body.role}`);
+  } finally {
+    appleServer.kill();
+    fs.rmSync(appleDataDir, { recursive: true, force: true });
+  }
 });
 
 await test('POST 删除项目（网关拦截 DELETE 的替代方案）', async () => {

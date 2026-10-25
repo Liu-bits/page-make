@@ -68,11 +68,17 @@ jobs:
       - name: 运行管理后台测试（VIP 发号/历史兼容/封禁下架/解封恢复/删除账号）
         run: node dev/test-admin.mjs
 
+      - name: 校验 backend 无「调用了未 import 的函数」（防止运行时 500 INTERNAL_ERROR）
+        run: node dev/check-handler-imports.mjs
+
       - name: 校验中英本地化 key 完整且无重复
         run: node scripts/check-localization.mjs
 
       - name: 校验 Swift 无同作用域重复声明（本地无 iOS SDK，替代 -typecheck）
         run: node scripts/check-swift-decls.mjs
+
+      - name: 校验无死文案键（删除本地化键后不留孤儿）
+        run: node scripts/check-dead-strings.mjs
 
       - name: 校验 Docker 镜像可构建
         run: docker build -t pagemake-test .

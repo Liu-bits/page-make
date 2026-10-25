@@ -6,7 +6,8 @@ import { createJwksLoader } from './jwks.js';
 // JWKS 加载器：实时拉取（5s 超时）→ DATA_DIR 磁盘缓存 → 内置种子（CI 每日/部署时刷新）
 export const appleJwks = createJwksLoader({
   name: 'apple',
-  url: 'https://appleid.apple.com/auth/keys',
+  // 环境变量 APPLE_JWKS_URL 可覆盖（自建反代 / 测试注入），默认官方地址
+  url: process.env.APPLE_JWKS_URL || 'https://appleid.apple.com/auth/keys',
   seedUrl: new URL('../data/apple-jwks.json', import.meta.url),
 });
 

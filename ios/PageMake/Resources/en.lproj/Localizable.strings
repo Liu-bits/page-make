@@ -202,6 +202,18 @@
 "login_google" = "Sign in with Google";
 "google_not_configured" = "Google sign-in not configured (missing Client ID)";
 "error_invalid_google_token" = "Google sign-in verification failed, please retry";
+// Granular sign-in errors: split "sign-in failed" into actionable reasons
+"error_google_invalid_aud" = "Google sign-in is not configured for this build. Update the app and retry.";
+"error_google_invalid_iss" = "Untrusted Google sign-in source. Please retry.";
+"error_token_expired" = "Your sign-in credential expired. Please sign in again.";
+"error_google_key_not_found" = "Google sign-in keys were rotated. Please retry shortly.";
+"error_jwks_unavailable" = "Sign-in verification is temporarily unavailable. Please retry shortly.";
+"error_apple_invalid_aud" = "Apple sign-in is not configured for this build. Update the app and retry.";
+"error_apple_invalid_iss" = "Untrusted Apple sign-in source. Please retry.";
+"error_apple_invalid_nonce" = "Apple sign-in verification did not pass. Please retry.";
+"error_apple_key_not_found" = "Apple sign-in keys were rotated. Please retry shortly.";
+"error_invalid_apple_token" = "Apple sign-in verification failed, please retry";
+"error_internal_error" = "The service hit an error. Please retry shortly.";
 "alert_tip" = "Notice";
 "provider_local_name" = "Page-make";
 "provider_local_detail" = "Permanent links";

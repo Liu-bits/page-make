@@ -186,6 +186,9 @@ const kv = new DiskKV(DATA_DIR);
 const env = {
   PAGEMAKE: kv,
   APPLE_CLIENT_ID: process.env.APPLE_CLIENT_ID || '',
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
+  GOOGLE_JWKS_URL: process.env.GOOGLE_JWKS_URL || '',
+  APPLE_JWKS_URL: process.env.APPLE_JWKS_URL || '',
   CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN || '',
   CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID || '',
   CLOUDFLARE_PAGES_PROJECT: process.env.CLOUDFLARE_PAGES_PROJECT || '',

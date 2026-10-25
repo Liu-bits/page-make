@@ -2,7 +2,7 @@
 // body: { idToken } — iOS 端 OAuth 拿到的 Google id_token
 // 环境变量：GOOGLE_CLIENT_ID（iOS OAuth 客户端 ID）
 import { getKV, kvGet, kvPut, keys, nowSeconds, appendLog } from '../../lib/kv.js';
-import { accountKind, createSession, publicBan, isBanned } from '../../lib/session.js';
+import { accountKind, createSession, publicBan, isBanned, isVIPUser } from '../../lib/session.js';
 import { ok, fail } from '../../lib/responses.js';
 import { verifyGoogleIdentityToken } from '../../lib/google-auth.js';
 

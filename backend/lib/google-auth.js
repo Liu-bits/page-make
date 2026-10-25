@@ -8,7 +8,8 @@ import { createJwksLoader } from './jwks.js';
 // 境内网络无法访问 googleapis.com 时自动回退种子，登录不受影响
 export const googleJwks = createJwksLoader({
   name: 'google',
-  url: 'https://www.googleapis.com/oauth2/v3/certs',
+  // 环境变量 GOOGLE_JWKS_URL 可覆盖（自建反代 / 测试注入），默认官方地址
+  url: process.env.GOOGLE_JWKS_URL || 'https://www.googleapis.com/oauth2/v3/certs',
   seedUrl: new URL('../data/google-jwks.json', import.meta.url),
 });
 
