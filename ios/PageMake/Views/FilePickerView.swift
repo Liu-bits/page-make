@@ -591,8 +591,10 @@ struct FilePickerView: View {
 
             let values = try? url.resourceValues(forKeys: [.fileSizeKey])
             let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-            let resourceSize = values?.fileSize
-            let attributeSize = (attributes?[.size] as? NSNumber)?.int64Value
+            // Xcode 27 SDK 中 fileSize / int64Value 的整型宽度与旧 SDK 不同，
+            // 显式映射成 Int64 后再合并，避免 ?? 链因 Wrapped 类型不一致报错。
+            let resourceSize = values?.fileSize.map { Int64($0) }
+            let attributeSize = (attributes?[.size] as? NSNumber)?.int64Value.map { Int64($0) }
             let size = resourceSize ?? attributeSize ?? 0
             let destination = FileManager.default.temporaryDirectory
                 .appendingPathComponent("\(UUID().uuidString)_\(name)")
