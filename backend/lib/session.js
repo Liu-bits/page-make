@@ -2,6 +2,10 @@
 import { getKV, kvGet, kvPut, kvDel, kvListAll, keys, nowSeconds } from './kv.js';
 import { SESSION_TTL_SECONDS } from './state.js';
 import { fail } from './responses.js';
+import { tierOf, isVIPUser as tierIsVIP, isGuestLimited as tierGuestLimited } from './tiers.js';
+
+// 等级判定统一从 tiers.js 转发，避免「同一规则写三份」导致漂移
+export { tierOf };
 
 export function bearerToken(request) {
   // 优先自定义头：ModelScope 网关会把 Authorization 误判为 SDK Token 并拦截
@@ -32,29 +36,33 @@ export function isBanned(user) {
 }
 
 /**
- * VIP 用户（管理员后台升级现有账号）：可绕过普通用户的存储限制。
- * isTest 仅为历史账号只读兼容；新建账号统一写 role=vip。
+ * VIP 及以上（vip / svip / ultra）。
+ * isTest 仅为历史账号只读兼容；新建账号统一写 role。
  */
 export function isVIPUser(user) {
-  return user?.role === 'vip' || Boolean(user?.isTest);
+  return tierIsVIP(user);
 }
 
 /**
- * 账号类型：普通、VIP、游客。
+ * 账号类型：普通、各等级、游客。
  *
- * 游客身份与 VIP 是两个维度：管理员可以把一个现有 guest_ 账号升级为 VIP，
+ * 游客身份与等级是两个维度：管理员可以把一个 guest_ 账号升级为 vip/svip/ultra，
  * 此时 userId 仍是 guest_ 前缀（保留原项目与会话），但所有游客限制必须解除。
  * 因此不能在任何业务里只看 userId 前缀判断游客权益。
+ *
+ * 返回值保持旧形态（guest / guest-vip / vip / user）用于既有 UI 文案，
+ * 高等级用 `guest-svip` / `svip` / `ultra` 表示。
  */
 export function accountKind(user) {
   const guest = Boolean(user?.userId?.startsWith('guest_'));
-  if (isVIPUser(user)) return guest ? 'guest-vip' : 'vip';
-  return guest ? 'guest' : 'user';
+  const tier = tierOf(user);
+  if (tier === 'user') return guest ? 'guest' : 'user';
+  return guest ? `guest-${tier}` : tier;
 }
 
 /** 是否仍受游客试用规则限制（项目数 / 链接 10 分钟 / 禁用项目模式）。 */
 export function isGuestLimited(user) {
-  return accountKind(user) === 'guest';
+  return tierGuestLimited(user);
 }
 
 /**
@@ -73,6 +81,17 @@ export async function requireAuth(context) {
   if (context.env?.DEV_NO_AUTH === '1') {
     // 调试模式可用 X-Test-User 指定身份（仅用于测试游客限制等按用户分支的逻辑）
     const testUser = context.request.headers.get('x-test-user') || 'dev-user';
+    // 若磁盘 KV 里已有该用户的真实记录，优先用它——否则 DEV_NO_AUTH 下
+    // 永远拿到 role=user，没法测试 VIP/SVIP/Ultra 分支（也不会影响生产，
+    // 这段只在 DEV_NO_AUTH=1 时执行）。
+    const stored = await kvGet(kv, keys.user(testUser));
+    if (stored) {
+      return {
+        user: stored,
+        session: { userId: testUser, expiresAt: Number.MAX_SAFE_INTEGER },
+        kv,
+      };
+    }
     return {
       user: { userId: testUser, email: 'dev@local', status: 'active', banLevel: 0, banUntil: null, banReason: null },
       session: { userId: testUser, expiresAt: Number.MAX_SAFE_INTEGER },

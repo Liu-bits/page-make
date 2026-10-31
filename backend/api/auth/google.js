@@ -2,7 +2,8 @@
 // body: { idToken } — iOS 端 OAuth 拿到的 Google id_token
 // 环境变量：GOOGLE_CLIENT_ID（iOS OAuth 客户端 ID）
 import { getKV, kvGet, kvPut, keys, nowSeconds, appendLog } from '../../lib/kv.js';
-import { accountKind, createSession, publicBan, isBanned, isVIPUser } from '../../lib/session.js';
+import { accountKind, createSession, publicBan, isBanned } from '../../lib/session.js';
+import { tierOf, quotaViewJson } from '../../lib/tiers.js';
 import { ok, fail } from '../../lib/responses.js';
 import { verifyGoogleIdentityToken } from '../../lib/google-auth.js';
 
@@ -68,7 +69,9 @@ export async function onRequest(context) {
     token: session.token,
     userId,
     email: google.email,
-    role: isVIPUser(user) ? 'vip' : 'user',
+    role: tierOf(user),
+    tier: tierOf(user),
+    quota: quotaViewJson(user),
     accountKind: accountKind(user),
     expiresAt: new Date(session.expiresAt * 1000).toISOString(),
   });

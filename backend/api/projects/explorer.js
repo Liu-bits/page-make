@@ -4,7 +4,8 @@
 import { requireAuth, isGuestLimited } from '../../lib/session.js';
 import { kvPut, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
-import { STATUS } from '../../lib/state.js';
+import { STATUS, normalizeKind, isBackendKind } from '../../lib/state.js';
+import { canUseBackend, tierOf } from '../../lib/tiers.js';
 
 export async function onRequest(context) {
   const { request } = context;
@@ -27,6 +28,15 @@ export async function onRequest(context) {
   const name =
     (typeof body?.name === 'string' && body.name.trim().slice(0, 60)) || '未命名项目';
 
+  // 部署形态三选一；普通用户只能建纯前端
+  if (body?.kind !== undefined && !['static', 'npm', 'pnpm'].includes(body.kind)) {
+    return fail('INVALID_KIND', 400);
+  }
+  const kind = normalizeKind(body?.kind);
+  if (isBackendKind(kind) && !canUseBackend(auth.user)) {
+    return fail('BACKEND_REQUIRES_VIP', 403);
+  }
+
   const projectId = crypto.randomUUID().replace(/-/g, '');
   const kv = auth.kv;
 
@@ -36,6 +46,8 @@ export async function onRequest(context) {
     id: projectId,
     userId: auth.user.userId,
     provider: 'local',
+    kind,
+    tier: tierOf(auth.user),
     status: STATUS.READY,
     entryPath: null,
     fileCount: 0,

@@ -1,7 +1,8 @@
 // POST /api/auth — Sign in with Apple 换会话凭证
 // 流程：验 Apple identityToken → 查/建 users → 查封号 → 生成 7 天会话凭证
 import { getKV, kvGet, kvPut, keys, nowSeconds, appendLog } from '../lib/kv.js';
-import { accountKind, createSession, publicBan, isVIPUser } from '../lib/session.js';
+import { accountKind, createSession, publicBan } from '../lib/session.js';
+import { tierOf, quotaViewJson } from '../lib/tiers.js';
 import { verifyAppleIdentityToken } from '../lib/apple-auth.js';
 import { ok, fail } from '../lib/responses.js';
 
@@ -64,7 +65,9 @@ export async function onRequest(context) {
     token: session.token,
     userId: apple.sub,
     email: apple.email,
-    role: isVIPUser(user) ? 'vip' : 'user',
+    role: tierOf(user),
+    tier: tierOf(user),
+    quota: quotaViewJson(user),
     accountKind: accountKind(user),
     expiresAt: new Date(session.expiresAt * 1000).toISOString(),
   });

@@ -4,15 +4,25 @@
 // DELETE /api/projects/:id/files — 删除文件（body: { path }）
 // 说明：项目模式支持 .html / .css / .js；文件夹可显式创建并持久化
 import { getOwnedProject, syncProjectFiles, normalizeFolders } from '../../../lib/project.js';
-import { isVIPUser } from '../../../lib/session.js';
 import { keys, kvDel, kvListAll, pathFromSiteKey, kvPut } from '../../../lib/kv.js';
 import { base64ToBytes, bytesToBase64 } from '../../../lib/base64.js';
 import { ok, fail } from '../../../lib/responses.js';
-import { STATUS, FILE_MAX_BYTES, MAX_TOTAL_BYTES } from '../../../lib/state.js';
+import { STATUS, isBackendKind, normalizeKind } from '../../../lib/state.js';
+import { quotaFor } from '../../../lib/tiers.js';
 import { isValidRelPath } from '../../../lib/paths.js';
 
 // 支持的文件类型（.htm 视同 .html）
-const FILE_EXT_RE = /\.(html?|css|js)$/i;
+// 纯前端项目只允许 html/css/js；后端项目还要放 package.json、TS 源码、
+// 构建配置和静态资源。两份白名单分开，避免放宽静态项目的边界。
+const STATIC_EXT_RE = /\.(html?|css|js)$/i;
+const BACKEND_EXT_RE = /\.(html?|css|js|mjs|cjs|json|ts|tsx|jsx|md|txt|yml|yaml|toml|xml|graphql|gql|sql|map|wasm|svg|png|jpe?g|gif|webp|ico|bmp|avif|woff2?|ttf|otf|eot|mp3|mp4|webm|pdf|csv|lock)$/i;
+
+/** 按项目形态选择允许的扩展名（.php 永远拒绝） */
+function extAllowed(path, kind) {
+  if (/\.php$/i.test(path)) return false;
+  const re = isBackendKind(normalizeKind(kind)) ? BACKEND_EXT_RE : STATIC_EXT_RE;
+  return re.test(path);
+}
 
 // 路径安全：禁止 ..、反斜杠、控制字符、首尾斜杠、超长
 function validPath(path) {
@@ -67,7 +77,7 @@ export async function onRequest(context) {
   if (request.method === 'GET') {
     const path = new URL(request.url).searchParams.get('path') || '';
     // 历史 .php 文件不再暴露，即使磁盘上仍保留也不允许通过编辑器读取。
-    if (!validPath(path) || !FILE_EXT_RE.test(path) || /\.php$/i.test(path)) {
+    if (!validPath(path) || !extAllowed(path, project.kind)) {
       return fail('BAD_REQUEST', 400);
     }
     const bytes = await kv.get(keys.siteFile(project.id, path), { type: 'arrayBuffer' });
@@ -85,7 +95,7 @@ export async function onRequest(context) {
   const path = body?.path;
 
   if (request.method === 'POST' && body?.action === 'remove') {
-    if (!validPath(path) || !FILE_EXT_RE.test(path)) return fail('BAD_REQUEST', 400);
+    if (!validPath(path) || !extAllowed(path, project.kind)) return fail('BAD_REQUEST', 400);
     await kvDel(kv, keys.siteFile(project.id, path));
     if (project.entryPath === path) project.entryPath = null;
     await syncProjectFiles(kv, project);
@@ -175,7 +185,7 @@ export async function onRequest(context) {
       return ok({ project });
     }
 
-    if (!FILE_EXT_RE.test(from) || !FILE_EXT_RE.test(to)) return fail('BAD_REQUEST', 400);
+    if (!extAllowed(from, project.kind) || !extAllowed(to, project.kind)) return fail('BAD_REQUEST', 400);
     if (hasFileAncestor(project, to)
       || (project.folders || []).includes(to)
       || hasDestinationConflict(project, to)) {
@@ -193,7 +203,7 @@ export async function onRequest(context) {
     return ok({ project });
   }
   if (request.method === 'DELETE') {
-    if (!validPath(path) || !FILE_EXT_RE.test(path)) return fail('BAD_REQUEST', 400);
+    if (!validPath(path) || !extAllowed(path, project.kind)) return fail('BAD_REQUEST', 400);
     await kvDel(kv, keys.siteFile(project.id, path));
     if (project.entryPath === path) project.entryPath = null;
     await syncProjectFiles(kv, project);
@@ -201,21 +211,23 @@ export async function onRequest(context) {
   }
 
   if (request.method === 'POST') {
-    if (!validPath(path) || !FILE_EXT_RE.test(path)) return fail('BAD_REQUEST', 400);
+    if (!validPath(path) || !extAllowed(path, project.kind)) return fail('BAD_REQUEST', 400);
     if (hasFileAncestor(project, path) || (project.folders || []).includes(path)) {
       return fail('CONFLICT', 409);
     }
     const content = body?.content;
     if (typeof content !== 'string') return fail('BAD_REQUEST', 400);
     const bytes = base64ToBytes(content);
-    // VIP 用户（后台升级现有账号）可绕过单文件/项目总大小上限
-    if (!isVIPUser(result.user) && bytes.length > FILE_MAX_BYTES) return fail('TOO_LARGE', 413);
+    // 配额按项目形态与账号等级取（lib/tiers.js 的 QUOTA 是唯一真相）。
+    // 后端项目按 backend 维度算源码包大小，纯前端按 static 维度算。
+    const dimension = isBackendKind(normalizeKind(project.kind)) ? 'backend' : 'static';
+    const limit = quotaFor(result.user, dimension);
+    if (bytes.length > limit) return fail('TOO_LARGE', 413);
 
-    // 项目总大小上限（覆盖不增加占用；与上传管线 5MB 保持一致）
+    // 项目总大小上限（覆盖不增加占用）
     const existed = project.files?.find((f) => f.path === path);
     const existingSize = existed ? existed.size : 0;
-    if (!isVIPUser(result.user)
-      && (project.size || 0) - existingSize + bytes.length > MAX_TOTAL_BYTES) {
+    if ((project.size || 0) - existingSize + bytes.length > limit) {
       return fail('TOO_LARGE', 413);
     }
 

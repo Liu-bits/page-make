@@ -1,9 +1,13 @@
 // POST /api/upload/init — 初始化分片上传
 // body: { provider, files: [{ name, size }], name? }
-import { requireAuth, isVIPUser, isGuestLimited } from '../../lib/session.js';
+import { requireAuth, isGuestLimited } from '../../lib/session.js';
 import { getKV, kvPut, kvGet, kvDel, kvListAll, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
-import { PROVIDERS, MAX_TOTAL_BYTES, CHUNK_BYTES, UPLOAD_TTL_SECONDS } from '../../lib/state.js';
+import {
+  PROVIDERS, CHUNK_BYTES, UPLOAD_TTL_SECONDS,
+  PROJECT_KIND, normalizeKind, isBackendKind, ZIP_MAX_ENTRIES,
+} from '../../lib/state.js';
+import { quotaFor, canUseBackend, tierOf } from '../../lib/tiers.js';
 
 // 顺带清理过期上传任务（用户取消/中断后的残留，防止 KV/磁盘无限增长）
 async function cleanupStaleUploads(kv) {
@@ -44,20 +48,35 @@ export async function onRequest(context) {
   const provider = body?.provider || 'local';
   if (!PROVIDERS.has(provider)) return fail('INVALID_PROVIDER', 400);
 
+  // 部署形态三选一：纯前端 / npm / pnpm。非法值直接拒绝（不能静默降级，
+  // 否则用户以为建了后端项目，实际拿到的是静态站点）。
+  const requestedKind = body?.kind;
+  if (requestedKind !== undefined && !['static', PROJECT_KIND.NPM, PROJECT_KIND.PNPM].includes(requestedKind)) {
+    return fail('INVALID_KIND', 400);
+  }
+  const kind = normalizeKind(requestedKind);
+  // 后端形态是 VIP 起的特权：普通用户只能选纯前端
+  if (isBackendKind(kind) && !canUseBackend(auth.user)) {
+    return fail('BACKEND_REQUIRES_VIP', 403);
+  }
+
   const files = Array.isArray(body?.files) ? body.files : [];
   if (!files.length) return fail('BAD_REQUEST', 400);
+  if (files.length > ZIP_MAX_ENTRIES) return fail('TOO_LARGE', 413);
   const projectName =
     (typeof body?.name === 'string' && body.name.trim().slice(0, 60)) || '未命名项目';
 
   let total = 0;
   for (const file of files) {
-    if (!file?.name || typeof file.size !== 'number' || file.size < 0) {
+    if (!file?.name || !Number.isSafeInteger(file.size) || file.size < 0) {
       return fail('BAD_REQUEST', 400);
     }
     total += file.size;
+    if (!Number.isSafeInteger(total)) return fail('TOO_LARGE', 413);
   }
-  // VIP 用户（后台升级现有账号）可绕过上传总大小上限
-  if (!isVIPUser(auth.user) && total > MAX_TOTAL_BYTES) return fail('TOO_LARGE', 413);
+  // 配额按等级取：静态项目与后端源码包分别计算（见 lib/tiers.js 的 QUOTA）
+  const limit = quotaFor(auth.user, isBackendKind(kind) ? 'backend' : 'static');
+  if (total > limit) return fail('TOO_LARGE', 413);
 
   // 清理过期上传（轻量扫描，小规模下开销可忽略）
   await cleanupStaleUploads(auth.kv);
@@ -68,6 +87,8 @@ export async function onRequest(context) {
     uploadId,
     userId: auth.user.userId,
     provider,
+    kind,
+    tier: tierOf(auth.user),
     projectName,
     files: files.map((f) => ({ name: String(f.name).split('/').pop(), size: f.size })),
     createdAt: nowSeconds(),

@@ -4,6 +4,7 @@ import { requireAuth } from './session.js';
 import { fail } from './responses.js';
 import { ERR } from './state.js';
 import { isValidRelPath } from './paths.js';
+import { stop as stopBackendRuntime } from './backend-runtime.js';
 
 const PHP_FILE_RE = /\.php$/i;
 
@@ -95,6 +96,9 @@ export function normalizeFolders(explicitFolders, filePaths = []) {
 
 // 删除项目：文件 + 元信息 + 记录 + 索引
 export async function deleteProjectRecords(kv, userId, id) {
+  // 后端项目有常驻 Node 进程，必须先回收再删 KV；否则项目虽然 404，
+  // 端口和内存仍被旧进程占着。
+  await stopBackendRuntime(id);
   const keyList = await kvListAll(kv, keys.sitePrefix(id));
   for (const key of keyList) await kvDel(kv, key);
   await kvDel(kv, keys.siteMeta(id));

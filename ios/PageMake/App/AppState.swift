@@ -193,9 +193,9 @@ final class AppState: ObservableObject {
     // MARK: - 项目模式
 
     /// 创建空白项目（项目模式）；成功返回项目并同步列表，失败返回 nil（错误写入 authError）
-    func createExplorerProject(name: String) async -> Project? {
+    func createExplorerProject(name: String, kind: ProjectKind = .staticSite) async -> Project? {
         do {
-            let project = try await api.createExplorerProject(name: name)
+            let project = try await api.createExplorerProject(name: name, kind: kind)
             upsertProject(project)
             await loadProjects()
             return project
@@ -237,7 +237,8 @@ final class AppState: ObservableObject {
             email: response.email,
             role: response.role,
             accountKind: response.accountKind,
-            expiresAt: response.expiresAt
+            expiresAt: response.expiresAt,
+            quota: response.quota
         )
         session = newSession
         api.setToken(response.token)
@@ -304,7 +305,9 @@ final class AppState: ObservableObject {
         guard let current = session,
               current.userId == expected.userId,
               current.token == expected.token else { return }
-        guard current.role != snapshot.role || current.accountKind != snapshot.accountKind else { return }
+        guard current.role != snapshot.role
+            || current.accountKind != snapshot.accountKind
+            || current.quota != snapshot.quota else { return }
 
         let updated = UserSession(
             token: current.token,
@@ -312,7 +315,8 @@ final class AppState: ObservableObject {
             email: current.email,
             role: snapshot.role,
             accountKind: snapshot.accountKind,
-            expiresAt: current.expiresAt
+            expiresAt: current.expiresAt,
+            quota: snapshot.quota
         )
         session = updated
         KeychainStore.shared.set(snapshot.role.rawValue, for: "account_role")

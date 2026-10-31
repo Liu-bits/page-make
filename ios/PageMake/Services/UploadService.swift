@@ -33,13 +33,13 @@ final class UploadService: ObservableObject {
 
     init() {}
 
-    func upload(files: [PickedFile], provider: HostProvider, projectName: String) {
+    func upload(files: [PickedFile], provider: HostProvider, projectName: String, kind: ProjectKind = .staticSite) {
         let displayName = projectName
         let item = Item(name: displayName, provider: provider)
         items.append(item)
         let itemId = item.id
         tasks[itemId] = Task { [weak self] in
-            await self?.run(itemId: itemId, files: files, provider: provider, projectName: projectName)
+            await self?.run(itemId: itemId, files: files, provider: provider, projectName: projectName, kind: kind)
             self?.tasks[itemId] = nil
         }
     }
@@ -55,7 +55,9 @@ final class UploadService: ObservableObject {
     }
 
     /// 粘贴代码直接创建（单次请求，无需分片与轮询）
-    func createPasted(_ content: PasteContent, provider: HostProvider, name: String) {
+    /// 粘贴建站只产出纯前端项目：输入就是 HTML/CSS/JS，没有 package.json 可跑。
+    /// `kind` 参数仅为与调用方签名一致，内部固定按 static 处理。
+    func createPasted(_ content: PasteContent, provider: HostProvider, name: String, kind: ProjectKind = .staticSite) {
         let item = Item(name: name, provider: provider, status: .uploading)
         items.insert(item, at: 0)
         let itemId = item.id
@@ -109,14 +111,21 @@ final class UploadService: ObservableObject {
         }
     }
 
-    private func run(itemId: UUID, files: [PickedFile], provider: HostProvider, projectName: String) async {
+    private func run(itemId: UUID, files: [PickedFile], provider: HostProvider, projectName: String, kind: ProjectKind) async {
+        // 选文件时已拷贝到临时目录；上传结束（成功、失败或取消）后立即回收，
+        // 否则 SVIP/Ultra 的大文件会在 iPhone 上长期占用空间。
+        defer {
+            for file in files {
+                try? FileManager.default.removeItem(at: file.url)
+            }
+        }
         func update(_ transform: (inout Item) -> Void) {
             guard let index = items.firstIndex(where: { $0.id == itemId }) else { return }
             transform(&items[index])
         }
 
         do {
-            let initResponse = try await api.initUpload(provider: provider, files: files, name: projectName)
+            let initResponse = try await api.initUpload(provider: provider, files: files, name: projectName, kind: kind)
             update { $0.uploadId = initResponse.uploadId }
 
             let totalChunks = files.reduce(0) { count, file in
@@ -125,17 +134,19 @@ final class UploadService: ObservableObject {
             var uploaded = 0
 
             for (fileIndex, file) in files.enumerated() {
-                let data = try Data(contentsOf: file.url)
-                let chunkCount = max(1, Int((Double(data.count) / Double(Config.chunkSize)).rounded(.up)))
+                // 用 FileHandle 逐片读取，不能 Data(contentsOf:) 一次性载入。
+                // SVIP 100MB / Ultra 大文件如果整包读进内存，iPhone 会直接被杀进程。
+                let handle = try FileHandle(forReadingFrom: file.url)
+                defer { try? handle.close() }
+                let chunkCount = max(1, Int((Double(file.size) / Double(Config.chunkSize)).rounded(.up)))
                 for chunkIndex in 0..<chunkCount {
                     if Task.isCancelled { return }
-                    let start = chunkIndex * Config.chunkSize
-                    let end = min(start + Config.chunkSize, data.count)
+                    let data = try handle.read(upToCount: Config.chunkSize) ?? Data()
                     try await api.uploadChunk(
                         uploadId: initResponse.uploadId,
                         fileIndex: fileIndex,
                         chunkIndex: chunkIndex,
-                        data: data.subdata(in: start..<end)
+                        data: data
                     )
                     uploaded += 1
                     update { $0.progress = Double(uploaded) / Double(max(totalChunks, 1)) }
@@ -157,8 +168,9 @@ final class UploadService: ObservableObject {
     }
 
     private func pollStatus(itemId: UUID, projectId: String) async {
-        // 最大轮询 150 次（约 5 分钟，2 秒间隔），超时判失败；404（项目已删）立即退出
-        let maxAttempts = 150
+        // 后端项目安装 4 分钟 + 构建 3 分钟 + 启动 1 分钟，轮询窗口必须覆盖完整链路。
+        // 360 次 × 2 秒 = 12 分钟；404（项目已删）仍会立即退出。
+        let maxAttempts = 360
         var attempts = 0
 
         while !Task.isCancelled && attempts < maxAttempts {

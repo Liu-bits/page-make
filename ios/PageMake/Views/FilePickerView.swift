@@ -3,6 +3,10 @@ import UniformTypeIdentifiers
 
 /// 创建入口：上传文件 / 粘贴代码 / 项目模式
 struct FilePickerView: View {
+    /// 当前账号能否选择后端形态（VIP / SVIP / Ultra 才行）
+    let canUseBackend: Bool
+    /// nil = Ultra 无上限
+    let maxUploadBytes: Int64?
     let onPick: (CreateSource) -> Void
 
     private enum Mode: Hashable {
@@ -13,6 +17,8 @@ struct FilePickerView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var mode: Mode = .files
+    /// 部署形态：纯前端 / npm / pnpm
+    @State private var kind: ProjectKind = .staticSite
     @State private var showPicker = false
     @State private var alertItem: AlertItem?
     @State private var projectName = ""
@@ -22,15 +28,18 @@ struct FilePickerView: View {
     @State private var css = ""
     @State private var js = ""
 
-    private static let pasteLimitBytes = 300 * 1024
+    private static let ordinaryPasteLimitBytes: Int64 = 300 * 1024
 
-    private static let supportedTypes: [UTType] = {
+    private var supportedTypes: [UTType] {
         var types: [UTType] = []
-        for ext in ["zip", "html", "css", "js"] {
+        let extensions = kind.isBackend
+            ? FileValidator.backendAllowedExtensions
+            : FileValidator.staticAllowedExtensions
+        for ext in extensions {
             if let type = UTType(filenameExtension: ext) { types.append(type) }
         }
         return types
-    }()
+    }
 
     private var pasteContent: PasteContent {
         PasteContent(html: html, css: css, js: js)
@@ -56,6 +65,10 @@ struct FilePickerView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                    deployKindBar
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
                 }
             }
             .navigationTitle(L10n.string("creation_studio"))
@@ -67,7 +80,7 @@ struct FilePickerView: View {
                 }
             }
             .sheet(isPresented: $showPicker) {
-                DocumentPicker(types: Self.supportedTypes) { urls in
+                DocumentPicker(types: supportedTypes) { urls in
                     // UIKit delegate 回调不保证主线程；直接改 @State 会触发
                     // “Publishing changes from background threads” 甚至崩溃。
                     Task { @MainActor in
@@ -143,6 +156,12 @@ struct FilePickerView: View {
             modeButton(.paste, icon: "chevron.left.forwardslash.chevron.right", titleKey: "pick_mode_paste")
             modeButton(.explorer, icon: "folder.badge.plus", titleKey: "mode_explorer")
         }
+        // 后端项目必须有 package.json；粘贴通道只收 HTML/CSS/JS，切到后端时把它禁用
+        .onChange(of: kind) { _, newKind in
+            if newKind.isBackend && mode == .paste {
+                mode = .files
+            }
+        }
         .padding(5)
         .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
         .overlay {
@@ -152,13 +171,18 @@ struct FilePickerView: View {
     }
 
     private func modeButton(_ value: Mode, icon: String, titleKey: String) -> some View {
-        Button {
+        let disabled = value == .paste && kind.isBackend
+        return Button {
+            guard !disabled else {
+                alertItem = AlertItem(message: L10n.string("paste_unavailable_for_backend"))
+                return
+            }
             withAnimation(.snappy(duration: 0.24)) {
                 mode = value
             }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: icon)
+                Image(systemName: disabled ? "lock.fill" : icon)
                     .font(.system(size: 11, weight: .semibold))
                 Text(L10n.string(titleKey))
                     .font(.caption2.bold())
@@ -167,12 +191,80 @@ struct FilePickerView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
             .background(
-                mode == value ? PageMakeTheme.ink : Color.clear,
+                mode == value && !disabled ? PageMakeTheme.ink : Color.clear,
                 in: RoundedRectangle(cornerRadius: 12, style: .continuous)
             )
-            .foregroundStyle(mode == value ? .white : PageMakeTheme.inkSoft)
+            .foregroundStyle(disabled ? PageMakeTheme.inkSoft.opacity(0.5) : (mode == value ? .white : PageMakeTheme.inkSoft))
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - 部署形态（纯前端 / npm / pnpm）
+
+    /// 三选一部署选项。非 VIP 也能看到 npm / pnpm，但是置灰不可选——
+    /// 明确告诉用户「这是升级后解锁的能力」，比直接隐藏更容易理解。
+    private var deployKindBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(L10n.string("deploy_kind_title"))
+                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .foregroundStyle(PageMakeTheme.inkSoft)
+                    .textCase(.uppercase)
+                    .tracking(0.4)
+                Spacer(minLength: 0)
+                if !canUseBackend {
+                    Text(L10n.string("deploy_kind_locked"))
+                        .font(.caption2.bold())
+                        .foregroundStyle(PageMakeTheme.coral)
+                }
+            }
+
+            HStack(spacing: 8) {
+                ForEach(ProjectKind.allCases) { option in
+                    deployKindButton(option)
+                }
+            }
+        }
+        .padding(10)
+        .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .stroke(PageMakeTheme.ink.opacity(0.07), lineWidth: 1)
+        }
+    }
+
+    private func deployKindButton(_ option: ProjectKind) -> some View {
+        let locked = option.isBackend && !canUseBackend
+        let selected = kind == option
+        return Button {
+            guard !locked else {
+                alertItem = AlertItem(message: L10n.string("deploy_kind_requires_vip"))
+                return
+            }
+            withAnimation(.snappy(duration: 0.22)) { kind = option }
+        } label: {
+            VStack(spacing: 5) {
+                Image(systemName: locked ? "lock.fill" : option.symbolName)
+                    .font(.system(size: 15, weight: .semibold))
+                Text(L10n.string(option.titleKey))
+                    .font(.caption2.bold())
+                    .lineLimit(1)
+                Text(L10n.string(option.detailKey))
+                    .font(.system(size: 9))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .opacity(0.75)
+            }
+            .frame(maxWidth: .infinity, minHeight: 62)
+            .padding(.vertical, 7)
+            .background(
+                selected && !locked ? PageMakeTheme.ink : PageMakeTheme.surfaceSoft,
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .foregroundStyle(locked ? PageMakeTheme.inkSoft.opacity(0.55) : (selected ? .white : PageMakeTheme.inkSoft))
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint(locked ? L10n.string("deploy_kind_requires_vip") : "")
     }
 
     // MARK: - 文件模式
@@ -185,7 +277,8 @@ struct FilePickerView: View {
                     eyebrowKey: "creation_zip_eyebrow",
                     titleKey: "pick_files_title",
                     detailKey: "pick_files_hint",
-                    tint: PageMakeTheme.gold
+                    tint: PageMakeTheme.gold,
+                    detailText: uploadHint
                 )
 
                 PageMakeCard {
@@ -235,7 +328,7 @@ struct FilePickerView: View {
 
                         Button {
                             if let name = validatedProjectName() {
-                                onPick(.explorer(name: name))
+                                onPick(.explorer(name: name, kind: kind))
                             }
                         } label: {
                             Label(L10n.string("explorer_create"), systemImage: "arrow.right")
@@ -407,7 +500,8 @@ struct FilePickerView: View {
         eyebrowKey: String,
         titleKey: String,
         detailKey: String,
-        tint: Color
+        tint: Color,
+        detailText: String? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: 13) {
             HStack {
@@ -426,7 +520,7 @@ struct FilePickerView: View {
             Text(L10n.string(titleKey))
                 .font(.system(size: 28, weight: .bold, design: .serif))
                 .foregroundStyle(.white)
-            Text(L10n.string(detailKey))
+            Text(detailText ?? L10n.string(detailKey))
                 .font(.subheadline)
                 .foregroundStyle(.white.opacity(0.68))
                 .fixedSize(horizontal: false, vertical: true)
@@ -444,11 +538,15 @@ struct FilePickerView: View {
     }
 
     private var isTooLarge: Bool {
-        pasteContent.totalBytes > Self.pasteLimitBytes
+        guard let limit = pasteLimitBytes else { return false }
+        return Int64(pasteContent.totalBytes) > limit
     }
 
     private var sizeText: String {
         let kb = Double(pasteContent.totalBytes) / 1024
+        if let limit = pasteLimitBytes {
+            return L10n.format("paste_size_with_limit", String(format: "%.1f", kb), formatLimit(limit))
+        }
         return L10n.format("paste_size", String(format: "%.1f", kb))
     }
 
@@ -459,10 +557,13 @@ struct FilePickerView: View {
             return
         }
         guard !isTooLarge else {
-            alertItem = AlertItem(message: L10n.string("paste_too_large"))
+            let message = pasteLimitBytes.map {
+                L10n.format("paste_too_large_limit", formatLimit($0))
+            } ?? L10n.string("paste_too_large")
+            alertItem = AlertItem(message: message)
             return
         }
-        onPick(.paste(pasteContent, name: name))
+        onPick(.paste(pasteContent, name: name, kind: kind))
     }
 
     // MARK: - 文件选择
@@ -471,36 +572,64 @@ struct FilePickerView: View {
     private func handlePicked(_ urls: [URL]) {
         guard let name = validatedProjectName() else { return }
         var picked: [PickedFile] = []
+        func discardPicked() {
+            for file in picked {
+                try? FileManager.default.removeItem(at: file.url)
+            }
+        }
         for url in urls {
             let didStart = url.startAccessingSecurityScopedResource()
             defer { if didStart { url.stopAccessingSecurityScopedResource() } }
 
             let name = url.lastPathComponent
             let ext = name.lowercased().components(separatedBy: ".").last ?? ""
-            guard FileValidator.allowedExtensions.contains(ext) else {
+            guard FileValidator.allowedExtensions(for: kind).contains(ext) else {
+                discardPicked()
                 alertItem = AlertItem(message: L10n.format("validation_extension", ext))
                 return
             }
 
             let values = try? url.resourceValues(forKeys: [.fileSizeKey])
-            let size = Int64(values?.fileSize ?? 0)
+            let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+            let size = Int64(values?.fileSize ?? (attributes?[.size] as? NSNumber)?.int64Value ?? 0)
             let destination = FileManager.default.temporaryDirectory
                 .appendingPathComponent("\(UUID().uuidString)_\(name)")
             do {
                 try FileManager.default.copyItem(at: url, to: destination)
                 picked.append(PickedFile(url: destination, name: name, size: size))
             } catch {
+                discardPicked()
                 alertItem = AlertItem(message: L10n.string("error_generic"))
                 return
             }
         }
 
-        switch FileValidator.validate(picked) {
+        switch FileValidator.validate(picked, limitBytes: maxUploadBytes, kind: kind) {
         case .success(let files):
-            onPick(.files(files, name: name))
+            onPick(.files(files, name: name, kind: kind))
         case .failure(let error):
+            discardPicked()
             alertItem = AlertItem(message: error.errorDescription ?? L10n.string("error_generic"))
         }
+    }
+
+    private var uploadHint: String {
+        let limitKey = kind.isBackend ? "pick_files_hint_backend_limit" : "pick_files_hint_limit"
+        let unlimitedKey = kind.isBackend ? "pick_files_hint_backend_unlimited" : "pick_files_hint_unlimited"
+        guard let maxUploadBytes else {
+            return L10n.string(unlimitedKey)
+        }
+        return L10n.format(limitKey, formatLimit(maxUploadBytes))
+    }
+
+    /// 普通用户保留 300KB 快速粘贴上限；VIP 及以上按服务端静态配额。
+    private var pasteLimitBytes: Int64? {
+        canUseBackend ? maxUploadBytes : Self.ordinaryPasteLimitBytes
+    }
+
+    private func formatLimit(_ bytes: Int64) -> String {
+        let mb = Double(bytes) / 1_048_576.0
+        return mb >= 1 ? String(format: "%.0f MB", mb) : String(format: "%.0f KB", Double(bytes) / 1024.0)
     }
 }
 

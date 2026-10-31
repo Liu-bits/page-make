@@ -143,6 +143,18 @@ await test('zip 炸弹：解压总量超限抛 TOO_LARGE', async () => {
   assertEqual(error.code, 'TOO_LARGE');
 });
 
+await test('SVIP/Ultra 可传入更高解压上限（不被固定 32MB 截断）', async () => {
+  const big = new Uint8Array(40 * 1024 * 1024);
+  const zip = buildZip([
+    ['index.html', '<h1>large-tier</h1>'],
+    ['asset.bin', big, { deflate: true }],
+  ]);
+  const files = await unzip(zip, { maxTotalBytes: 100 * 1024 * 1024 });
+  assertEqual(files.get('asset.bin').length, big.length, 'SVIP 100MB 配额下 40MB 文件应可解压');
+  const unlimited = await unzip(zip, { maxTotalBytes: Number.POSITIVE_INFINITY });
+  assertEqual(unlimited.get('asset.bin').length, big.length, 'Ultra 无上限时应可解压');
+});
+
 await test('zip 炸弹：条目数超限抛 TOO_LARGE', async () => {
   const entries = [];
   for (let i = 0; i < 600; i++) entries.push([`f${i}.txt`, 'x']);
@@ -640,6 +652,86 @@ await test('预处理器与源码映射类型已覆盖（模板常见）', async
     assert(type !== 'application/octet-stream', `${file} 不应落到 octet-stream（实际 ${type}）`);
   }
   assertEqual(contentTypeFor('a.css.map'), 'application/json; charset=utf-8', '.map 应视为 JSON');
+});
+
+// ---------------------------------------------------------------------------
+console.log('\n[12] 账号等级与配额（VIP / SVIP / Ultra）');
+
+await test('等级归一：非法 role 与历史 isTest 账号', async () => {
+  const { tierOf, atLeast } = await import('../backend/lib/tiers.js');
+  assertEqual(tierOf({ userId: 'a' }), 'user', '无 role 应为 user');
+  assertEqual(tierOf({ userId: 'a', role: 'nonsense' }), 'user', '非法 role 应为 user');
+  assertEqual(tierOf({ userId: 'a', isTest: true }), 'vip', '历史 isTest 账号应按 vip 处理');
+  assertEqual(tierOf({ userId: 'a', role: 'svip' }), 'svip');
+  assertEqual(tierOf({ userId: 'a', role: 'ultra' }), 'ultra');
+  assert(atLeast({ userId: 'a', role: 'ultra' }, 'svip'), 'ultra 应满足 svip 门槛');
+  assert(!atLeast({ userId: 'a', role: 'vip' }, 'svip'), 'vip 不应满足 svip 门槛');
+});
+
+await test('配额：VIP 1MB / SVIP 100MB / Ultra 无限', async () => {
+  const { quotaFor } = await import('../backend/lib/tiers.js');
+  const MB = 1024 * 1024;
+  assertEqual(quotaFor({ userId: 'a', role: 'vip' }, 'backend'), 1 * MB, 'VIP 后端源码应为 1MB');
+  assertEqual(quotaFor({ userId: 'a', role: 'svip' }, 'backend'), 100 * MB, 'SVIP 应为 100MB');
+  assertEqual(quotaFor({ userId: 'a', role: 'ultra' }, 'static'), Number.POSITIVE_INFINITY, 'Ultra 静态应无上限');
+  assertEqual(quotaFor({ userId: 'a', role: 'user' }, 'static'), 5 * MB, '普通账号静态应保持 5MB');
+});
+
+await test('后端部署权限：普通用户不可用，VIP 起可用', async () => {
+  const { canUseBackend, quotaViewJson } = await import('../backend/lib/tiers.js');
+  assertEqual(canUseBackend({ userId: 'a' }), false, '普通用户不应能部署后端');
+  assertEqual(canUseBackend({ userId: 'a', role: 'vip' }), true, 'VIP 应能部署后端');
+  const json = quotaViewJson({ userId: 'a', role: 'ultra' });
+  assertEqual(json.staticMaxBytes, null, 'Infinity 对外必须转 null');
+  assertEqual(json.canExport, true, 'Ultra 应可导出');
+  assertEqual(quotaViewJson({ userId: 'a' }).canExport, false, '普通用户不可导出');
+});
+
+await test('游客升级到 VIP 后不再受限；降回 user 恢复限制', async () => {
+  const { isGuestLimited } = await import('../backend/lib/tiers.js');
+  assertEqual(isGuestLimited({ userId: 'guest_abc' }), true, '普通游客受限');
+  assertEqual(isGuestLimited({ userId: 'guest_abc', role: 'vip' }), false, '游客 VIP 不受限');
+  assertEqual(isGuestLimited({ userId: 'google_x' }), false, 'Apple/Google 账号不受游客限制');
+});
+
+await test('部署形态归一：非法/缺失按 static，npm/pnpm 识别为后端', async () => {
+  const { normalizeKind, isBackendKind, PROJECT_KIND } = await import('../backend/lib/state.js');
+  assertEqual(normalizeKind(undefined), PROJECT_KIND.STATIC, '缺失应为 static');
+  assertEqual(normalizeKind('php'), PROJECT_KIND.STATIC, '非法值应回落 static');
+  assertEqual(normalizeKind('npm'), 'npm');
+  assertEqual(normalizeKind('pnpm'), 'pnpm');
+  assertEqual(isBackendKind('npm'), true);
+  assertEqual(isBackendKind('pnpm'), true);
+  assertEqual(isBackendKind('static'), false);
+});
+
+// ---------------------------------------------------------------------------
+console.log('\n[13] ZIP 导出（备份）');
+
+await test('ZIP 写入器可被自家解压器正确读回（含中文路径与二进制）', async () => {
+  const { buildZip, crc32 } = await import('../backend/lib/zipwrite.js');
+  const { unzip } = await import('../backend/lib/zip.js');
+  const enc = new TextEncoder();
+  const binary = new Uint8Array([0, 1, 2, 255, 254, 128, 64]);
+  const entries = [
+    { path: 'index.html', data: enc.encode('<!doctype html><h1>你好</h1>') },
+    { path: 'assets/图片.bin', data: binary },
+    { path: 'css/style.css', data: enc.encode('body{margin:0}') },
+  ];
+  const zip = buildZip(entries);
+  const files = await unzip(zip);
+  assertEqual(files.size, 3, '应解出 3 个文件');
+  assertEqual(new TextDecoder().decode(files.get('index.html')), '<!doctype html><h1>你好</h1>');
+  assertEqual(Array.from(files.get('assets/图片.bin')).join(','), Array.from(binary).join(','), '二进制应逐字节一致');
+  assertEqual(crc32(enc.encode('123456789')), 0xcbf43926, 'CRC32 标准测试向量应匹配');
+});
+
+await test('空项目导出仍生成合法 ZIP（EOCD 结构正确）', async () => {
+  const { buildZip } = await import('../backend/lib/zipwrite.js');
+  const { unzip } = await import('../backend/lib/zip.js');
+  const zip = buildZip([]);
+  const files = await unzip(zip);
+  assertEqual(files.size, 0, '空 ZIP 应解出 0 个文件');
 });
 
 console.log(`\n结果：${passed} 通过，${failed} 失败\n`);

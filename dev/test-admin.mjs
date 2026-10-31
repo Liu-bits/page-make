@@ -509,7 +509,115 @@ await test('删除 VIP 游客：deleteVIPUser 生效且旧 token 401', async () 
 await test('overview 统计包含 vipCount 与 role 标识', async () => {
   const ov = await overview(adminToken);
   assert(typeof ov.body.stats.vipCount === 'number', 'stats.vipCount 应为数字');
-  assert(Array.isArray(ov.body.users) && ov.body.users.every((u) => ['vip', 'user'].includes(u.role)), '用户应带 role 标识');
+  assert(
+    Array.isArray(ov.body.users) && ov.body.users.every((u) => ['vip', 'svip', 'ultra', 'user'].includes(u.role)),
+    '用户应带 role 标识'
+  );
+  assert(
+    Array.isArray(ov.body.users) && ov.body.users.every((u) => ['vip', 'svip', 'ultra', 'user'].includes(u.tier)),
+    '用户应带 tier 标识'
+  );
+});
+
+// 5.1 等级体系：user → vip → svip → ultra
+await test('setTier：VIP → SVIP → Ultra 逐级提升，配额同步变化', async () => {
+  const deviceId = `tier-${Date.now().toString(16)}-abcdef`;
+  const guest = await (await fetch(`${BASE}/api/auth/guest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId }),
+  })).json();
+  assert(guest.ok, '游客登录应成功');
+  const userId = guest.userId;
+  const userAuth = { 'X-Pagemake-Token': guest.token };
+
+  const setTier = async (tier) => (await (await fetch(`${BASE}/api/admin/action`, {
+    method: 'POST',
+    headers: { 'X-Admin-Token': adminToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'setTier', userId, tier }),
+  })).json());
+
+  const toVip = await setTier('vip');
+  assert(toVip.ok, `升到 VIP 应成功：${JSON.stringify(toVip)}`);
+  assertEqual(toVip.tier, 'vip');
+
+  let stats = await (await fetch(`${BASE}/api/stats`, { headers: userAuth })).json();
+  assertEqual(stats.tier, 'vip', 'stats 应返回 vip');
+  assertEqual(stats.quota.backendMaxBytes, 1024 * 1024, 'VIP 后端配额应为 1MB');
+  assertEqual(stats.quota.canUseBackend, true, 'VIP 应可建后端项目');
+
+  const toSvip = await setTier('svip');
+  assert(toSvip.ok, '升到 SVIP 应成功');
+  stats = await (await fetch(`${BASE}/api/stats`, { headers: userAuth })).json();
+  assertEqual(stats.tier, 'svip');
+  assertEqual(stats.quota.backendMaxBytes, 100 * 1024 * 1024, 'SVIP 后端配额应为 100MB');
+
+  const toUltra = await setTier('ultra');
+  assert(toUltra.ok, '升到 Ultra 应成功');
+  stats = await (await fetch(`${BASE}/api/stats`, { headers: userAuth })).json();
+  assertEqual(stats.tier, 'ultra');
+  assertEqual(stats.quota.backendMaxBytes, null, 'Ultra 配额对外应为 null（无上限）');
+  assertEqual(stats.quota.staticMaxBytes, null, 'Ultra 静态配额也应为 null');
+});
+
+await test('setTier：非法等级拒绝，重复设置返回 TIER_UNCHANGED', async () => {
+  const deviceId = `tier2-${Date.now().toString(16)}-abcdef`;
+  const guest = await (await fetch(`${BASE}/api/auth/guest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId }),
+  })).json();
+  const userId = guest.userId;
+
+  const bad = await fetch(`${BASE}/api/admin/action`, {
+    method: 'POST',
+    headers: { 'X-Admin-Token': adminToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'setTier', userId, tier: 'god' }),
+  });
+  assertEqual(bad.status, 400, '非法等级应 400');
+  assertEqual((await bad.json()).error, 'INVALID_TIER');
+
+  const same = await (await fetch(`${BASE}/api/admin/action`, {
+    method: 'POST',
+    headers: { 'X-Admin-Token': adminToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'setTier', userId, tier: 'user' }),
+  })).json();
+  assertEqual(same.error, 'TIER_UNCHANGED', '设置成当前等级应返回 TIER_UNCHANGED');
+});
+
+await test('降级到 user：游客链接恢复 10 分钟限制', async () => {
+  const deviceId = `tier3-${Date.now().toString(16)}-abcdef`;
+  const guest = await (await fetch(`${BASE}/api/auth/guest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId }),
+  })).json();
+  const userId = guest.userId;
+  const userAuth = { 'X-Pagemake-Token': guest.token };
+
+  // 建一个项目，再升到 SVIP（应清除过期时间）
+  const created = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { ...userAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ html: '<h1>tier</h1>' }),
+  })).json();
+  assert(created.ok, '游客建项目应成功');
+  const projectId = created.project.id;
+
+  await fetch(`${BASE}/api/admin/action`, {
+    method: 'POST',
+    headers: { 'X-Admin-Token': adminToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'setTier', userId, tier: 'svip' }),
+  });
+
+  const down = await (await fetch(`${BASE}/api/admin/action`, {
+    method: 'POST',
+    headers: { 'X-Admin-Token': adminToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'setTier', userId, tier: 'user' }),
+  })).json();
+  assert(down.ok, `降级应成功：${JSON.stringify(down)}`);
+  assert(down.linksLimited >= 1, `降级后应至少有 1 个项目恢复限时（实际 ${down.linksLimited}）`);
+  assert(projectId, '项目应已创建');
 });
 
 await test('邮箱密码登录入口已彻底删除（POST /api/auth/login → 404）', async () => {

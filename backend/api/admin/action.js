@@ -8,6 +8,8 @@
 //   setPassword       { newPassword }                管理员改自己的后台密码
 //   upgradeVIP        { userId }                     将现有 Apple/Google/游客账号升级为 VIP
 //                                                （同时清除该账号游客期项目的 10 分钟链接过期时间）
+//   setTier           { userId, tier }               设置等级：user / vip / svip / ultra
+//                                                （升级清链接过期，降级按游客身份重新计时）
 //   downgradeVIP      { userId }                     取消 VIP（保留账号与项目；游客身份链接重新计时）
 //   deleteVIPUser     { userId }                     删除 VIP 用户（= deleteUser，仅允许 VIP）
 //   reviewVIPRequest  { userId, approve, note? }     审核游客 VIP 升级申请
@@ -18,8 +20,19 @@ import { decodeKey } from '../../lib/base64.js';
 import { ok, fail } from '../../lib/responses.js';
 import { requireAdmin, changeAdminPassword } from '../../lib/admin.js';
 import { revokeUserSessions, isVIPUser } from '../../lib/session.js';
-import { BAN_LEVELS, GUEST_LINK_TTL_SECONDS } from '../../lib/state.js';
+import { TIERS, tierOf } from '../../lib/tiers.js';
+import {
+  BAN_LEVELS,
+  GUEST_LINK_TTL_SECONDS,
+  STATUS,
+  isBackendKind,
+  normalizeKind,
+} from '../../lib/state.js';
 import { deleteUserAccount, purgePasswordUsers } from '../../lib/admin-users.js';
+import {
+  deployBackendApp,
+  stop as stopBackendRuntime,
+} from '../../lib/backend-runtime.js';
 
 /** 遍历某用户的全部项目（uproject 索引的 value 段是 hex 编码的项目 ID，需 decodeKey 还原） */
 async function forEachUserProject(kv, userId, fn) {
@@ -54,17 +67,23 @@ async function banUser(kv, { userId, level, reason, days }) {
   // 项目全部下架（banned 状态公开页 403「已下架」）
   await forEachUserProject(kv, userId, async (projectId) => {
     const project = await kvGet(kv, keys.project(projectId));
-    if (project && project.status !== 'banned') {
+    if (!project) return;
+    if (project.status !== 'banned') {
       project._preBanStatus = project.status;
       project.status = 'banned';
       await kvPut(kv, keys.project(projectId), project);
+    }
+    // 下架不仅是隐藏页面：npm/pnpm 常驻进程也必须停止，否则封禁账号
+    // 仍能继续消耗 CPU、内存和内部端口。历史已下架记录也要补做回收。
+    if (isBackendKind(normalizeKind(project.kind))) {
+      await stopBackendRuntime(projectId);
     }
   });
   return ok({ banned: true, userId, banUntil });
 }
 
 /** 解封：清除封禁状态 + 恢复项目为封禁前状态 */
-async function unbanUser(kv, { userId }) {
+async function unbanUser(kv, { userId }, context) {
   const user = await kvGet(kv, keys.user(userId));
   if (!user) return fail('NOT_FOUND', 404);
 
@@ -74,15 +93,55 @@ async function unbanUser(kv, { userId }) {
   user.banUntil = null;
   await kvPut(kv, keys.user(userId), user);
 
+  const restoreTasks = [];
   await forEachUserProject(kv, userId, async (projectId) => {
     const project = await kvGet(kv, keys.project(projectId));
     if (project && project.status === 'banned') {
       project.status = project._preBanStatus === 'failed' ? 'failed' : 'ready';
       delete project._preBanStatus;
+      project.errorCode = null;
+      if (project.status === STATUS.READY && isBackendKind(normalizeKind(project.kind))) {
+        // 解封请求不能同步等 4 分钟依赖安装；先标记 processing，
+        // 再交给 waitUntil 恢复常驻进程，客户端可继续轮询项目状态。
+        project.status = STATUS.PROCESSING;
+        await kvPut(kv, keys.project(projectId), project);
+        restoreTasks.push((async () => {
+          try {
+            const runtime = await deployBackendApp({
+              kv,
+              projectId,
+              kind: normalizeKind(project.kind),
+            });
+            const latest = await kvGet(kv, keys.project(projectId));
+            if (!latest) {
+              await stopBackendRuntime(projectId);
+              return;
+            }
+            latest.status = STATUS.READY;
+            latest.errorCode = null;
+            latest.runtimePort = runtime.port;
+            latest.runtimeKind = runtime.kind;
+            await kvPut(kv, keys.project(projectId), latest);
+          } catch (error) {
+            const latest = await kvGet(kv, keys.project(projectId));
+            if (!latest) return;
+            latest.status = STATUS.FAILED;
+            latest.errorCode = error?.code || 'RUNTIME_UNAVAILABLE';
+            await kvPut(kv, keys.project(projectId), latest);
+          }
+        })());
+        return;
+      }
       await kvPut(kv, keys.project(projectId), project);
     }
   });
-  return ok({ unbanned: true, userId });
+  const restoreTask = Promise.all(restoreTasks);
+  if (restoreTasks.length && typeof context?.waitUntil === 'function') {
+    context.waitUntil(restoreTask);
+  } else if (restoreTasks.length) {
+    await restoreTask;
+  }
+  return ok({ unbanned: true, userId, backendRestoring: restoreTasks.length });
 }
 
 /** 删除账号：用户记录 + 全部项目（含文件）+ 会话（强制下线） */
@@ -110,13 +169,63 @@ async function upgradeVIP(kv, { userId }) {
   const user = await kvGet(kv, keys.user(userId));
   if (!user) return fail('NOT_FOUND', 404);
   if (isVIPUser(user)) return fail('ALREADY_VIP', 409);
+  return applyTier(kv, user, 'vip');
+}
 
-  user.role = 'vip';
-  user.vipSince = nowSeconds();
+/**
+ * 设置账号等级（user / vip / svip / ultra）。
+ *
+ * 升级方向统一清掉游客期的 10 分钟链接过期；降到 user 时若仍是游客身份
+ * 则重新计时（与 downgradeVIP 同一套语义，避免两条路径行为不一致）。
+ */
+async function setTier(kv, { userId, tier }) {
+  if (typeof userId !== 'string' || !userId) return fail('BAD_REQUEST', 400);
+  if (!TIERS.includes(tier)) return fail('INVALID_TIER', 400);
+  const user = await kvGet(kv, keys.user(userId));
+  if (!user) return fail('NOT_FOUND', 404);
+  if (tierOf(user) === tier) return fail('TIER_UNCHANGED', 409);
+  return applyTier(kv, user, tier);
+}
+
+/** 落库并同步项目链接期限；upgradeVIP / setTier / downgradeVIP 共用 */
+async function applyTier(kv, user, tier) {
+  const userId = user.userId;
+  const previous = tierOf(user);
+
+  user.role = tier;
+  if (tier === 'user') {
+    delete user.vipSince;
+  } else {
+    user.vipSince = user.vipSince ?? nowSeconds();
+  }
   delete user.isTest;
   await kvPut(kv, keys.user(userId), user);
-  const cleared = await clearGuestLinkExpiry(kv, userId);
-  return ok({ upgraded: true, userId, linksRenewed: cleared });
+
+  let linksRenewed = 0;
+  let linksLimited = 0;
+  if (tier === 'user') {
+    // 只有游客身份才需要重新计时；Apple / Google 普通账号链接本就长期有效
+    if (user.userId?.startsWith('guest_')) {
+      linksLimited = await reapplyGuestLinkExpiry(kv, userId);
+    }
+    // 后端运行权益随等级收回：停掉常驻进程，避免降级后仍继续消耗资源。
+    await forEachUserProject(kv, userId, async (projectId) => {
+      const project = await kvGet(kv, keys.project(projectId));
+      if (project && isBackendKind(normalizeKind(project.kind))) {
+        await stopBackendRuntime(projectId);
+      }
+    });
+  } else {
+    linksRenewed = await clearGuestLinkExpiry(kv, userId);
+  }
+
+  return ok({
+    tier,
+    previousTier: previous,
+    userId,
+    linksRenewed,
+    linksLimited,
+  });
 }
 
 /** 清除某账号全部项目的游客链接过期时间（升级 VIP 时调用） */
@@ -145,17 +254,7 @@ async function downgradeVIP(kv, { userId }) {
   const user = await kvGet(kv, keys.user(userId));
   if (!user) return fail('NOT_FOUND', 404);
   if (!isVIPUser(user)) return fail('NOT_VIP_USER', 400);
-
-  user.role = 'user';
-  delete user.isTest;
-  delete user.vipSince;
-  await kvPut(kv, keys.user(userId), user);
-  // 只有游客身份才需要重新计时；Apple / Google 普通账号链接保持长期有效
-  let limited = 0;
-  if (user.userId?.startsWith('guest_')) {
-    limited = await reapplyGuestLinkExpiry(kv, userId);
-  }
-  return ok({ downgraded: true, userId, linksLimited: limited });
+  return applyTier(kv, user, 'user');
 }
 
 /** 给游客身份的项目重新加上 10 分钟链接过期时间（取消 VIP 时调用） */
@@ -222,6 +321,7 @@ async function deleteProjectAdmin(kv, { projectId }) {
   const project = await kvGet(kv, keys.project(projectId));
   if (!project) return fail('NOT_FOUND', 404);
   const userId = project.userId;
+  await stopBackendRuntime(projectId);
   for (const key of await kvListAll(kv, keys.sitePrefix(projectId))) await kvDel(kv, key);
   await kvDel(kv, keys.siteMeta(projectId));
   await kvDel(kv, keys.project(projectId));
@@ -247,11 +347,13 @@ export async function onRequest(context) {
     case 'ban':
       return banUser(kv, body);
     case 'unban':
-      return unbanUser(kv, body);
+      return unbanUser(kv, body, context);
     case 'deleteUser':
       return deleteUserFromAdmin(kv, body);
     case 'upgradeVIP':
       return upgradeVIP(kv, body);
+    case 'setTier':
+      return setTier(kv, body);
     case 'downgradeVIP':
       return downgradeVIP(kv, body);
     case 'deleteVIPUser':

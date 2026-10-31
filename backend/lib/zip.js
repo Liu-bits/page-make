@@ -50,9 +50,16 @@ async function inflateRaw(raw) {
 /**
  * 解压 zip
  * @param {ArrayBuffer|Uint8Array} buffer
+ * @param {{maxTotalBytes?: number, maxEntries?: number}} options
  * @returns {Promise<Map<string, Uint8Array>>} 文件路径 → 内容
  */
-export async function unzip(buffer) {
+export async function unzip(buffer, options = {}) {
+  const maxTotalBytes = options.maxTotalBytes === undefined
+    ? ZIP_MAX_TOTAL_BYTES
+    : options.maxTotalBytes;
+  const maxEntries = Number.isInteger(options.maxEntries)
+    ? options.maxEntries
+    : ZIP_MAX_ENTRIES;
   const u8 = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
 
@@ -71,8 +78,8 @@ export async function unzip(buffer) {
   let offset = view.getUint32(eocd + 16, true);
 
   // 条目数上限：防止「海量小文件」耗尽内存与磁盘 inode
-  if (count > ZIP_MAX_ENTRIES) {
-    throw new ZipError('TOO_LARGE', `ZIP 条目过多（${count} > ${ZIP_MAX_ENTRIES}）`);
+  if (count > maxEntries) {
+    throw new ZipError('TOO_LARGE', `ZIP 条目过多（${count} > ${maxEntries}）`);
   }
 
   const files = new Map();
@@ -95,7 +102,7 @@ export async function unzip(buffer) {
     if (name.endsWith('/') || shouldSkip(name)) continue;
 
     // 解压前先按中央目录声明的原始大小拦截：避免为单个超大条目分配内存
-    if (declaredSize > ZIP_MAX_TOTAL_BYTES) {
+    if (declaredSize > maxTotalBytes) {
       throw new ZipError('TOO_LARGE', `ZIP 单条目过大：${name}`);
     }
 
@@ -118,8 +125,9 @@ export async function unzip(buffer) {
 
     // 解压总量上限：边解压边累计，超限立即中止（而非解压完再判断）
     totalBytes += data.length;
-    if (totalBytes > ZIP_MAX_TOTAL_BYTES) {
-      throw new ZipError('TOO_LARGE', `ZIP 解压后体积过大（> ${ZIP_MAX_TOTAL_BYTES} 字节）`);
+    if (totalBytes > maxTotalBytes) {
+      const label = Number.isFinite(maxTotalBytes) ? `${maxTotalBytes} 字节` : '当前等级上限';
+      throw new ZipError('TOO_LARGE', `ZIP 解压后体积过大（> ${label}）`);
     }
 
     files.set(name, data);

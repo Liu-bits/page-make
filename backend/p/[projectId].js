@@ -2,8 +2,9 @@
 // 项目被 ban → 「该内容已被下架」；链接过期 → 过期提示页
 import { getKV, kvGet, keys, nowSeconds } from '../lib/kv.js';
 import { contentTypeFor, htmlPage } from '../lib/responses.js';
-import { STATUS } from '../lib/state.js';
+import { STATUS, isBackendKind, normalizeKind } from '../lib/state.js';
 import { injectPublicBase, rewriteLocalRefs } from '../lib/paths.js';
+import { proxy } from '../lib/backend-runtime.js';
 
 const ID_RE = /^[a-f0-9]{32}$/;
 
@@ -28,6 +29,15 @@ export async function onRequest(context) {
   // 链接过期判定（所有线路）：expiresAt 到期即过期（游客 10 分钟 / EdgeOne TTL）
   if (project.expiresAt && nowSeconds() > project.expiresAt) {
     return htmlPage(410, 'expired', request);
+  }
+
+  // 后端项目（npm / pnpm）：整站反向代理到项目自己的 Node 进程。
+  // 必须在静态文件分支之前判断，否则会去 KV 找 index.html 而 404。
+  if (isBackendKind(normalizeKind(project.kind))) {
+    const proxied = await proxy(project.id, request);
+    if (proxied) return proxied;
+    // 进程没起来（容器刚重启 / 崩溃重试中）：返回可读的 503 而不是 404
+    return htmlPage(503, 'backendStarting', request);
   }
 
   const entry = project.entryPath || 'index.html';

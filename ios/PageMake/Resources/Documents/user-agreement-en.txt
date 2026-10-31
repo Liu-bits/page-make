@@ -1,15 +1,15 @@
 Page-make User Agreement
 
-Effective date: October 2026
+Effective date: October 31, 2026
 
 1. Service Description
 
-Page-make is a static site hosting tool: you upload a zip or individual HTML/CSS/JS files, and we automatically extract them, check your code, and generate a publicly accessible link. The service is free for signed-in users.
+Page-make is a web and Node service hosting tool: you upload a zip or individual HTML/CSS/JS files, or create an npm / pnpm project, and we extract, check, install dependencies, build, and generate a publicly accessible link. Standard users can use static deployment; npm / pnpm backend deployment is available only to VIP and above. The service is free for signed-in users.
 
 2. Accounts
 
-2.1 This service supports Apple, Google, and guest access. VIP is a benefit level for an existing account; it does not create a separate account or password. Accounts are for personal use only.
-2.2 VIP benefits require submitting a request from Settings > Upgrade to VIP in the app and are granted after human review. They are not enabled automatically, and this service offers no paid option. If a request is declined, the reason is shown and you may revise and resubmit.
+2.1 This service supports Apple, Google, and guest access. VIP, SVIP, and Ultra are benefit levels for an existing account; they do not create a separate account or password. Accounts are for personal use only.
+2.2 Tier benefits are adjusted by an administrator and are not enabled automatically. This service offers no paid option. Standard guests may submit a request from Settings > Upgrade to VIP for human review. If a request is declined, the reason is shown and you may revise and resubmit.
 2.3 You are responsible for all activity under your account.
 
 3. Content Rules
@@ -33,13 +33,15 @@ Uploaded content must comply with applicable laws and public order. The followin
 
 5.1 You are solely responsible for the legality and copyright of your uploaded content, and you must hold all rights needed to upload, store, and publicly display it.
 5.2 Public links are open to everyone. Do not upload passwords, keys, or other sensitive information.
-5.3 You retain ownership of your content and grant this service only the limited license needed to provide upload, storage, display, and sharing features.
+5.3 npm / pnpm project source is executed on the server for installation, build, and start commands. You are responsible for ensuring dependencies and scripts are safe and lawful, and for the consequences of running your project code.
+5.4 You retain ownership of your content and grant this service only the limited license needed to provide upload, storage, display, and sharing features.
 
 6. Service Availability
 
 6.1 This is a free service with no guarantee of continuous availability; it may be interrupted or changed due to maintenance, failures, or platform policy changes.
-6.2 Public links created by signed-in users remain available while the project exists; guest links are limited to a 10-minute trial.
+6.2 Public links created by signed-in users remain available while the project exists; standard guest links are limited to a 10-minute trial. Links created by VIP and above remain available while the project exists.
 6.3 The service may be briefly unavailable during maintenance, upgrades, or failures.
+6.4 npm / pnpm projects are subject to dependency-install time, build time, runtime memory, and concurrency limits; projects may be temporarily unavailable when limits are exceeded or a process crashes.
 
 7. Disclaimer
 

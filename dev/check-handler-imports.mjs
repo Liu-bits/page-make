@@ -92,9 +92,20 @@ function collectLocalNames(src) {
     }
   }
   // 函数/方法/箭头函数的参数名（含默认值与解构）
-  const paramRe = /(?:function\s*\*?\s*[\w$]*\s*|function\s*\*?\s*[\w$]*\s*|=>\s*)\(([^)]*)\)|\(\s*([^)]*)\s*\)\s*(?:=>|\{)/g;
-  while ((m = paramRe.exec(src))) {
-    for (const raw of (m[1] || m[2] || '').split(',')) {
+  // 注意不能用一个贪婪的 `\(([^)]*)\)` 去配：`new Promise((resolve) => {`
+  // 会让 `[^)]*` 吃掉内层 `(`，把参数名污染成 `(resolve`。按形态分别匹配。
+  const paramSources = [];
+  // (a) 单参数箭头：`resolve => ...`
+  for (const mm of src.matchAll(/([A-Za-z_$][\w$]*)\s*=>/g)) paramSources.push(mm[1]);
+  // (b) 括号参数箭头：`(a, b) => ...`
+  for (const mm of src.matchAll(/\(([^()]*)\)\s*=>/g)) paramSources.push(mm[1]);
+  // (c) function 声明/表达式参数
+  for (const mm of src.matchAll(/function\s*\*?\s*[\w$]*\s*\(([^()]*)\)/g)) paramSources.push(mm[1]);
+  // (d) 对象字面量 / class 方法参数：`foo(a, b) {`
+  for (const mm of src.matchAll(/(?:^|[,{\s])([A-Za-z_$][\w$]*)\s*\(([^()]*)\)\s*\{/gm)) paramSources.push(mm[2]);
+
+  for (const source of paramSources) {
+    for (const raw of String(source).split(',')) {
       const part = raw.split('=')[0].trim().replace(/^\.\.\./, '');
       const name = part.includes(':') ? part.split(':').pop().trim() : part;
       const inner = /\{([^}]*)\}/.exec(name);
@@ -109,8 +120,7 @@ function collectLocalNames(src) {
     }
   }
   // 对象字面量方法定义 `status() { ... }` 不是调用
-  const methodRe = /(?:^|[,{\s])([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*\{/gm;
-  while ((m = methodRe.exec(src))) local.add(m[1]);
+  for (const mm of src.matchAll(/(?:^|[,{\s])([A-Za-z_$][\w$]*)\s*\([^()]*\)\s*\{/gm)) local.add(mm[1]);
   const fnRe = /function\s+([A-Za-z_$][\w$]*)/g;
   while ((m = fnRe.exec(src))) local.add(m[1]);
   const classRe = /class\s+([A-Za-z_$][\w$]*)/g;

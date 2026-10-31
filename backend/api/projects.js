@@ -1,8 +1,9 @@
 // GET /api/projects — 我的项目列表（按创建时间倒序）
-import { accountKind, isVIPUser, requireAuth } from '../lib/session.js';
+import { accountKind, requireAuth } from '../lib/session.js';
 import { kvGet, kvListAll, keys } from '../lib/kv.js';
 import { decodeKey } from '../lib/base64.js';
 import { ok, fail } from '../lib/responses.js';
+import { quotaViewJson, tierOf } from '../lib/tiers.js';
 
 export async function onRequest(context) {
   const { request } = context;
@@ -22,7 +23,9 @@ export async function onRequest(context) {
   projects.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return ok({
     projects,
-    role: isVIPUser(auth.user) ? 'vip' : 'user',
+    role: tierOf(auth.user),
+    tier: tierOf(auth.user),
+    quota: quotaViewJson(auth.user),
     accountKind: accountKind(auth.user),
   });
 }

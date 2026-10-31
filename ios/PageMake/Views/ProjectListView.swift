@@ -452,6 +452,9 @@ struct ProjectListView: View {
             HStack(spacing: 7) {
                 metadataPill(icon: "doc.on.doc", text: L10n.format("file_count", project.fileCount))
                 metadataPill(icon: "externaldrive", text: formatBytes(project.size))
+                if project.kind.isBackend {
+                    metadataPill(icon: project.kind.symbolName, text: L10n.string(project.kind.titleKey))
+                }
             }
 
             Divider()
@@ -555,6 +558,7 @@ struct ProjectListView: View {
     }
 
     private func projectIcon(_ project: Project) -> String {
+        if project.kind.isBackend { return project.kind.symbolName }
         switch project.sourceType {
         case "explorer": return "folder.fill"
         case "paste": return "chevron.left.forwardslash.chevron.right"
@@ -563,6 +567,7 @@ struct ProjectListView: View {
     }
 
     private func projectTint(_ project: Project) -> Color {
+        if project.kind.isBackend { return PageMakeTheme.sea }
         switch project.sourceType {
         case "explorer": return PageMakeTheme.sea
         case "paste": return PageMakeTheme.coral

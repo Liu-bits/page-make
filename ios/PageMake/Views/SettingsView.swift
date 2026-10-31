@@ -97,6 +97,16 @@ struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(.white.opacity(0.65))
                     .lineLimit(1)
+                if let session = appState.session, session.role != .user {
+                    Text(L10n.string(session.role.titleKey))
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .textCase(.uppercase)
+                        .tracking(0.6)
+                        .foregroundStyle(PageMakeTheme.gold)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.white.opacity(0.11), in: Capsule())
+                }
                 if appState.isLoggedIn {
                     Label(L10n.string("account_protected"), systemImage: "checkmark.shield.fill")
                         .font(.caption2.bold())
@@ -125,10 +135,15 @@ struct SettingsView: View {
             return email
         }
         if let session = appState.session {
-            if session.isVIP {
+            switch session.role {
+            case .vip:
                 return L10n.string(session.accountKind == .guestVip
                     ? "account_guest_vip_detail"
                     : "account_vip_detail")
+            case .svip, .ultra:
+                return L10n.format("account_paid_tier_detail", L10n.string(session.role.titleKey))
+            case .user:
+                break
             }
             if session.accountKind == .guest {
                 return L10n.string("account_guest_detail")
@@ -301,6 +316,20 @@ struct SettingsView: View {
                         tint: PageMakeTheme.gold
                     )
                 }
+
+                if let session = appState.session {
+                    Divider()
+                        .overlay(PageMakeTheme.ink.opacity(0.06))
+                    HStack(spacing: 8) {
+                        Label(L10n.format("quota_summary", quotaLabel(session)), systemImage: "externaldrive.fill")
+                            .font(.caption)
+                            .foregroundStyle(PageMakeTheme.inkSoft)
+                        Spacer(minLength: 0)
+                        Text(L10n.string(session.role.titleKey))
+                            .font(.caption2.bold())
+                            .foregroundStyle(PageMakeTheme.gold)
+                    }
+                }
             }
         }
     }
@@ -472,7 +501,10 @@ struct SettingsView: View {
                         .padding(.horizontal, 4)
                 }
                 if let session = appState.session, session.isVIP {
-                    Label(L10n.string("vip_active_hint"), systemImage: "crown.fill")
+                    let hint = session.role == .vip
+                        ? L10n.string("vip_active_hint")
+                        : L10n.format("tier_active_hint", L10n.string(session.role.titleKey))
+                    Label(hint, systemImage: "crown.fill")
                         .font(.caption)
                         .foregroundStyle(PageMakeTheme.gold)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -570,6 +602,17 @@ struct SettingsView: View {
         formatter.allowedUnits = [.useKB, .useMB, .useGB]
         formatter.countStyle = .file
         return formatter.string(fromByteCount: Int64(bytes))
+    }
+
+    private func quotaLabel(_ session: UserSession) -> String {
+        guard let limit = session.staticProjectLimit else {
+            return L10n.string("quota_unlimited")
+        }
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useMB, .useGB]
+        formatter.countStyle = .file
+        formatter.allowsNonnumericFormatting = false
+        return formatter.string(fromByteCount: limit)
     }
 
     private func deleteAccount() async {

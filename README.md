@@ -1,17 +1,18 @@
 # Page-make
 
-静态网页托管工具：用户上传 ZIP、粘贴 HTML/CSS/JS，或使用项目模式管理虚拟文件，
-后台自动解压、找入口、诊断并生成可公开访问的链接。仅支持静态网页，不支持 PHP 或 C++。
+网页与 Node 服务托管工具：用户上传 ZIP、粘贴 HTML/CSS/JS，或使用项目模式管理虚拟文件，
+后台自动解压、找入口、诊断并生成可公开访问的链接。VIP 及以上可部署 npm / pnpm
+后端项目；普通用户仍可上传，但部署选项只能选择纯前端。PHP 与 C++ 不支持。
 
 - **iOS**：SwiftUI 纯原生实现 + AuthenticationServices（Sign in with Apple）
-- **后端**：Node 22 容器（Docker），私有部署（免费 CPU 空间，无按次调用限额）
+- **后端**：Node 22 容器（Docker），npm / pnpm 项目在受限子进程中安装、构建与运行
 - **构建**：CI · `xcode-27` runner（macOS 27.0.1）· Xcode 27.0.0 · iOS 27.0 模拟器
 - **许可**：专有软件，保留所有权利
 
-> 架构说明：后端代码原为 Pages Functions 风格编写（`backend/` 目录），后转移为
-> Docker 容器私有部署。业务逻辑零改动，由 `docker/server.mjs`
-> 适配层包成普通 Node HTTP 服务，存储由 EdgeOne KV 换成落盘（`DATA_DIR`）。
-> 彻底转移后不再依赖 EdgeOne / Cloudflare，没有按次调用的免费额度墙。
+> 架构说明：业务 handler 位于 `backend/`，由 `docker/server.mjs` 适配为普通
+> Node HTTP 服务，数据落盘到 `DATA_DIR`。静态站点直接由 `/p/<id>` 下发；
+> npm / pnpm 项目由 `backend/lib/backend-runtime.js` 安装、构建并反向代理；
+> 发布与刷新是异步状态机，客户端轮询 `/status`，避免长请求被网关或 iOS 超时截断。
 
 ## 目录结构
 
@@ -23,11 +24,11 @@
 │   ├── PageMakeTests/          #   单元测试
 │   └── scripts/resolve-simulator.mjs  # CI 模拟器解析（优先 iOS 27.0.1）
 ├── backend/                    # API 处理器（路由 + lib 库，容器与测试共用）
-│   ├── api/                    #   auth / upload(init/chunk/finish/取消) / projects / status / refresh / files / feedback
-│   ├── p/[projectId]/          #   公开访问（无需登录）
-│   └── lib/                    #   kv / zip / diagnostics / deploy / apple-auth / process
+│   ├── api/                    #   auth / upload / projects / export / admin / feedback
+│   ├── p/[projectId]/          #   公开访问（静态文件或后端反向代理）
+│   └── lib/                    #   kv / zip / diagnostics / tiers / backend-runtime / process
 ├── docker/server.mjs           # 容器适配层（Node HTTP + 磁盘 KV）
-|── Dockerfile                  # 部署镜像（私有容器 / 任意容器平台）
+├── Dockerfile                  # 部署镜像（私有容器 / 任意容器平台）
 ├── dev/run-tests.mjs           # 后端单元测试：node dev/run-tests.mjs
 ├── dev/test-server.mjs         # 容器冒烟测试（HTTP 全流程）：node dev/test-server.mjs
 ├── dev/test-guest-ttl.mjs      # 游客 10 分钟试用与身份重置
@@ -46,7 +47,7 @@
 | --- | --- |
 | iOS 编译 | `xcode-27` runner（= macOS 27.0.1 镜像）+ Xcode 27.0.0 GM（CI 精确锁定并校验） |
 | 运行目标 | 优先 iOS 27.0.1 模拟器，回退 iOS 27.0（Apple 版本线无 27.0.1） |
-| 后端 | Node 22（容器内零 npm 依赖，仅标准库） |
+| 后端 | Node 22；用户项目可使用 npm 或 pnpm 安装依赖 |
 | 本地开发 | Windows 11（iOS 无法本地编译，由 CI 的 macOS runner 完成） |
 
 ## 快速开始
@@ -112,7 +113,7 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 - **单点**：容器重启期间短暂不可用（Node 冷启动 1~2 秒，数据不丢）
 - **网络**：国内快、海外慢（无 CDN）；用户主要在海外可改部署到 Oracle Always Free 等海外机房（同一镜像，零改动）
 - `DEV_NO_AUTH=1` **仅限本地调试**，生产环境禁止设置（等于关闭登录）
-- 容器模式下 App 内的「选线路」（EdgeOne / Cloudflare）两个选项均由本容器本地服务，体验一致；该选择暂时保留兼容，后续版本可能简化
+- 部署形态由创建页选择：纯前端、npm、pnpm；npm / pnpm 仅 VIP 及以上可用
 
 ## CI
 
@@ -134,15 +135,15 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 | `POST /api/auth/google` | Google 登录（校验 id_token） |
 | `GET /api/vip-request` | 读取当前账号的 VIP 升级申请状态（仅游客） |
 | `POST /api/vip-request` | 提交 / 重新提交 VIP 升级申请（仅普通游客，同 IP 每分 5 次） |
-| `POST /api/upload/init` | 初始化分片上传（校验线路选择，5MB 上限） |
+| `POST /api/upload/init` | 初始化分片上传（校验部署形态与账号等级配额） |
 | `POST /api/upload/chunk` | 上传分片（600KB/片） |
 | `POST /api/upload/finish` | 完成上传，后台处理（processing → ready/failed） |
 | `GET /api/projects` | 我的项目列表 |
 | `POST /api/projects/paste` | 粘贴代码直接创建（HTML 必填，CSS/JS 可选，自动注入引用） |
 | `GET/POST /api/projects/:id` | 详情 / 重命名或删除（网关兼容：删除走 `POST action=delete`） |
-| `GET/POST /api/projects/:id/refresh` | 刷新公开链接 |
+| `GET /api/projects/:id/export` | 导出项目源码 ZIP（VIP 及以上） |
 | `GET /api/projects/:id/status` | 状态轮询（每 2 秒） |
-| `POST /api/projects/:id/refresh` | 刷新链接（重新部署） |
+| `POST /api/projects/:id/refresh` | 刷新链接（静态项目重发；npm/pnpm 异步重启进程） |
 | `GET/POST /api/projects/:id/files` | 读取 / 新增、编辑、重命名、删除文件 |
 | `POST /api/upload/:uploadId` | 取消上传（`action=cancel`，清理临时分片） |
 | `POST /api/feedback` | 反馈 / 举报 |
@@ -150,9 +151,12 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 
 ## 核心规则
 
-- 未登录：只能浏览公开链接，不能创建、管理、看诊断详情、选线路
+- 未登录：只能浏览公开链接，不能创建、管理、看诊断详情或选择部署形态
 - 创建网页必须登录（Apple / Google）或使用游客试用；游客由管理员升级 VIP 后保留原身份与作品
 - VIP 是现有 Apple / Google / 游客账号的附加权益，不提供独立 VIP 账号或邮箱密码登录
+- 等级从低到高为普通、VIP、SVIP、Ultra；管理员可在 `/admin` 原地调整，不更换 userId / 会话 / 项目
+- 项目配额：普通静态项目 5MB；VIP 1MB；SVIP 100MB；Ultra 不设业务上限
+- npm / pnpm 后端部署从 VIP 起可用；普通用户仍可上传，但部署选项只有纯前端
 - 升级链路：App 内设置页「升级 VIP」→ 提交申请（可附 300 字说明）→ 管理后台 `/admin`
   审核（批准保留原 userId / token / 项目，权益即时生效；驳回可附原因并允许重新提交）
 - 单线路部署（私有容器），创建时无需选择线路
@@ -171,11 +175,14 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 ## 已知限制（第一版）
 
 1. 单容器部署：单点故障（重启秒级恢复）、无 CDN（海外慢）、容量受机器限制（约 2 核 / 8GB + 持久盘，以空间控制台为准）
-2. 存储：普通项目 ≤ 5MB；管理后台升级的 VIP 账号可突破普通存储限制，取消 VIP 后重新受普通限制，磁盘满后无法再上传（可定期清理或扩容）
+2. 存储配额：普通静态项目 ≤ 5MB，VIP ≤ 1MB，SVIP ≤ 100MB，Ultra 不设业务上限；
+   后端项目按源码包计算，不含安装生成的 `node_modules`。实际仍受服务器磁盘与内存约束
 3. 容器模式无 1MB body / 200ms CPU 限制（沿用分片协议是出于兼容）
 4. Windows 无法本地编译 iOS → 依赖 CI macOS runner
 5. 封号：用户举报 + 人工审核（第一版不做自动扫描）
-6. 第一版不做：邮箱注册或邮箱密码登录、签名、App Store 上传、订阅、npm 后端
+6. 第一版不做：邮箱注册或邮箱密码登录、签名、App Store 上传、订阅、PHP、C++
+7. npm / pnpm 项目运行用户代码：依赖安装最长 4 分钟、构建最长 3 分钟、启动等待 1 分钟；
+   同时常驻 3 个后端进程，单进程堆上限 256MB，崩溃最多自动重启 3 次
 
 ## 许可
 

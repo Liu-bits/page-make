@@ -3,10 +3,12 @@
 // DELETE /api/projects/:id — 删除项目（兼容；ModelScope 网关拦截 DELETE，客户端走 POST）
 import { getOwnedProject, deleteProjectRecords, syncProjectFiles, readSiteFiles, projectPublicUrl } from '../../lib/project.js';
 import { ok, fail } from '../../lib/responses.js';
-import { appendLog, keys } from '../../lib/kv.js';
-import { STATUS } from '../../lib/state.js';
+import { appendLog, keys, kvGet, kvPut } from '../../lib/kv.js';
+import { STATUS, isBackendKind, normalizeKind } from '../../lib/state.js';
 import { analyzeHtml } from '../../lib/diagnostics.js';
 import { rewriteLocalRefs, rewriteCssRefs } from '../../lib/paths.js';
+import { canUseBackend } from '../../lib/tiers.js';
+import { deployBackendApp, stop as stopBackendApp } from '../../lib/backend-runtime.js';
 
 export async function onRequest(context) {
   const { request, params } = context;
@@ -49,6 +51,68 @@ export async function onRequest(context) {
   if (action === 'publish') {
     const files = await readSiteFiles(kv, project.id);
     if (files.size === 0) return fail('NO_ENTRY', 400);
+
+    // 发布时允许切换部署形态（纯前端 ↔ npm ↔ pnpm）。
+    // 切到后端必须同时满足：VIP 及以上 + 项目里有 package.json。
+    if (body?.kind !== undefined) {
+      if (!['static', 'npm', 'pnpm'].includes(body.kind)) return fail('INVALID_KIND', 400);
+      if (body.kind !== 'static' && !canUseBackend(result.user)) {
+        return fail('BACKEND_REQUIRES_VIP', 403);
+      }
+      project.kind = body.kind;
+    }
+    const kind = normalizeKind(project.kind);
+
+    if (isBackendKind(kind)) {
+      if (!files.has('package.json')) return fail('MISSING_PACKAGE_JSON', 400);
+      project.entryPath = null;
+      project.status = STATUS.PROCESSING;
+      project.errorCode = null;
+      project.url = projectPublicUrl(new URL(request.url).origin, project.id);
+      await syncProjectFiles(kv, project);
+
+      // 依赖安装/构建/启动可能持续数分钟，不能占住一个 HTTP 请求：
+      // ModelScope 网关与 iOS 都有请求超时，同步等待会把成功部署误报成网络错误。
+      // 与分片上传一致，先返回 processing，再由客户端轮询 /status。
+      const publishTask = (async () => {
+        try {
+          const runtime = await deployBackendApp({ kv, projectId: project.id, kind });
+          // 部署期间项目可能被删除；不能拿部署前的内存对象把记录“复活”。
+          const latest = await kvGet(kv, keys.project(project.id));
+          if (!latest) {
+            await stopBackendApp(project.id);
+            return;
+          }
+          latest.status = STATUS.READY;
+          latest.errorCode = null;
+          latest.runtimePort = runtime.port;
+          latest.runtimeKind = runtime.kind;
+          await syncProjectFiles(kv, latest);
+          await appendLog(kv, { projectId: project.id, step: 'publish_backend', result: 'ok', kind });
+        } catch (error) {
+          await stopBackendApp(project.id);
+          project.status = STATUS.FAILED;
+          project.errorCode = error?.code || 'RUNTIME_UNAVAILABLE';
+          await kvPut(kv, keys.project(project.id), project);
+          await appendLog(kv, {
+            projectId: project.id,
+            step: 'publish_backend',
+            result: 'failed',
+            errorCode: project.errorCode,
+          });
+        }
+      })();
+
+      if (typeof context.waitUntil === 'function') {
+        context.waitUntil(publishTask);
+      } else {
+        await publishTask;
+      }
+      return ok({ project });
+    }
+
+    // 从 npm/pnpm 切回纯前端时回收旧常驻进程，避免后台继续占端口。
+    await stopBackendApp(project.id);
 
     // 入口选择：沿用已设 HTML 入口 → index.html → 第一个 HTML。
     // 历史项目的 entryPath 可能是 index.php；不能继续沿用，否则发布会生成必然 404 的链接。

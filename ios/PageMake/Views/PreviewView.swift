@@ -17,6 +17,8 @@ struct PreviewView: View {
     @State private var alertItem: AlertItem?
     @State private var isRefreshing = false
     @State private var showQR = false
+    @State private var isExporting = false
+    @State private var exportURL: URL?
 
     init(project: Project) {
         self.project = project
@@ -47,6 +49,14 @@ struct PreviewView: View {
         }
         .sheet(isPresented: $showQR) {
             QRCodeView(project: current)
+        }
+        .sheet(isPresented: Binding(
+            get: { exportURL != nil },
+            set: { if !$0 { exportURL = nil } }
+        )) {
+            if let exportURL {
+                ShareSheet(items: [exportURL])
+            }
         }
         .confirmationDialog(
             L10n.string("delete_confirm_title"),
@@ -111,6 +121,19 @@ struct PreviewView: View {
                     Image(systemName: "qrcode")
                 }
                 .accessibilityLabel(L10n.string("qr_code"))
+                if appState.session?.canExport == true {
+                    Button {
+                        Task { await exportProject() }
+                    } label: {
+                        if isExporting {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "square.and.arrow.down")
+                        }
+                    }
+                    .disabled(isExporting)
+                    .accessibilityLabel(L10n.string("export_backup"))
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -213,7 +236,10 @@ struct PreviewView: View {
         isRefreshing = true
         defer { isRefreshing = false }
         do {
-            let updated = try await APIClient.shared.refreshLink(current.id)
+            var updated = try await APIClient.shared.refreshLink(current.id)
+            if updated.status == .processing {
+                updated = try await APIClient.shared.waitForProjectReady(current.id)
+            }
             current = updated
             runtimeErrors = []
             reloadToken = UUID() // 强制 WebView 重新加载（URL 可能不变）
@@ -230,6 +256,28 @@ struct PreviewView: View {
         let success = await appState.deleteProject(current.id)
         if success {
             dismiss()
+        }
+    }
+
+    /// 导出项目为 ZIP 并调起系统分享（备份到文件 App / iCloud / 其他设备）
+    private func exportProject() async {
+        guard !isExporting else { return }
+        isExporting = true
+        defer { isExporting = false }
+        do {
+            let data = try await APIClient.shared.exportProject(current.id)
+            let safeName = current.name
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: ":", with: "_")
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("\(safeName.isEmpty ? "project" : safeName).zip")
+            try? FileManager.default.removeItem(at: url)
+            try data.write(to: url, options: .atomic)
+            exportURL = url
+        } catch let error as APIError {
+            alertItem = AlertItem(message: error.errorDescription ?? L10n.string("error_generic"))
+        } catch {
+            alertItem = AlertItem(message: L10n.string("error_generic"))
         }
     }
 }

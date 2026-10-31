@@ -157,6 +157,7 @@ final class APIClient {
         let projects: [Project]
         let role: AccountRole?
         let accountKind: AccountKind?
+        let quota: AccountQuota?
     }
 
     struct ProjectListResult {
@@ -168,7 +169,7 @@ final class APIClient {
         let data = try await request("/api/projects")
         let payload = try decoder.decode(ProjectsPayload.self, from: data)
         let account = payload.role.flatMap { role in
-            payload.accountKind.map { AccountSnapshot(role: role, accountKind: $0) }
+            payload.accountKind.map { AccountSnapshot(role: role, accountKind: $0, quota: payload.quota) }
         }
         return ProjectListResult(projects: payload.projects, account: account)
     }
@@ -201,6 +202,7 @@ final class APIClient {
         let stats: UserStats
         let role: AccountRole?
         let accountKind: AccountKind?
+        let quota: AccountQuota?
     }
 
     /// 读取最新账号权益。管理后台升级 VIP 后用于无需重登即时刷新。
@@ -210,7 +212,7 @@ final class APIClient {
         guard let role = payload.role, let accountKind = payload.accountKind else {
             throw APIError.decoding
         }
-        return AccountSnapshot(role: role, accountKind: accountKind)
+        return AccountSnapshot(role: role, accountKind: accountKind, quota: payload.quota)
     }
 
     /// 删除项目（网关拦截 DELETE 方法，改用 POST + action）
@@ -267,12 +269,38 @@ final class APIClient {
         return try decoder.decode(ProjectStatusResponse.self, from: data)
     }
 
+    /// 后端项目的安装/构建/启动在服务端异步执行；客户端统一轮询到终态。
+    /// 360 次 × 2 秒覆盖 4 分钟安装 + 3 分钟构建 + 1 分钟启动及排队余量。
+    func waitForProjectReady(_ id: String, maxAttempts: Int = 360) async throws -> Project {
+        for attempt in 0..<maxAttempts {
+            if Task.isCancelled { throw CancellationError() }
+            if attempt > 0 {
+                try await Task.sleep(
+                    nanoseconds: UInt64(Config.pollIntervalSeconds * 1_000_000_000)
+                )
+            }
+            let response = try await projectStatus(id)
+            switch response.status {
+            case .ready:
+                if let project = response.project { return project }
+            case .failed:
+                throw APIError.http(status: 500, code: response.errorCode)
+            case .expired:
+                throw APIError.http(status: 410, code: "EXPIRED")
+            case .uploading, .processing:
+                continue
+            }
+        }
+        throw APIError.http(status: 408, code: "RUNTIME_TIMEOUT")
+    }
+
     // MARK: - 上传（分片，规避单请求 1MB body 限制）
 
     struct UploadInitRequest: Encodable {
         let provider: String
         let files: [FileMeta]
         let name: String
+        let kind: String
 
         struct FileMeta: Encodable {
             let name: String
@@ -301,11 +329,17 @@ final class APIClient {
         let status: String
     }
 
-    func initUpload(provider: HostProvider, files: [PickedFile], name: String) async throws -> UploadInitResponse {
+    func initUpload(
+        provider: HostProvider,
+        files: [PickedFile],
+        name: String,
+        kind: ProjectKind = .staticSite
+    ) async throws -> UploadInitResponse {
         let body = try encoder.encode(UploadInitRequest(
             provider: provider.rawValue,
             files: files.map { .init(name: $0.name, size: $0.size) },
-            name: name
+            name: name,
+            kind: kind.rawValue
         ))
         let data = try await request("/api/upload/init", method: "POST", body: body)
         return try decoder.decode(UploadInitResponse.self, from: data)
@@ -396,11 +430,12 @@ final class APIClient {
 
     struct ExplorerCreateRequest: Encodable {
         let name: String
+        let kind: String
     }
 
     /// 创建空白项目（项目模式：初始无文件无链接，逐个创建文件后 publish）
-    func createExplorerProject(name: String) async throws -> Project {
-        let body = try encoder.encode(ExplorerCreateRequest(name: name))
+    func createExplorerProject(name: String, kind: ProjectKind = .staticSite) async throws -> Project {
+        let body = try encoder.encode(ExplorerCreateRequest(name: name, kind: kind.rawValue))
         let data = try await request("/api/projects/explorer", method: "POST", body: body)
         return try decoder.decode(ProjectPayload.self, from: data).project
     }
@@ -423,10 +458,21 @@ final class APIClient {
     }
 
     /// 生成公开链接（publish：选入口 → 静态诊断 → 返回带 url 的项目）
-    func publishProject(_ id: String) async throws -> Project {
-        let body = try encoder.encode(ActionRequest(action: "publish"))
+    func publishProject(_ id: String, kind: ProjectKind? = nil) async throws -> Project {
+        let payload = PublishRequest(action: "publish", kind: kind?.rawValue)
+        let body = try encoder.encode(payload)
         let data = try await request("/api/projects/\(id)", method: "POST", body: body)
         return try decoder.decode(ProjectPayload.self, from: data).project
+    }
+
+    struct PublishRequest: Encodable {
+        let action: String
+        let kind: String?
+    }
+
+    /// 导出项目为 ZIP（备份）。返回原始字节，由调用方写入临时文件后分享。
+    func exportProject(_ id: String) async throws -> Data {
+        try await request("/api/projects/\(id)/export", method: "GET", requiresAuth: true)
     }
 
     // MARK: - VIP 升级申请

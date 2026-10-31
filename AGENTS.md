@@ -25,13 +25,15 @@
 
 ## 1. 项目概述
 
-- **是什么**：iOS App + 自托管后端，让用户在手机上创建/发布静态网页（类轻量 Netlify）。
+- **是什么**：iOS App + 自托管后端，让用户在手机上创建/发布静态网页与 Node 服务。
   上传 ZIP、粘贴 HTML/CSS/JS、或虚拟文件夹管理器三种方式建站，生成公开链接分享。
+  普通用户只能部署纯前端；VIP / SVIP / Ultra 可部署 npm / pnpm 后端项目。
 - **仓库**：私有仓库（专有软件，保留所有权利）
 - **技术栈**：
   - iOS：SwiftUI + XcodeGen（`ios/project.yml` 描述工程），最低 iOS 27.0，无第三方 SDK
     （Google 登录用 ASWebAuthenticationSession + PKCE 手写；二维码用 CoreImage）
-  - 后端：Node.js **零 npm 依赖**（仅标准库），Pages Functions 风格 handler
+  - 后端：Node.js **自身零 npm 依赖**（仅标准库），Pages Functions 风格 handler；
+    用户项目可使用 npm / pnpm 安装自己的依赖，并在受限子进程中运行
     （`backend/index.js`），同一份代码跑在 ModelScope 创空间 Docker 容器
     （`docker/server.mjs` = Node HTTP 适配层 + DiskKV 磁盘 KV，API 与线上 KV 一致）
   - 存储：容器内 DiskKV（`DATA_DIR` 目录 JSON 文件，key 经 `encodeKey` hex 编码为文件名）
@@ -112,7 +114,7 @@ E:/Page-make/
 │   │                        #   WebView / QRCodeView / BannedView / SettingsView
 │   │                        #   (统计/删账号/游客提示/VIP 申请) / UploadQueueView /
 │   │                        #   VIPUpgradeApplicationView
-│   ├── Resources/           #   Documents/(中英 .txt) + en/zh-Hans.lproj（各 292 键，0 重复）
+│   ├── Resources/           #   Documents/(中英 .txt) + en/zh-Hans.lproj（各 335 键，0 重复）
 │   ├── PageMake.entitlements  # applesignin（免费 Apple ID 用不了，游客登录兜底）
 │   └── PrivacyInfo.xcprivacy  # 隐私清单（过审）
 ├── ios/project.yml          # XcodeGen 描述（改工程结构改这里，勿直接改 xcodeproj）
@@ -163,19 +165,24 @@ E:/Page-make/
 - 后台三处操作的成功提示都会带上清理/恢复的项目数
 
 **建站（3 种方式）**
-- 上传 ZIP：分片 600KB × N（base64 后约 800KB/片），项目总上限 5MB；异步处理 + 轮询
+- 上传 ZIP：分片 600KB × N（base64 后约 800KB/片），配额按等级：
+  普通静态 5MB / VIP 1MB / SVIP 100MB / Ultra 无业务上限；异步处理 + 轮询
 - 粘贴代码：HTML 必填 + CSS/JS 可选（合计 300KB）；css/js 文件名自动跟随 HTML 的
   link href / script src；HTML 片段自动包裹完整文档；三套内置模板（主页/落地页/博客）
 - 项目模式（Explorer）：Windows 风格资源管理器，支持路径栏/返回、文件与文件夹分区、
-  详情、新建/重命名/删除、持久化空文件夹、发布后直接预览；单文件 900KB / 总 5MB；
-  仅 html/css/js 白名单；路径安全（禁 `..`、`\`、控制字符）；新建 HTML 骨架自动引用
-  style.css；publish 时 index.html 优先选入口 + 静态诊断
+  详情、新建/重命名/删除、持久化空文件夹、发布后直接预览；文件总量与单文件大小
+  按 `tiers.js` 的等级配额执行；纯前端仅 html/css/js，后端项目额外允许
+  `package.json`、TS/JS、配置和静态资源；路径安全（禁 `..`、`\`、控制字符）；
+  新建 HTML 骨架自动引用 style.css；publish 时 index.html 优先选入口 + 静态诊断
 
 **公开页与服务端**
 - `/p/<id>` 长期有效（登录用户）；游客 10 分钟；到期 410 中文过期页
 - 宽容识别：静态 404 时按 basename（忽略目录/大小写）在项目内唯一匹配自动返回
 - 静态诊断：HTML 引用的资源缺失 → 「引用了 x，其实在 y」提示
 - PHP / C++：均不支持；ZIP 中的 `.php` 会跳过，项目模式拒绝 `.php`，公开路由对历史 `.php` 返回 404
+- 部署形态：纯前端 / npm / pnpm 三选一；普通用户只能选纯前端，后端形态从 VIP 起可用
+- 导出备份：`GET /api/projects/:id/export`，VIP 及以上可下载项目源码 ZIP（排除安装产物）
+- 账号等级：`user < vip < svip < ultra`，后台 `setTier` 原地调整 userId / 会话 / 项目
 - 入口选择统一：index.html → 任意 html（publish/findEntry/上传管线一致）
 - 刷新链接（refresh.js，成功/失败均持久化 kvPut——曾有不写回的存量 bug）
 - 反馈接口（App 内反馈 = 封禁申诉入口）；用量统计 /api/stats；账号删除（过审项）
@@ -184,9 +191,10 @@ E:/Page-make/
 - 封号 L1-L4（必填原因，用户端 BannedView 可见原因/等级/解封时间；封号同时全部项目
   下架，解封自动恢复——注意索引 key 取项目 ID 必须 decodeKey，曾有二次编码 bug）
 - 删除账号（deleteUser：用户 + 全部项目含文件 + 全部会话 = 强制下线）
-- VIP 用户（upgradeVIP 将现有 Apple/Google/游客账号原地升级，保留 userId/token/项目；
-  role=vip **豁免粘贴/上传/文件三处大小上限**；downgradeVIP 降级后账号与作品保留、
-  限制恢复；历史 isTest 账号只读兼容，不迁移也不丢失）
+- 账号等级（upgradeVIP / setTier 将现有 Apple/Google/游客账号原地调整，保留
+  userId/token/项目；等级 user < vip < svip < ultra，配额由 `tiers.js` 唯一维护；
+  downgradeVIP / setTier(user) 会恢复限制并回收后端常驻进程；历史 isTest 账号
+  只读兼容为 VIP，不迁移也不丢失）
 - VIP 升级申请审核（vipRequests 表 + 待审计数，见上「VIP 升级申请链路」）
 - 解封前所有登录入口（Apple/Google/游客）均拦截
 
@@ -195,7 +203,7 @@ E:/Page-make/
 - 项目列表搜索 + 排序（最新/最旧/名称/大小）+ 滑动重命名
 - 二维码分享（CoreImage CIFilter.qrCodeGenerator + ShareLink）
 - WebView 预览（reloadToken、轮询 150 次上限、runtimeErrors 去重上限 50）
-- 中英本地化（各 310 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
+- 中英本地化（各 335 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
 - 设置页 VIP 升级卡（皇冠图标 + 申请状态 + 申请/查看进度）；项目模式顶部固定构建栏
 - 隐私政策/用户协议 App 内展示（Documents 双语文档，文件名后缀区分语言）
 
@@ -204,11 +212,12 @@ E:/Page-make/
 | 常量 | 值 | 说明 |
 |---|---|---|
 | SESSION_TTL_SECONDS | 7 天 | 登录态有效期（到期前 1 天 iOS 静默刷新） |
-| MAX_TOTAL_BYTES | 5MB | 项目总大小 |
+| QUOTA.static | user 5MB / vip 1MB / svip 100MB / ultra ∞ | 纯前端项目总量 |
+| QUOTA.backend | user 0 / vip 1MB / svip 100MB / ultra ∞ | npm/pnpm 源码包总量 |
 | CHUNK_BYTES | 600KB | 分片大小 |
 | UPLOAD_TTL_SECONDS | 30 分钟 | 未完成上传清理 |
 | PASTE_MAX_BYTES | 300KB | 粘贴 HTML+CSS+JS 合计 |
-| FILE_MAX_BYTES | 900KB | 项目模式单文件 |
+| FILE_MAX_BYTES | 900KB | 历史兼容常量；编辑器实际按 `tiers.js` 配额 |
 | GUEST_LINK_TTL_SECONDS | 10 分钟 | 游客链接有效期 |
 | BAN_LEVELS | L1/1天 L2/7天 L3/30天 L4/永久 | 封号分级（L4=色情暴恐恶意软件） |
 | TAKEDOWN_RETENTION_SECONDS | 7 天 | 违规项目保留留证 |
@@ -216,17 +225,17 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 146 项 + 本地化检查，提交前必须全绿）
+## 5. 测试体系（共 162 项 + 静态检查，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
-| `node dev/run-tests.mjs` | 41 | 单元测试（含 JWKS 三级加载、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容/异常参数、密码强度校验【leetspeak 变形/反向键盘对角线】、MIME 类型映射） |
-| `node dev/test-server.mjs` | 45 | 容器冒烟（真实 HTTP 全流程，用 docker/server.mjs + 临时 DATA_DIR；含 ZIP PHP 过滤、历史 PHP 入口 404、zip 炸弹端到端、Explorer 空目录/重命名/目录迁移/冲突、反馈限流、删号 KV 残留断言、登录 429 限速、**Apple/Google 合法 token 全链路登录**（现场签 JWT + 预置 JWKS 磁盘缓存，抓「handler 漏 import → 500 INTERNAL_ERROR」）） |
+| `node dev/run-tests.mjs` | 49 | 单元测试（含 JWKS 三级加载、动态 ZIP 解压配额、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容、密码强度、MIME、等级配额、ZIP 写入器） |
+| `node dev/test-server.mjs` | 51 | 容器冒烟（真实 HTTP 全流程；含等级上传配额、压缩包小于配额但解压后超限、普通用户后端拒绝、npm 后端全链路反向代理、导出备份、ZIP PHP 过滤、Explorer 全流程、限流、删号 KV 残留、Apple/Google 合法 token 登录） |
 | `node dev/check-handler-imports.mjs` | 1 | 静态扫「被调用但未 import/未定义」的标识符（ESM 惰性绑定让这类错误只在运行时炸成 500；已接入 CI） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 25 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
-| `node dev/test-admin.mjs` | 26 | 后台（随机初始密码/旧默认密码兼容/哈希存储/后台转义/弱口令拒绝/VIP 权益/历史 isTest 统计兼容/封禁下架+禁登/解封恢复/删号/邮箱密码入口彻底删除/后台不再暴露历史邮箱清理/**VIP 升级申请：提交去重/仅普通游客/批准即时生效/驳回保留限制可重提/审核不存在 404/升级即清旧游客项目 expiresAt 且公开页可访问/降级即给游客身份重新加 10 分钟过期**） |
-| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 283 键） |
+| `node dev/test-admin.mjs` | 29 | 后台（密码安全、VIP/SVIP/Ultra 等级切换、配额同步、封禁下架/解封、删号、邮箱密码入口删除、VIP 升级申请全链路） |
+| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 335 键） |
 | `node scripts/check-dead-strings.mjs` | 1 | 死文案键扫描：查无 Swift 引用的本地化键。对 `status_/account_/template_/project_kind_/ban_level_` 前缀插值引用的键单列为「动态引用，需人工确认」，不计入死键 |
 | `node scripts/check-swift-decls.mjs` | 1 | Swift 同作用域属性包装器重复声明扫描（替代本地缺失的 `-typecheck`；已接入 CI backend-test job） |
 
@@ -244,7 +253,7 @@ E:/Page-make/
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
-| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 146 项 + 本地化检查 + 死键扫描 + 重复声明扫描 + Docker 构建）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
+| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 162 项 + 本地化检查 + 死键扫描 + 重复声明扫描 + Docker 构建）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
 | keepalive.yaml | 每 10 分钟 | 探 `${PAGEMAKE_URL}/healthz`，**必须带 UA**（`-A "PageMake-Keepalive/1.0"`），并回显 /api/config 的 jwks 诊断 |
 | jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子并提交（境内拉不到 Google，只能靠 runner） |
 
@@ -336,9 +345,32 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
   诊断给用户看的是假告警，改 `normalizeRelPath` 后消掉。
 - Dockerfile 里 server.mjs 在 /app/ 根目录，`resolve(__dirname,'..')` 会指向 / →
   ROOT 按 backend/ 实际位置自动探测（兼容两种布局）
- - ZIP 解压必须设「解压后总量」与「条目数」双上限：init 只校验压缩包 ≤ 5MB，
-   306KB 的包能解出 300MB 打满容器持久卷（全站无法建站）→ lib/zip.js 已加实时拦截
-   （ZIP_MAX_TOTAL_BYTES=32MB / ZIP_MAX_ENTRIES=500，超限抛 TOO_LARGE）
+ - ZIP 解压必须同时限制「解压后总量」与「条目数」：init 只校验压缩包大小，
+   306KB 的包能解出 300MB 打满容器持久卷（全站无法建站）→ lib/zip.js 默认实时拦截
+   （ZIP_MAX_TOTAL_BYTES=32MB / ZIP_MAX_ENTRIES=500）。**上传管线必须传账号配额作为
+   maxTotalBytes**，否则 SVIP 100MB / Ultra 会被固定 32MB 截断；Ultra 的 Infinity
+   只代表没有业务配额，平台磁盘/内存仍是硬边界
+ - 等级配额只在 tiers.js 维护：user 静态 5MB；VIP 1MB；SVIP 100MB；Ultra ∞。
+   上传 init、解压、项目模式文件、粘贴、导出、iOS 选文件校验必须读取同一份配额；
+   任何一处写死 5MB / 900KB 都会让等级权益失真
+ - iOS 大文件上传不能 `Data(contentsOf:)` 整包读入：SVIP/Ultra 会把 App 内存打爆。
+   UploadService 必须用 FileHandle 按 Config.chunkSize 逐片读取；后端轮询窗口至少
+   覆盖 install 4 分钟 + build 3 分钟 + start 1 分钟（当前 360×2 秒）
+- npm / pnpm 的发布、项目模式 publish、刷新链接都必须异步执行并由客户端轮询
+  `/api/projects/:id/status`。同步等待 install/build 会被 ModelScope 网关或 iOS
+  25 秒请求超时截断，用户看到“网络错误”，但后台其实仍在部署。
+- 后端反向代理会剥掉公开前缀 `/p/<id>` 再转发，因此用户 Express/Koa 代码可直接写
+  `app.get('/api/...')`；同时透传 `x-forwarded-prefix`，需要生成绝对链接时仍可还原。
+- 安装依赖必须包含 devDependencies：很多项目把 vite/typescript/webpack 放在 devDeps，
+  只装 `--prod` 会导致 build 阶段必失败。
+ - npm / pnpm 项目文件白名单与静态项目必须分离：后端需要 package.json、ts/tsx、
+   配置文件和静态资源；静态项目仍只允许 html/css/js，`.php` 永远拒绝
+ - Windows 上 `spawn('npm')` / `spawn('pnpm')` 会 ENOENT，必须用 Node 同目录的
+   `npm.cmd` / `pnpm.cmd` 并 `shell: true`；Linux 容器直接走命令名
+ - 后端项目运行时子进程 env 只能给最小集合（PATH/HOME/PORT/HOST/NODE_ENV/NODE_OPTIONS），
+   绝不能继承宿主 `process.env`，否则会把平台 Token / 密钥暴露给用户代码
+ - `docker/server.mjs` 里的模块路径必须用 `pathToFileURL(path.join(ROOT, ...))`；
+   用 `new URL('./backend/...', import.meta.url)` 在容器布局下会指向错误目录
  - 未登录可写的接口（feedback 等）必须加 IP 限流：否则脚本可无限刷量打满 KV →
    lib/ratelimit.js 通用滑动窗口（admin 登录与 feedback 共用，每 IP 每分钟 5 次）
  - **文件路径必须经 `lib/paths.js` 的 normalizeRelPath 规范化后再入库**：外部路径来自
@@ -400,7 +432,7 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
   `rg "<case 名>" ios/` 与 `node scripts/check-dead-strings.mjs` 都要跑。
 - **`swiftc -parse` 只查语法，查不出重复声明**：`-parse` 不建符号表，
   `invalid redeclaration of 'xxx'` 这类语义错误本地全绿、CI 才炸（exit 65），
-  而且 iOS job 一失败，ipa 和 deploy 跟着失败/跳过，后端 143 项全绿也白搭。
+  而且 iOS job 一失败，ipa 和 deploy 跟着失败/跳过，后端 162 项全绿也白搭。
   2026-10-25 实测踩到：给 SettingsView 加刷新按钮时重复声明了
   `@State private var showVIPApplication`（上一轮已加过一份）。
   缓解手段：Windows 工具链没有 iOS SDK，`-typecheck` 会直接

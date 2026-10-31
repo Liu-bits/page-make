@@ -125,6 +125,7 @@ const ROUTES = [
   { file: 'backend/api/projects/[id]/status.js', pattern: /^\/api\/projects\/([^/]+)\/status$/, params: ['id'] },
   { file: 'backend/api/projects/[id]/refresh.js', pattern: /^\/api\/projects\/([^/]+)\/refresh$/, params: ['id'] },
   { file: 'backend/api/projects/[id]/files.js', pattern: /^\/api\/projects\/([^/]+)\/files$/, params: ['id'] },
+  { file: 'backend/api/projects/[id]/export.js', pattern: /^\/api\/projects\/([^/]+)\/export$/, params: ['id'] },
   { file: 'backend/api/admin/login.js', pattern: /^\/api\/admin\/login$/ },
   { file: 'backend/api/admin/overview.js', pattern: /^\/api\/admin\/overview$/ },
   { file: 'backend/api/admin/action.js', pattern: /^\/api\/admin\/action$/ },
@@ -208,7 +209,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     const request = toWebRequest(req, body.length ? body : undefined);
-    const pathname = decodeURIComponent(new URL(request.url).pathname);
+    let pathname = decodeURIComponent(new URL(request.url).pathname);
+
+    // 公开页尾斜杠归一：/p/<id>/ 与 /p/<id> 是同一个入口。
+    // 后端项目尤其需要——框架生成的链接、浏览器补全、用户手打都常带尾斜杠，
+    // 不归一就会落到 404 而让用户以为「后端没部署成功」。
+    if (/^\/p\/[a-f0-9]{32}\/$/.test(pathname)) pathname = pathname.slice(0, -1);
 
     // 管理后台页面（GET /admin → backend/admin.html 单页）
     if (pathname === '/admin' || pathname === '/admin/') {
@@ -261,6 +267,25 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+let runtimeModule = null;
+let shuttingDown = false;
+
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try {
+    if (runtimeModule) await runtimeModule.stopAll();
+  } catch (error) {
+    console.error('[runtime] 停机回收失败', error);
+  }
+  server.close(() => process.exit(0));
+  // 兜底：平台终止容器时不能无限等待 keep-alive 连接。
+  setTimeout(() => process.exit(0), 3000).unref();
+}
+
+process.once('SIGTERM', shutdown);
+process.once('SIGINT', shutdown);
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Page-make 自托管服务：http://0.0.0.0:${PORT}`);
   console.log(`数据目录：${DATA_DIR}`);
@@ -275,4 +300,20 @@ server.listen(PORT, '0.0.0.0', () => {
       .then((m) => (mod.includes('google') ? m.googleJwks : m.appleJwks).getKeys())
       .catch(() => { /* 预热失败不影响启动，登录时才加载 */ });
   }
+
+  // 重启后把已发布的后端项目重新拉起。
+  // 进程状态只在内存里，容器重建/平台重启会全部丢失；源码在持久卷上，
+  // 这里按 project_ 记录逐个重新安装启动，用户不需要重新部署。
+  // 串行执行：并行 install 会把免费 CPU 打满，反而更慢。
+  // 用 ROOT 拼路径：本地开发 server.mjs 在 docker/ 下，容器里在 /app 根，
+  // 相对 import.meta.url 在两种布局下指向不同目录，会 ERR_MODULE_NOT_FOUND。
+  import(pathToFileURL(path.join(ROOT, 'backend/lib/backend-runtime.js')).href)
+    .then((m) => {
+      runtimeModule = m;
+      return m.restoreAll(kv);
+    })
+    .then((count) => {
+      if (count > 0) console.log(`已恢复 ${count} 个后端项目`);
+    })
+    .catch((error) => console.error('[runtime] 恢复后端项目失败', error));
 });

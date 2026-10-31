@@ -182,7 +182,8 @@ struct ExplorerView: View {
             case .newFile:
                 NewFileSheet(
                     initialDir: currentDir,
-                    existingPaths: current.files.map(\.path)
+                    existingPaths: current.files.map(\.path),
+                    kind: current.kind
                 ) { path in
                     createFile(path: path, sheetId: sheet.id)
                 }
@@ -713,7 +714,10 @@ struct ExplorerView: View {
         isPublishing = true
         defer { isPublishing = false }
         do {
-            let updated = try await APIClient.shared.publishProject(current.id)
+            var updated = try await APIClient.shared.publishProject(current.id, kind: current.kind)
+            if updated.status == .processing {
+                updated = try await APIClient.shared.waitForProjectReady(current.id)
+            }
             apply(updated)
             alertItem = AlertItem(message: L10n.string("explorer_publish_done"), titleKey: "alert_tip")
         } catch let error as APIError {
@@ -733,13 +737,16 @@ struct ExplorerView: View {
 /// 新建文件 sheet：输入文件名或路径（css/style.css 自动建虚拟文件夹，默认补 .html）
 struct NewFileSheet: View {
     let existingPaths: [String]
+    /// 后端项目允许 package.json / TS 源码等；纯前端仍只收 html/css/js
+    let kind: ProjectKind
     let onCreate: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var text: String
 
-    init(initialDir: String, existingPaths: [String], onCreate: @escaping (String) -> Void) {
+    init(initialDir: String, existingPaths: [String], kind: ProjectKind = .staticSite, onCreate: @escaping (String) -> Void) {
         self.existingPaths = existingPaths
+        self.kind = kind
         self.onCreate = onCreate
         // 位于文件夹内时预填路径前缀
         _text = State(initialValue: initialDir.isEmpty ? "" : initialDir + "/")
@@ -759,10 +766,20 @@ struct NewFileSheet: View {
               !raw.hasSuffix("/") else { return nil }
         // 禁止控制字符与反斜杠
         if raw.unicodeScalars.contains(where: { $0.value < 32 }) { return nil }
-        // 仅支持 html / css / js
+        // 纯前端只支持 html / css / js；后端项目额外允许 package.json 与源码/配置
         let lower = raw.lowercased()
-        guard lower.hasSuffix(".html") || lower.hasSuffix(".htm")
-                || lower.hasSuffix(".css") || lower.hasSuffix(".js") else { return nil }
+        if kind.isBackend {
+            let allowed = [".html", ".htm", ".css", ".js", ".mjs", ".cjs", ".json",
+                           ".ts", ".tsx", ".jsx", ".md", ".txt", ".yml", ".yaml",
+                           ".toml", ".xml", ".graphql", ".gql", ".sql", ".map",
+                           ".wasm", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp",
+                           ".ico", ".bmp", ".avif", ".woff", ".woff2", ".ttf", ".otf",
+                           ".eot", ".mp3", ".mp4", ".webm", ".pdf", ".csv", ".lock"]
+            guard allowed.contains(where: { lower.hasSuffix($0) }) else { return nil }
+        } else {
+            guard lower.hasSuffix(".html") || lower.hasSuffix(".htm")
+                    || lower.hasSuffix(".css") || lower.hasSuffix(".js") else { return nil }
+        }
         return raw
     }
 

@@ -3,6 +3,10 @@ const PAGES = {
   takedown: { zh: '该内容已被下架', en: 'This content has been taken down' },
   expired: { zh: '链接已过期，请在 App 内点击刷新', en: 'This link has expired — refresh it in the app' },
   notFound: { zh: '链接不存在或已删除', en: 'This link does not exist or has been deleted' },
+  backendStarting: {
+    zh: '后端服务正在启动，请稍后刷新',
+    en: 'The backend is starting up — refresh in a moment',
+  },
 };
 
 export function pickLanguage(request) {

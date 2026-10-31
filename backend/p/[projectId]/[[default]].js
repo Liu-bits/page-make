@@ -2,8 +2,9 @@
 // 新手宽容：精确路径 404 时按"文件名"在项目内做唯一匹配兜底（引用写错目录也能正常显示）
 import { getKV, kvGet, kvListAll, keys, nowSeconds, pathFromSiteKey } from '../../lib/kv.js';
 import { contentTypeFor, htmlPage } from '../../lib/responses.js';
-import { STATUS } from '../../lib/state.js';
+import { STATUS, isBackendKind, normalizeKind } from '../../lib/state.js';
 import { rewriteCssRefs } from '../../lib/paths.js';
+import { proxy } from '../../lib/backend-runtime.js';
 
 const ID_RE = /^[a-f0-9]{32}$/;
 
@@ -30,6 +31,13 @@ export async function onRequest(context) {
   // 链接过期判定（所有线路）：expiresAt 到期即过期（游客 10 分钟 / EdgeOne TTL）
   if (project.expiresAt && nowSeconds() > project.expiresAt) {
     return htmlPage(410, 'expired', request);
+  }
+
+  // 后端项目：所有子路径都交给项目自己的进程处理（含 API 路由、静态资源）
+  if (isBackendKind(normalizeKind(project.kind))) {
+    const proxied = await proxy(project.id, request);
+    if (proxied) return proxied;
+    return htmlPage(503, 'backendStarting', request);
   }
 
   // 新手宽容：引用可能带 URL 编码（中文文件名）→ 先解码再找

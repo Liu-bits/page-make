@@ -8,6 +8,11 @@ FROM node:22-alpine
 
 WORKDIR /app
 
+# 后端项目支持：npm 随 Node 自带，pnpm 需要额外安装。
+# 用 corepack 固定版本，避免不同时间构建出来的 pnpm 行为漂移。
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate \
+    && pnpm --version && npm --version
+
 # API 处理器（路由、lib 库，与 CI 测试共用同一份代码）
 COPY backend/ ./backend/
 # 容器适配层（Node HTTP + 磁盘 KV）

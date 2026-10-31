@@ -3,6 +3,7 @@
 import { kvGet, kvDel, kvListAll, keys } from './kv.js';
 import { decodeKey } from './base64.js';
 import { revokeUserSessions } from './session.js';
+import { stop as stopBackendRuntime } from './backend-runtime.js';
 
 export async function forEachUserProject(kv, userId, fn) {
   const prefix = keys.userProject(userId, '');
@@ -18,6 +19,7 @@ export async function deleteUserAccount(kv, userId) {
   const indexedProjects = new Set();
   await forEachUserProject(kv, userId, async (projectId, indexKey) => {
     indexedProjects.add(projectId);
+    await stopBackendRuntime(projectId);
     for (const siteKey of await kvListAll(kv, keys.sitePrefix(projectId))) {
       await kvDel(kv, siteKey);
     }
@@ -39,6 +41,7 @@ export async function deleteUserAccount(kv, userId) {
     const project = await kvGet(kv, key);
     if (!project || project.userId !== userId) continue;
     if (!indexedProjects.has(project.id)) {
+      await stopBackendRuntime(project.id);
       for (const siteKey of await kvListAll(kv, keys.sitePrefix(project.id))) {
         await kvDel(kv, siteKey);
       }

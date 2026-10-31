@@ -5,14 +5,18 @@ import { kvListAll } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
 import { requireAdmin } from '../../lib/admin.js';
 import { accountKind, isVIPUser } from '../../lib/session.js';
+import { tierOf } from '../../lib/tiers.js';
 
 function publicUser(u) {
   const kind = accountKind(u);
+  const tier = tierOf(u);
   return {
     userId: u.userId,
     email: u.email ?? null,
     isGuest: Boolean(u.userId?.startsWith('guest_')),
-    role: isVIPUser(u) ? 'vip' : 'user',
+    // role 保留给旧后台脚本；真实等级看 tier
+    role: isVIPUser(u) ? tier : 'user',
+    tier,
     accountKind: kind,
     status: u.status ?? 'active',
     banLevel: u.banLevel ?? 0,
@@ -45,6 +49,7 @@ export async function onRequest(context) {
       id: p.id,
       userId: p.userId,
       name: p.name ?? null,
+      kind: p.kind ?? 'static',
       status: p.status,
       sourceType: p.sourceType ?? null,
       fileCount: p.fileCount ?? 0,
@@ -98,7 +103,10 @@ export async function onRequest(context) {
     stats: {
       userCount: users.length,
       guestCount: users.filter((u) => u.isGuest).length,
-      vipCount: users.filter((u) => u.role === 'vip').length,
+      vipCount: users.filter((u) => u.tier === 'vip').length,
+      svipCount: users.filter((u) => u.tier === 'svip').length,
+      ultraCount: users.filter((u) => u.tier === 'ultra').length,
+      backendProjectCount: projects.filter((p) => p.kind === 'npm' || p.kind === 'pnpm').length,
       projectCount: projects.length,
       feedbackCount: feedback.length,
       vipRequestCount: vipRequests.filter((item) => item.status === 'pending').length,

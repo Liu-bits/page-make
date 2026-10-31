@@ -2,7 +2,7 @@
 // 自托管容器冒烟测试：启动真实 HTTP 服务，跑完整「上传 → 处理 → 公开访问 → 管理」全流程
 // 运行：node dev/test-server.mjs
 // =============================================================================
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,6 +10,26 @@ import path from 'node:path';
 import { buildZip } from './make-zip.mjs';
 import { keys as kvKeys } from '../backend/lib/kv.js';
 import { textToBase64, base64ToText, bytesToBase64 } from '../backend/lib/base64.js';
+import { encodeKey } from '../backend/lib/base64.js';
+
+/** 直接往磁盘 KV 写一条记录（DEV_NO_AUTH 下用来伪造指定等级的用户） */
+function seedKvRecord(dir, key, value) {
+  fs.writeFileSync(path.join(dir, key), JSON.stringify(value));
+}
+
+/** 造一个指定等级的账号记录 */
+function seedUser(dir, userId, role) {
+  seedKvRecord(dir, `user_${encodeKey(userId)}`, {
+    userId,
+    email: `${userId}@example.com`,
+    role,
+    status: 'active',
+    banLevel: 0,
+    banUntil: null,
+    banReason: null,
+    createdAt: Math.floor(Date.now() / 1000),
+  });
+}
 
 // base64url 编码（JWT 段必须无 padding、无 +/）
 function toBase64Url(text) {
@@ -43,6 +63,28 @@ function assertEqual(actual, expected, message) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function killProcessTree(child) {
+  if (!child?.pid) return;
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+  } else {
+    child.kill('SIGTERM');
+  }
+}
+
+async function waitForProjectReady(id, headers, attempts = 240) {
+  for (let i = 0; i < attempts; i += 1) {
+    const response = await fetch(`${BASE}/api/projects/${id}/status`, { headers });
+    const json = await response.json();
+    if (json.status === 'ready') return json;
+    if (json.status === 'failed') {
+      throw new Error(`项目处理失败：${json.errorCode || 'UNKNOWN'}`);
+    }
+    await sleep(500);
+  }
+  throw new Error('等待项目 ready 超时');
 }
 
 async function test(name, fn) {
@@ -161,6 +203,33 @@ await test('未传线路时默认 local + 非法线路仍拒绝', async () => {
   });
   const badJson = await bad.json();
   assert(bad.status === 400 && badJson.error === 'INVALID_PROVIDER', '非法 provider 应返回 INVALID_PROVIDER');
+});
+
+await test('分片上传初始化按等级执行 1MB / 100MB / 无上限配额', async () => {
+  const vipId = 'tier-quota-vip';
+  seedUser(dataDir, vipId, 'vip');
+  const vipAuth = { 'X-Test-User': vipId };
+  const init = (auth, size, kind = 'static') => fetch(`${BASE}/api/upload/init`, {
+    method: 'POST',
+    headers: { ...auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind, files: [{ name: 'site.zip', size }] }),
+  });
+
+  const vipTooLarge = await init(vipAuth, 2 * 1024 * 1024);
+  assertEqual(vipTooLarge.status, 413, 'VIP 超过 1MB 应拒绝');
+  assertEqual((await vipTooLarge.json()).error, 'TOO_LARGE');
+
+  const svipId = 'tier-quota-svip';
+  seedUser(dataDir, svipId, 'svip');
+  const svipAuth = { 'X-Test-User': svipId };
+  const svipOk = await init(svipAuth, 50 * 1024 * 1024);
+  assertEqual(svipOk.status, 200, 'SVIP 50MB 应允许初始化');
+
+  const ultraId = 'tier-quota-ultra';
+  seedUser(dataDir, ultraId, 'ultra');
+  const ultraAuth = { 'X-Test-User': ultraId };
+  const ultraOk = await init(ultraAuth, 1024 * 1024 * 1024);
+  assertEqual(ultraOk.status, 200, 'Ultra 超大项目应允许初始化');
 });
 
 await test('反向代理头兼容（x-forwarded-proto 多值逗号分隔）', async () => {
@@ -386,6 +455,47 @@ await test('zip 炸弹：解压超限 → 项目 failed(TOO_LARGE) 且不写盘'
   assertEqual(json.errorCode, 'TOO_LARGE', '错误码应为 TOO_LARGE');
   assert(!fs.existsSync(path.join(dataDir, `site_${kvKeys.project(finish.projectId).slice('project_'.length)}_`)),
     '超限内容不得写入磁盘');
+});
+
+await test('等级配额也约束解压后体积：VIP 压缩包小但解压超 1MB 仍失败', async () => {
+  const vipId = 'vip-unzip-quota';
+  seedUser(dataDir, vipId, 'vip');
+  const vipAuth = { 'X-Test-User': vipId };
+  const expanded = new Uint8Array(2 * 1024 * 1024); // 全零，deflate 后远小于 1MB
+  const zip = buildZip([
+    ['index.html', '<h1>vip quota</h1>'],
+    ['large.bin', expanded, { deflate: true }],
+  ]);
+
+  const init = await (await fetch(`${BASE}/api/upload/init`, {
+    method: 'POST',
+    headers: { ...vipAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: [{ name: 'quota.zip', size: zip.length }] }),
+  })).json();
+  assert(init.ok && init.uploadId, '压缩包本身应通过 VIP 1MB 初始化校验');
+
+  await fetch(`${BASE}/api/upload/chunk`, {
+    method: 'POST',
+    headers: { ...vipAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      uploadId: init.uploadId, fileIndex: 0, chunkIndex: 0, data: zip.toString('base64'),
+    }),
+  });
+  const finish = await (await fetch(`${BASE}/api/upload/finish`, {
+    method: 'POST',
+    headers: { ...vipAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uploadId: init.uploadId }),
+  })).json();
+  assert(finish.ok && finish.projectId, 'finish 应返回 projectId');
+
+  let json = null;
+  for (let i = 0; i < 60; i++) {
+    await sleep(200);
+    json = await (await fetch(`${BASE}/api/projects/${finish.projectId}/status`, { headers: vipAuth })).json();
+    if (json.status !== 'processing') break;
+  }
+  assertEqual(json.status, 'failed', 'VIP 解压后超过 1MB 应失败');
+  assertEqual(json.errorCode, 'TOO_LARGE', '错误码应为 TOO_LARGE');
 });
 
 await test('公开访问：入口 HTML 与静态资源', async () => {
@@ -806,6 +916,162 @@ await test('Apple 登录：合法 identityToken 走完整链路（VIP 判定不 
     appleServer.kill();
     fs.rmSync(appleDataDir, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// 部署形态三选一：纯前端 / npm / pnpm
+// ---------------------------------------------------------------------------
+await test('普通用户不能建后端项目（BACKEND_REQUIRES_VIP）', async () => {
+  for (const kind of ['npm', 'pnpm']) {
+    const res = await fetch(`${BASE}/api/projects/explorer`, {
+      method: 'POST',
+      headers: { ...AUTH, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: `blocked-${kind}`, kind }),
+    });
+    const json = await res.json();
+    assertEqual(res.status, 403, `普通用户建 ${kind} 项目应被拒绝`);
+    assertEqual(json.error, 'BACKEND_REQUIRES_VIP', `应返回 BACKEND_REQUIRES_VIP（实际 ${json.error}）`);
+  }
+  // 纯前端仍然可以
+  const okRes = await fetch(`${BASE}/api/projects/explorer`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'static-ok', kind: 'static' }),
+  });
+  assertEqual(okRes.status, 200, '普通用户建纯前端项目应成功');
+});
+
+await test('非法部署形态被拒绝（INVALID_KIND，不静默降级）', async () => {
+  const res = await fetch(`${BASE}/api/projects/explorer`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'bad-kind', kind: 'php' }),
+  });
+  assertEqual(res.status, 400, '非法 kind 应 400');
+  assertEqual((await res.json()).error, 'INVALID_KIND');
+});
+
+await test('VIP 后端项目：npm 部署 → 进程常驻 → /p/ 反向代理生效', async () => {
+  const vipId = 'vip-backend-001';
+  seedUser(dataDir, vipId, 'vip');
+  const vipAuth = { 'X-Test-User': vipId };
+
+  const created = await (await fetch(`${BASE}/api/projects/explorer`, {
+    method: 'POST',
+    headers: { ...vipAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'node-app', kind: 'npm' }),
+  })).json();
+  assert(created.ok, `VIP 建后端项目应成功：${JSON.stringify(created)}`);
+  const id = created.project.id;
+  assertEqual(created.project.kind, 'npm', '项目应记录 kind=npm');
+
+  const pkg = JSON.stringify({
+    name: 'demo-app',
+    version: '1.0.0',
+    private: true,
+    scripts: { start: 'node server.js' },
+  });
+  const server = [
+    "const http = require('node:http');",
+    'const port = Number(process.env.PORT);',
+    "http.createServer((req, res) => {",
+    "  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });",
+    "  res.end('backend-alive:' + req.url + '|prefix:' + (req.headers['x-forwarded-prefix'] || ''));",
+    '}).listen(port, "127.0.0.1");',
+  ].join('\n');
+
+  for (const [filePath, content] of [['package.json', pkg], ['server.js', server]]) {
+    const put = await fetch(`${BASE}/api/projects/${id}/files`, {
+      method: 'POST',
+      headers: { ...vipAuth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: filePath, content: textToBase64(content) }),
+    });
+    assertEqual(put.status, 200, `写入 ${filePath} 应成功`);
+  }
+
+  const published = await (await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST',
+    headers: { ...vipAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'publish', kind: 'npm' }),
+  })).json();
+  assert(published.ok, `发布后端项目应成功：${JSON.stringify(published)}`);
+  assertEqual(published.project.status, 'processing', '后端发布应立即返回 processing');
+  const ready = await waitForProjectReady(id, vipAuth);
+  assert(typeof ready.project.runtimePort === 'number', '应返回内部分配的端口');
+
+  // 反向代理：入口页与任意子路径都应落到项目自己的 Node 进程
+  const root = await fetch(`${BASE}/p/${id}`);
+  assertEqual(root.status, 200, '后端项目入口应 200');
+  const rootText = await root.text();
+  assert(
+    rootText.includes(`backend-alive:/|prefix:/p/${id}`),
+    `入口应剥掉 /p/<id> 前缀并透传代理前缀，实际：${rootText}`
+  );
+
+  const sub = await fetch(`${BASE}/p/${id}/api/hello?x=1`);
+  assertEqual(sub.status, 200, '子路径也应被代理');
+  assert((await sub.text()).includes('/api/hello?x=1'), '子路径应剥掉 /p/<id> 前缀且查询串原样透传');
+
+  // 尾斜杠归一：/p/<id>/ 与 /p/<id> 是同一个入口
+  const slash = await fetch(`${BASE}/p/${id}/`);
+  assertEqual(slash.status, 200, '尾斜杠不应 404');
+
+  // 刷新链接必须走后端重启链路，不能误走纯前端 HTML 入口部署。
+  const refreshed = await fetch(`${BASE}/api/projects/${id}/refresh`, {
+    method: 'POST',
+    headers: { ...vipAuth, 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  const refreshedJson = await refreshed.json();
+  assertEqual(refreshed.status, 200, '后端项目刷新应成功');
+  assertEqual(refreshedJson.project.status, 'processing', '后端刷新应立即返回 processing');
+  const refreshedReady = await waitForProjectReady(id, vipAuth);
+  assert(typeof refreshedReady.project.runtimePort === 'number', '刷新后应重新分配运行端口');
+
+  // 项目删除后进程必须被回收（否则端口泄漏、内存泄漏）
+  const del = await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST',
+    headers: { ...vipAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete' }),
+  });
+  assertEqual(del.status, 200, '删除后端项目应成功');
+
+  const runtimeConfig = await (await fetch(`${BASE}/api/config`)).json();
+  assertEqual(
+    runtimeConfig.runtime?.running,
+    0,
+    '删除后端项目后常驻进程必须被回收，不能继续占用端口'
+  );
+});
+
+await test('导出备份：VIP 可下载 ZIP，普通用户被拒', async () => {
+  // 普通用户：先建一个纯前端项目
+  const created = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ html: '<h1>export-me</h1>', css: 'h1{color:red}' }),
+  })).json();
+  assert(created.ok, '创建项目应成功');
+  const id = created.project.id;
+
+  const denied = await fetch(`${BASE}/api/projects/${id}/export`, { headers: AUTH });
+  assertEqual(denied.status, 403, '普通用户导出应被拒绝');
+  assertEqual((await denied.json()).error, 'EXPORT_REQUIRES_VIP');
+
+  // 把项目所有者改成 VIP：导出应返回可解压的 ZIP
+  seedUser(dataDir, 'dev-user', 'vip');
+  const probe = await (await fetch(`${BASE}/api/stats`, { headers: AUTH })).json();
+  assertEqual(probe.tier, 'vip', `seed 后 tier 应为 vip（实际 ${probe.tier}，role=${probe.role}）`);
+  const res = await fetch(`${BASE}/api/projects/${id}/export`, { headers: AUTH });
+  assertEqual(res.status, 200, 'VIP 导出应成功');
+  assertEqual(res.headers.get('content-type'), 'application/zip');
+  const buffer = new Uint8Array(await res.arrayBuffer());
+  const { unzip } = await import('../backend/lib/zip.js');
+  const files = await unzip(buffer);
+  assert(files.size >= 1, '导出包应至少含一个文件');
+  const names = [...files.keys()];
+  assert(names.some((n) => /\.html?$/i.test(n)), `导出包应含 HTML（实际 ${names.join(',')}）`);
+  assert(!names.some((n) => n.includes('node_modules')), '不应导出 node_modules');
 });
 
 await test('POST 删除项目（网关拦截 DELETE 的替代方案）', async () => {
@@ -1271,14 +1537,14 @@ await test('服务重启后数据仍在（磁盘 KV 持久化）', async () => {
     const json = await res.json();
     assert(Array.isArray(json.projects), '重启后列表接口应正常');
   } finally {
-    server2.kill();
+    killProcessTree(server2);
   }
 });
 
 // ---------------------------------------------------------------------------
 console.log(`\n结果：${passed} 通过，${failed} 失败\n`);
 
-server.kill();
+killProcessTree(server);
 try {
   fs.rmSync(dataDir, { recursive: true, force: true });
 } catch {}

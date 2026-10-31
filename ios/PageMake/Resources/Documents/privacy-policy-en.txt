@@ -1,11 +1,11 @@
 Page-make Privacy Policy
 
-Effective date: October 24, 2026
+Effective date: October 31, 2026
 
 1. Information We Collect
 
-1.1 Account information: when you sign in with Apple, we receive your Apple user identifier (User ID) and email (if you choose to share it); when you sign in with Google, we receive the corresponding account identifier and email; guest access uses a random identifier generated on your device. VIP is a benefit level for an existing Apple, Google, or guest account, not a separate sign-in method.
-1.2 Uploaded content: archives or HTML/CSS/JS files you upload, including their extracted contents.
+1.1 Account information: when you sign in with Apple, we receive your Apple user identifier (User ID) and email (if you choose to share it); when you sign in with Google, we receive the corresponding account identifier and email; guest access uses a random identifier generated on your device. VIP, SVIP, and Ultra are benefit levels for an existing Apple, Google, or guest account, not separate sign-in methods.
+1.2 Uploaded content: archives, HTML/CSS/JS files, npm / pnpm project source (including package.json), and their extracted contents.
 1.3 Usage logs: timestamps and results of operations such as upload, deploy and link refresh, used for troubleshooting.
 1.4 Feedback: messages and reports you submit via Settings > Feedback.
 1.5 Credentials: session credentials are stored in the device's secure storage. The administrator password is stored only as a salted, irreversible hash; no plaintext password is stored.
@@ -13,7 +13,7 @@ Effective date: October 24, 2026
 
 2. How We Use Information
 
-2.1 To provide the static site hosting service: extracting archives, checking your code, and generating public links.
+2.1 To provide web and Node service hosting: extracting archives, checking your code, installing dependencies declared by your project, running build scripts, starting services, and generating public links. npm / pnpm projects run only in a restricted server subprocess after you publish them; executable files are not downloaded to your iPhone.
 2.2 To troubleshoot issues, maintain your signed-in session, and keep the service safe (e.g. banning abusive accounts, taking down violating projects).
 2.3 To let authorized personnel review VIP upgrade requests and decide whether to adjust account benefits.
 2.4 To comply with applicable laws and respond to lawful law-enforcement requests.
@@ -46,7 +46,8 @@ This app contains no third-party analytics, advertising, or tracking SDKs.
 
 7.1 The administrator password is protected with a salted hash, session credentials are stored in the device's secure storage, and data is transmitted over encrypted connections.
 7.2 Administrative access is restricted to authorized personnel, and account deletion, bans, and takedowns require human action.
-7.3 If you discover a data-security issue, please contact us through in-app feedback.
+7.3 The npm / pnpm runtime gives project processes only the minimal environment needed to start and does not inherit server secrets or sign-in credentials.
+7.4 If you discover a data-security issue, please contact us through in-app feedback.
 
 8. Protection of Minors
 

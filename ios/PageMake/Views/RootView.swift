@@ -41,7 +41,14 @@ struct RootView: View {
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .filePicker:
-                FilePickerView { source in
+                FilePickerView(
+                    canUseBackend: appState.session?.canUseBackend ?? false,
+                    // 会话尚未恢复时按普通账号 5MB 保守校验；不能把 nil
+                    // 误当成 Ultra 的「无上限」。
+                    maxUploadBytes: appState.session == nil
+                        ? FileValidator.maxTotalBytes
+                        : appState.session?.staticProjectLimit
+                ) { source in
                     handlePicked(source)
                 }
             }
@@ -98,9 +105,9 @@ struct RootView: View {
     private func handlePicked(_ source: CreateSource) {
         // 先 dismiss 入口 sheet，避免一个 presentation 在转场中被另一个覆盖。
         activeSheet = nil
-        if case .explorer(let name) = source {
+        if case .explorer(let name, let kind) = source {
             Task {
-                if let project = await appState.createExplorerProject(name: name) {
+                if let project = await appState.createExplorerProject(name: name, kind: kind) {
                     try? await Task.sleep(nanoseconds: 450_000_000)
                     explorerProject = project
                 }

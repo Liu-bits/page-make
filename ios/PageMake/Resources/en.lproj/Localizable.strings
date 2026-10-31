@@ -341,3 +341,49 @@
 "delete_account_button" = "Delete Account";
 "delete_account_confirm_message" = "All your projects and account data will be deleted permanently. This cannot be undone.";
 "vip_request_refresh" = "Refresh status";
+
+// MARK: - Account tiers / deployment kinds / backend runtime
+"tier_user" = "Standard";
+"tier_vip" = "VIP";
+"tier_svip" = "SVIP";
+"tier_ultra" = "Ultra";
+"tier_active_hint" = "%@ benefits are active. Your account and projects are preserved.";
+"account_paid_tier_detail" = "%@ account · permanent links and dedicated capacity";
+"quota_summary" = "Project size limit: %@";
+"quota_unlimited" = "Unlimited";
+
+"kind_static" = "Static";
+"kind_npm" = "npm";
+"kind_pnpm" = "pnpm";
+"kind_static_detail" = "HTML / CSS / JS static site";
+"kind_npm_detail" = "Install dependencies and run Node";
+"kind_pnpm_detail" = "Install with pnpm and run Node";
+"deploy_kind_title" = "Deployment";
+"deploy_kind_locked" = "npm / pnpm require VIP or above";
+"deploy_kind_requires_vip" = "npm / pnpm backend deployment requires VIP or above";
+"paste_unavailable_for_backend" = "npm / pnpm projects need package.json. Use upload or Project Mode instead";
+"export_backup" = "Export Backup";
+
+"pick_files_hint_limit" = "Supports .zip, .html, .css, .js. Multiple selection; current project limit is %@";
+"pick_files_hint_unlimited" = "Supports .zip, .html, .css, .js. Multiple selection; no project size limit at your tier";
+"pick_files_hint_backend_limit" = "Supports ZIP or npm/pnpm source (including package.json), multiple selection; current limit is %@";
+"pick_files_hint_backend_unlimited" = "Supports ZIP or npm/pnpm source (including package.json), multiple selection; no project size limit at your tier";
+"validation_too_large_limit" = "Total size %.1f MB exceeds your current %@ limit";
+"paste_size_with_limit" = "Entered %.1f KB / current limit %@";
+"paste_too_large_limit" = "Pasted content exceeds your current %@ limit";
+
+"error_invalid_kind" = "Invalid deployment option. Please choose again";
+"error_backend_requires_vip" = "npm / pnpm backend deployment requires VIP or above";
+"error_export_requires_vip" = "Export backup requires VIP or above";
+"error_invalid_tier" = "Invalid account tier";
+"error_tier_unchanged" = "This account already has that tier";
+"error_missing_package_json" = "Backend project is missing package.json";
+"error_install_failed" = "Dependency installation failed. Check package.json and versions";
+"error_install_timeout" = "Dependency installation timed out. Reduce dependencies and retry";
+"error_build_failed" = "Build failed. Check the build script in package.json";
+"error_build_timeout" = "Build timed out. Simplify the build and retry";
+"error_no_start_script" = "No start entry found. Add a start script or server.js / index.js";
+"error_start_timeout" = "Service start timed out. Check that it listens on PORT";
+"error_runtime_busy" = "Backend runtime capacity is full. Try again later";
+"error_runtime_unavailable" = "Backend runtime is unavailable on this server";
+"error_runtime_crashed" = "Backend process crashed repeatedly. Check runtime logs";

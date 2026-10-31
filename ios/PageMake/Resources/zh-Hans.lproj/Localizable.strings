@@ -341,3 +341,49 @@
 "delete_account_button" = "删除账号";
 "delete_account_confirm_message" = "将删除你的全部项目与账号数据，且无法恢复。此操作不可撤销。";
 "vip_request_refresh" = "刷新审核状态";
+
+// MARK: - 账号等级 / 部署形态 / 后端运行时
+"tier_user" = "普通";
+"tier_vip" = "VIP";
+"tier_svip" = "SVIP";
+"tier_ultra" = "Ultra";
+"tier_active_hint" = "%@ 权益已生效，当前账号与作品均已保留";
+"account_paid_tier_detail" = "%@ 账号 · 长期链接与专属容量";
+"quota_summary" = "单项目容量上限：%@";
+"quota_unlimited" = "无上限";
+
+"kind_static" = "纯前端";
+"kind_npm" = "npm 版本";
+"kind_pnpm" = "pnpm 版本";
+"kind_static_detail" = "HTML / CSS / JS 静态站点";
+"kind_npm_detail" = "安装依赖并运行 Node 服务";
+"kind_pnpm_detail" = "使用 pnpm 安装并运行服务";
+"deploy_kind_title" = "部署选项";
+"deploy_kind_locked" = "npm / pnpm 为 VIP 及以上特权";
+"deploy_kind_requires_vip" = "npm / pnpm 后端部署需要 VIP 或更高等级";
+"paste_unavailable_for_backend" = "npm / pnpm 项目需要 package.json，请改用上传或项目模式";
+"export_backup" = "导出备份";
+
+"pick_files_hint_limit" = "支持 .zip、.html、.css、.js，可多选；当前等级单项目上限 %@";
+"pick_files_hint_unlimited" = "支持 .zip、.html、.css、.js，可多选；当前等级不限制项目大小";
+"pick_files_hint_backend_limit" = "支持 ZIP 或 npm/pnpm 源码（含 package.json），可多选；当前等级上限 %@";
+"pick_files_hint_backend_unlimited" = "支持 ZIP 或 npm/pnpm 源码（含 package.json），可多选；当前等级不限制项目大小";
+"validation_too_large_limit" = "文件总大小 %.1f MB，超过当前等级 %@ 上限";
+"paste_size_with_limit" = "已输入 %.1f KB / 当前上限 %@";
+"paste_too_large_limit" = "粘贴内容超过当前等级 %@ 上限";
+
+"error_invalid_kind" = "部署选项无效，请重新选择";
+"error_backend_requires_vip" = "npm / pnpm 后端部署需要 VIP 或更高等级";
+"error_export_requires_vip" = "导出备份需要 VIP 或更高等级";
+"error_invalid_tier" = "账号等级参数无效";
+"error_tier_unchanged" = "该账号已经是这个等级";
+"error_missing_package_json" = "后端项目缺少 package.json";
+"error_install_failed" = "依赖安装失败，请检查 package.json 和依赖版本";
+"error_install_timeout" = "依赖安装超时，请精简依赖后重试";
+"error_build_failed" = "构建失败，请检查 package.json 的 build 脚本";
+"error_build_timeout" = "构建超时，请精简构建步骤后重试";
+"error_no_start_script" = "找不到启动入口，请添加 start 脚本或 server.js / index.js";
+"error_start_timeout" = "服务启动超时，请检查启动脚本是否监听 PORT";
+"error_runtime_busy" = "后端运行位已满，请稍后重试";
+"error_runtime_unavailable" = "当前服务器暂不支持后端运行";
+"error_runtime_crashed" = "后端进程反复崩溃，请检查运行日志";

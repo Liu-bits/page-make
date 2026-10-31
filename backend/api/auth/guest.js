@@ -3,7 +3,8 @@
 //       开发/测试阶段用设备 ID 免密登录，功能与 Apple 登录完全一致（含封禁策略）。
 // body: { deviceId } — iOS 端生成并持久化在 Keychain 的 UUID
 import { getKV, kvGet, kvPut, keys, nowSeconds, appendLog } from '../../lib/kv.js';
-import { accountKind, createSession, publicBan, isBanned, isVIPUser } from '../../lib/session.js';
+import { accountKind, createSession, publicBan, isBanned } from '../../lib/session.js';
+import { tierOf, quotaViewJson } from '../../lib/tiers.js';
 import { ok, fail } from '../../lib/responses.js';
 
 const DEVICE_ID_RE = /^[A-Za-z0-9-]{16,64}$/;
@@ -53,7 +54,9 @@ export async function onRequest(context) {
     token: session.token,
     userId,
     email: null,
-    role: isVIPUser(user) ? 'vip' : 'user',
+    role: tierOf(user),
+    tier: tierOf(user),
+    quota: quotaViewJson(user),
     accountKind: accountKind(user || { userId }),
     expiresAt: new Date(session.expiresAt * 1000).toISOString(),
   });

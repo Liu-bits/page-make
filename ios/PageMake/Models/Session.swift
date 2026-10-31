@@ -1,22 +1,68 @@
 import Foundation
 
-/// 账号权益等级：VIP 是 Apple / Google / 游客账号的附加权益，不是独立登录方式
-enum AccountRole: String, Codable {
+/// 账号权益等级：VIP / SVIP / Ultra 是 Apple / Google / 游客账号的附加权益，
+/// 不是独立登录方式。等级决定「能不能建后端项目」和「项目能有多大」。
+enum AccountRole: String, Codable, CaseIterable {
     case user
     case vip
+    case svip
+    case ultra
+
+    /// 是否任意付费等级（>= vip）
+    var isPaid: Bool { self != .user }
+
+    /// 等级序号，用于「至少达到某级」的比较
+    var rank: Int {
+        switch self {
+        case .user: return 0
+        case .vip: return 1
+        case .svip: return 2
+        case .ultra: return 3
+        }
+    }
+
+    /// 是否可部署 npm / pnpm 后端项目
+    var canUseBackend: Bool { rank >= AccountRole.vip.rank }
+
+    var titleKey: String {
+        switch self {
+        case .user: return "tier_user"
+        case .vip: return "tier_vip"
+        case .svip: return "tier_svip"
+        case .ultra: return "tier_ultra"
+        }
+    }
+
+    /// 服务端配额快照尚未返回时的保守兜底；Ultra 的 nil 表示无上限。
+    var defaultStaticMaxBytes: Int64? {
+        switch self {
+        case .user: return 5 * 1024 * 1024
+        case .vip: return 1 * 1024 * 1024
+        case .svip: return 100 * 1024 * 1024
+        case .ultra: return nil
+        }
+    }
 }
 
 /// 账号来源与权益组合
 enum AccountKind: String, Codable {
     case user
     case vip
+    case svip
+    case ultra
     case guest
     case guestVip = "guest-vip"
+    case guestSvip = "guest-svip"
+    case guestUltra = "guest-ultra"
 
     static func derive(userId: String, role: AccountRole) -> AccountKind {
         let isGuest = userId.hasPrefix("guest_")
-        if role == .vip { return isGuest ? .guestVip : .vip }
-        return isGuest ? .guest : .user
+        switch role {
+        case .user: return isGuest ? .guest : .user
+        case .vip: return isGuest ? .guestVip : .vip
+        case .svip: return isGuest ? .guestSvip : .svip
+        case .ultra: return isGuest ? .guestUltra : .ultra
+        }
     }
 }
 
@@ -28,10 +74,19 @@ struct UserSession: Equatable {
     let role: AccountRole
     let accountKind: AccountKind
     let expiresAt: Date
+    /// 服务端下发的配额快照；nil 表示尚未取到（按「不可用」保守处理）
+    var quota: AccountQuota? = nil
 
     var isExpired: Bool { expiresAt.timeIntervalSinceNow <= 0 }
     var isExpiringSoon: Bool { expiresAt.timeIntervalSinceNow <= Config.silentRefreshWindowSeconds }
-    var isVIP: Bool { role == .vip }
+    var isVIP: Bool { role.isPaid }
+    var canUseBackend: Bool { role.canUseBackend }
+    var canExport: Bool { quota?.canExport ?? role.isPaid }
+    /// nil = 无上限。优先使用服务端下发的权威配额，旧会话则按角色保守兜底。
+    var staticProjectLimit: Int64? {
+        if let quota { return quota.staticMaxBytes }
+        return role.defaultStaticMaxBytes
+    }
     /// 只有仍有游客试用限制的账号才为 true。游客升级 VIP 后 userId 前缀不变，但不再受限。
     var isGuestLimited: Bool { accountKind == .guest }
 }
@@ -82,9 +137,10 @@ struct AuthResponse: Decodable {
     let role: AccountRole
     let accountKind: AccountKind
     let expiresAt: Date
+    let quota: AccountQuota?
 
     enum CodingKeys: String, CodingKey {
-        case token, userId, email, role, accountKind, expiresAt
+        case token, userId, email, role, accountKind, expiresAt, quota
     }
 
     init(from decoder: Decoder) throws {
@@ -95,6 +151,7 @@ struct AuthResponse: Decodable {
         role = (try? c.decode(AccountRole.self, forKey: .role)) ?? .user
         accountKind = (try? c.decode(AccountKind.self, forKey: .accountKind))
             ?? AccountKind.derive(userId: userId, role: role)
+        quota = (try? c.decodeIfPresent(AccountQuota.self, forKey: .quota)) ?? nil
         let expiresAtString = try c.decode(String.self, forKey: .expiresAt)
         guard let date = DateParsing.parse(expiresAtString) else {
             throw DecodingError.dataCorruptedError(forKey: .expiresAt, in: c, debugDescription: "无效的 expiresAt")
@@ -144,6 +201,41 @@ struct UserStats: Decodable, Equatable {
 struct AccountSnapshot: Decodable, Equatable {
     let role: AccountRole
     let accountKind: AccountKind
+    /// 后端配额快照（nil = 未知，按「不可用」处理，避免误放行）
+    let quota: AccountQuota?
+
+    enum CodingKeys: String, CodingKey {
+        case role, accountKind, quota
+    }
+
+    init(role: AccountRole, accountKind: AccountKind, quota: AccountQuota? = nil) {
+        self.role = role
+        self.accountKind = accountKind
+        self.quota = quota
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        role = (try? c.decode(AccountRole.self, forKey: .role)) ?? .user
+        accountKind = (try? c.decode(AccountKind.self, forKey: .accountKind))
+            ?? AccountKind.derive(userId: "", role: role)
+        quota = (try? c.decodeIfPresent(AccountQuota.self, forKey: .quota)) ?? nil
+    }
+}
+
+/// 后端返回的配额快照。`null` 表示无上限（Ultra）。
+struct AccountQuota: Decodable, Equatable {
+    let tier: AccountRole
+    let canUseBackend: Bool
+    let canExport: Bool
+    /// nil = 无上限
+    let staticMaxBytes: Int64?
+    /// nil = 无上限（仅当 canUseBackend 为 true 时有意义）
+    let backendMaxBytes: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case tier, canUseBackend, canExport, staticMaxBytes, backendMaxBytes
+    }
 }
 
 /// 游客 VIP 升级申请状态；状态由后端审核，客户端只展示结果。

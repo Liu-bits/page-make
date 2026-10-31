@@ -44,13 +44,14 @@ struct UploadQueueView: View {
                 // 每次进入创建流程都先刷新一次，避免上次异常退出遗留的旧队列项。
                 uploadService.clearFinishedItems()
                 switch source {
-                case .files(let files, let name):
-                    uploadService.upload(files: files, provider: provider, projectName: name)
-                case .paste(let content, let name):
+                case .files(let files, let name, let kind):
+                    uploadService.upload(files: files, provider: provider, projectName: name, kind: kind)
+                case .paste(let content, let name, let kind):
                     uploadService.createPasted(
                         content,
                         provider: provider,
-                        name: name
+                        name: name,
+                        kind: kind
                     )
                 case .explorer:
                     // 项目模式由 RootView 直接创建并打开资源管理器，不进入上传队列
