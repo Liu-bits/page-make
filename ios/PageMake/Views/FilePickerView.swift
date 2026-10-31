@@ -591,7 +591,9 @@ struct FilePickerView: View {
 
             let values = try? url.resourceValues(forKeys: [.fileSizeKey])
             let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-            let size = Int64(values?.fileSize ?? (attributes?[.size] as? NSNumber)?.int64Value ?? 0)
+            let resourceSize = values?.fileSize
+            let attributeSize = (attributes?[.size] as? NSNumber)?.int64Value
+            let size = resourceSize ?? attributeSize ?? 0
             let destination = FileManager.default.temporaryDirectory
                 .appendingPathComponent("\(UUID().uuidString)_\(name)")
             do {
