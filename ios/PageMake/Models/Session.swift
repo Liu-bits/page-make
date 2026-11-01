@@ -94,6 +94,7 @@ struct UserSession: Equatable {
     var isExpiringSoon: Bool { expiresAt.timeIntervalSinceNow <= Config.silentRefreshWindowSeconds }
     var isVIP: Bool { role.isPaid }
     var canUseBackend: Bool { role.canUseBackend }
+    var canUseExplorer: Bool { role.canUseExplorer }
     var canExport: Bool { quota?.canExport ?? role.isPaid }
     /// nil = 无上限。优先使用服务端下发的权威配额，旧会话则按角色保守兜底。
     var staticProjectLimit: Int64? {
