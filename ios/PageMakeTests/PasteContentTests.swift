@@ -3,8 +3,9 @@ import XCTest
 
 final class PasteContentTests: XCTestCase {
     func testTotalBytesSumsAllParts() {
-        let content = PasteContent(html: "ab", css: "cd", js: "ef")
-        XCTAssertEqual(content.totalBytes, 6)
+        // JS 已移除：只统计 HTML + CSS
+        let content = PasteContent(html: "ab", css: "cd")
+        XCTAssertEqual(content.totalBytes, 4)
     }
 
     func testTotalBytesCountsUTF8() {

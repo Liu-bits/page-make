@@ -22,8 +22,8 @@ final class FileValidatorTests: XCTestCase {
     }
 
     func testRejectsUnsupportedExtension() {
-        let result = FileValidator.validate([pickedFile(name: "photo.png", size: 1024)])
-        XCTAssertEqual(result.failure, .unsupportedExtension("png"))
+        let result = FileValidator.validate([pickedFile(name: "photo.exe", size: 1024)])
+        XCTAssertEqual(result.failure, .unsupportedExtension("exe"))
     }
 
     func testBackendProjectAcceptsPackageJsonAndSourceFiles() {
@@ -42,7 +42,7 @@ final class FileValidatorTests: XCTestCase {
     }
 
     func testAcceptsExactlyAtLimit() {
-        let result = FileValidator.validate([pickedFile(name: "site.zip", size: 5 * 1024 * 1024)])
+        let result = FileValidator.validate([pickedFile(name: "site.zip", size: 300 * 1024)])
         XCTAssertNotNil(try? result.get())
     }
 
@@ -60,11 +60,11 @@ final class FileValidatorTests: XCTestCase {
     }
 
     func testSVIPAcceptsHundredMegabytesAndUltraHasNoLimit() {
-        let exactlyHundredMB = FileValidator.validate(
-            [pickedFile(name: "site.zip", size: 100 * 1024 * 1024)],
-            limitBytes: 100 * 1024 * 1024
+        let exactlyTenMB = FileValidator.validate(
+            [pickedFile(name: "site.zip", size: 10 * 1024 * 1024)],
+            limitBytes: 10 * 1024 * 1024
         )
-        XCTAssertNotNil(try? exactlyHundredMB.get())
+        XCTAssertNotNil(try? exactlyTenMB.get())
 
         let unlimited = FileValidator.validate(
             [pickedFile(name: "site.zip", size: 1024 * 1024 * 1024)],

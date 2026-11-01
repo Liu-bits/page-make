@@ -41,9 +41,9 @@ final class AccountSessionTests: XCTestCase {
     }
 
     func testTierLimitsAndBackendPermission() {
-        XCTAssertEqual(AccountRole.user.defaultStaticMaxBytes, 5 * 1024 * 1024)
+        XCTAssertEqual(AccountRole.user.defaultStaticMaxBytes, 300 * 1024)
         XCTAssertEqual(AccountRole.vip.defaultStaticMaxBytes, 1 * 1024 * 1024)
-        XCTAssertEqual(AccountRole.svip.defaultStaticMaxBytes, 100 * 1024 * 1024)
+        XCTAssertEqual(AccountRole.svip.defaultStaticMaxBytes, 10 * 1024 * 1024)
         XCTAssertNil(AccountRole.ultra.defaultStaticMaxBytes)
         XCTAssertFalse(AccountRole.user.canUseBackend)
         XCTAssertTrue(AccountRole.vip.canUseBackend)
