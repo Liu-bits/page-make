@@ -43,10 +43,11 @@ struct RootView: View {
             case .filePicker:
                 FilePickerView(
                     canUseBackend: appState.session?.canUseBackend ?? false,
+                    canUseExplorer: appState.session?.canUseExplorer ?? false,
                     // 会话尚未恢复时按普通账号 5MB 保守校验；不能把 nil
                     // 误当成 Ultra 的「无上限」。
                     maxUploadBytes: appState.session == nil
-                        ? FileValidator.maxTotalBytes
+                        ? 300 * 1024
                         : appState.session?.staticProjectLimit
                 ) { source in
                     handlePicked(source)

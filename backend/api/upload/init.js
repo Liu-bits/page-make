@@ -51,7 +51,8 @@ export async function onRequest(context) {
   // 部署形态三选一：纯前端 / npm / pnpm。非法值直接拒绝（不能静默降级，
   // 否则用户以为建了后端项目，实际拿到的是静态站点）。
   const requestedKind = body?.kind;
-  if (requestedKind !== undefined && !['static', PROJECT_KIND.NPM, PROJECT_KIND.PNPM].includes(requestedKind)) {
+  if (requestedKind !== undefined
+    && !['static', PROJECT_KIND.NPM, PROJECT_KIND.PNPM, PROJECT_KIND.JS].includes(requestedKind)) {
     return fail('INVALID_KIND', 400);
   }
   const kind = normalizeKind(requestedKind);

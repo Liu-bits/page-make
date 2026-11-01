@@ -1,11 +1,11 @@
 // POST /api/projects/explorer — 创建空白项目（项目模式：虚拟文件夹 + 在线创建/编辑 html/css/js）
 // body: { name? }
 // 项目初始为空（无文件、无入口、无链接）；添加文件后通过 action=publish 生成公开链接
-import { requireAuth, isGuestLimited } from '../../lib/session.js';
+import { requireAuth } from '../../lib/session.js';
 import { kvPut, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
 import { STATUS, normalizeKind, isBackendKind } from '../../lib/state.js';
-import { canUseBackend, tierOf } from '../../lib/tiers.js';
+import { canUseBackend, atLeast, tierOf } from '../../lib/tiers.js';
 
 export async function onRequest(context) {
   const { request } = context;
@@ -20,16 +20,16 @@ export async function onRequest(context) {
     // body 可省略
   }
 
-  // 游客限制：不可用项目模式（引导登录），且创建的链接 10 分钟后自动失效
-  if (isGuestLimited(auth.user)) {
-    return fail('GUEST_NO_EXPLORER', 403);
+  // 项目模式是 SVIP 及以上的特权；游客和普通账号都不可用
+  if (!atLeast(auth.user, 'svip')) {
+    return fail('EXPLORER_REQUIRES_SVIP', 403);
   }
 
   const name =
     (typeof body?.name === 'string' && body.name.trim().slice(0, 60)) || '未命名项目';
 
   // 部署形态三选一；普通用户只能建纯前端
-  if (body?.kind !== undefined && !['static', 'npm', 'pnpm'].includes(body.kind)) {
+  if (body?.kind !== undefined && !['static', 'npm', 'pnpm', 'js'].includes(body.kind)) {
     return fail('INVALID_KIND', 400);
   }
   const kind = normalizeKind(body?.kind);

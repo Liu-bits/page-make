@@ -185,7 +185,7 @@ final class AppState: ObservableObject {
     func loadStats() async {
         stats = try? await api.stats()
         await refreshAccountRole()
-        if session?.isGuestLimited == true {
+        if session?.role != .ultra {
             await refreshVIPUpgradeRequest()
         }
     }
@@ -256,17 +256,17 @@ final class AppState: ObservableObject {
         defer { isRefreshingRole = false }
         guard let snapshot = try? await api.accountSnapshot() else { return }
         applyAccountSnapshot(snapshot, matching: existing)
-        // 角色变化时立即丢弃旧申请状态；仍为游客则后台加载一次最新审核结果。
-        if session?.isVIP == true {
+        // Ultra 已到顶：丢弃旧申请状态；其余等级后台加载一次最新审核结果。
+        if session?.role == .ultra {
             vipUpgradeRequest = nil
         } else {
             await refreshVIPUpgradeRequest()
         }
     }
 
-    /// 读取游客升级申请状态。VIP / 普通登录账号不需要请求；游客才展示申请入口。
+    /// 读取升级申请状态。Ultra 不需要请求；其余等级按当前等级展示对应下一档申请。
     func refreshVIPUpgradeRequest() async {
-        guard let current = session, current.isGuestLimited else {
+        guard let current = session, current.role != .ultra else {
             vipUpgradeRequest = nil
             return
         }
@@ -275,14 +275,14 @@ final class AppState: ObservableObject {
         guard let latest = session,
               latest.userId == expected.userId,
               latest.token == expected.token,
-              latest.isGuestLimited else { return }
+              latest.role != .ultra else { return }
         vipUpgradeRequest = request
     }
 
-    /// 提交游客 VIP 升级申请；返回错误文案（nil = 成功）。
+    /// 提交升级申请（user→VIP→SVIP→Ultra 递进）；返回错误文案（nil = 成功）。
     func submitVIPUpgradeRequest(note: String) async -> String? {
-        guard let current = session, current.isGuestLimited else {
-            return L10n.string("vip_request_guest_only")
+        guard let current = session, current.role != .ultra else {
+            return L10n.string("error_already_max_tier")
         }
         do {
             vipUpgradeRequest = try await api.submitVIPUpgradeRequest(note: note)

@@ -66,18 +66,25 @@ export function canUseBackend(user) {
  */
 export const QUOTA = {
   static: {
-    user: 5 * 1024 * 1024,
+    user: 300 * 1024,
     vip: 1 * 1024 * 1024,
-    svip: 100 * 1024 * 1024,
+    svip: 10 * 1024 * 1024,
     ultra: Number.POSITIVE_INFINITY,
   },
   backend: {
     user: 0, // 不可用
     vip: 1 * 1024 * 1024,
-    svip: 100 * 1024 * 1024,
+    svip: 10 * 1024 * 1024,
     ultra: Number.POSITIVE_INFINITY,
   },
 };
+
+/** 下一档等级（升级申请按 user→vip→svip→ultra 递进；ultra 已到顶） */
+export function nextTierOf(user) {
+  const tier = tierOf(user);
+  const rank = TIER_RANK.get(tier);
+  return TIERS[rank + 1] ?? null;
+}
 
 /** 取某账号在指定维度上的配额（字节；Infinity 表示无上限） */
 export function quotaFor(user, dimension = 'static') {

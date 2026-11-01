@@ -44,7 +44,9 @@ function bytesToBase64Url(bytes) {
 
 const PORT = 18786;
 const BASE = `http://127.0.0.1:${PORT}`;
-const AUTH = { Authorization: 'Bearer dev-test-token' };
+// DEV_NO_AUTH 会跳过 token 校验；这里仍然保留 Authorization 头，
+// 让 requireAuth 走「存储会话」以外的测试路径（与线上一致地读取 header）。
+const AUTH = { Authorization: 'Bearer dev-test-token-20130ba43d97b34c' };
 
 let passed = 0;
 let failed = 0;
@@ -205,7 +207,7 @@ await test('未传线路时默认 local + 非法线路仍拒绝', async () => {
   assert(bad.status === 400 && badJson.error === 'INVALID_PROVIDER', '非法 provider 应返回 INVALID_PROVIDER');
 });
 
-await test('分片上传初始化按等级执行 1MB / 100MB / 无上限配额', async () => {
+await test('分片上传初始化按等级执行 1MB / 10MB / 无上限配额', async () => {
   const vipId = 'tier-quota-vip';
   seedUser(dataDir, vipId, 'vip');
   const vipAuth = { 'X-Test-User': vipId };
@@ -222,8 +224,10 @@ await test('分片上传初始化按等级执行 1MB / 100MB / 无上限配额',
   const svipId = 'tier-quota-svip';
   seedUser(dataDir, svipId, 'svip');
   const svipAuth = { 'X-Test-User': svipId };
-  const svipOk = await init(svipAuth, 50 * 1024 * 1024);
-  assertEqual(svipOk.status, 200, 'SVIP 50MB 应允许初始化');
+  const svipOk = await init(svipAuth, 8 * 1024 * 1024);
+  assertEqual(svipOk.status, 200, 'SVIP 8MB 应允许初始化');
+  const svipTooLarge = await init(svipAuth, 20 * 1024 * 1024);
+  assertEqual(svipTooLarge.status, 413, 'SVIP 超过 10MB 应拒绝');
 
   const ultraId = 'tier-quota-ultra';
   seedUser(dataDir, ultraId, 'ultra');
@@ -346,9 +350,11 @@ await test('ZIP 上传：.php 文件被跳过，不会落库或公开下载', as
 });
 
 await test('历史项目：.php 入口不公开，重新发布后修复为 HTML 入口', async () => {
+  seedUser(dataDir, 'svip-history', 'svip');
+  const svipAuthH = { 'X-Test-User': 'svip-history' };
   const created = await (await fetch(`${BASE}/api/projects/explorer`, {
     method: 'POST',
-    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    headers: { ...svipAuthH, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: 'legacy-entry' }),
   })).json();
   assert(created.ok && created.project?.id, '创建项目应成功');
@@ -385,7 +391,7 @@ await test('历史项目：.php 入口不公开，重新发布后修复为 HTML 
   assert(!(await legacyPage.text()).includes('HISTORIC_PHP_SOURCE'), '不得泄露 PHP 源码');
   assertEqual((await fetch(`${BASE}/p/${id}/index.php`)).status, 404, '.php 资源也不得公开下载');
   assertEqual(
-    (await fetch(`${BASE}/api/projects/${id}/files?path=index.php`, { headers: AUTH })).status,
+    (await fetch(`${BASE}/api/projects/${id}/files?path=index.php`, { headers: svipAuthH })).status,
     400,
     '历史 .php 也不得通过文件接口读取'
   );
@@ -393,7 +399,7 @@ await test('历史项目：.php 入口不公开，重新发布后修复为 HTML 
   // 重新发布：忽略历史 PHP 入口，自动选中项目内唯一 HTML 并修复链接。
   const published = await (await fetch(`${BASE}/api/projects/${id}`, {
     method: 'POST',
-    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    headers: { ...svipAuthH, 'Content-Type': 'application/json' },
     body: JSON.stringify({ action: 'publish' }),
   })).json();
   assert(published.ok, `历史项目重新发布应成功：${JSON.stringify(published)}`);
@@ -409,7 +415,7 @@ await test('历史项目：.php 入口不公开，重新发布后修复为 HTML 
   // 刷新链接也必须重新校验入口，不能把 entryPath 退回历史 PHP。
   const refreshed = await (await fetch(`${BASE}/api/projects/${id}/refresh`, {
     method: 'POST',
-    headers: AUTH,
+    headers: svipAuthH,
   })).json();
   assert(refreshed.ok, `刷新应成功：${JSON.stringify(refreshed)}`);
   assertEqual(refreshed.project.entryPath, 'index.html', '刷新后入口应保持 index.html');
@@ -583,7 +589,7 @@ await test('取消上传：清理后端临时分片', async () => {
   assert(again.status === 404, '重复取消应 404');
 });
 
-await test('粘贴代码创建：注入 CSS/JS + 公开访问', async () => {
+await test('粘贴代码创建：注入 CSS + 公开访问（JS 已移除）', async () => {
   const html = '<!DOCTYPE html><html><head><title>paste</title></head><body><h1>Hi</h1></body></html>';
   const res = await fetch(`${BASE}/api/projects/paste`, {
     method: 'POST',
@@ -601,7 +607,7 @@ await test('粘贴代码创建：注入 CSS/JS + 公开访问', async () => {
   // 公开页面应包含注入的 CSS/JS 引用
   const page = await (await fetch(`${BASE}/p/${project.id}`)).text();
   assert(page.includes('style.css'), '页面应注入 style.css 引用');
-  assert(page.includes('script.js'), '页面应注入 script.js 引用');
+  assert(!page.includes('src="script.js"'), '粘贴模式不得再注入 script.js');
 
   // 静态资源可访问
   const css = await fetch(`${BASE}/p/${project.id}/style.css`);
@@ -921,7 +927,7 @@ await test('Apple 登录：合法 identityToken 走完整链路（VIP 判定不 
 // ---------------------------------------------------------------------------
 // 部署形态三选一：纯前端 / npm / pnpm
 // ---------------------------------------------------------------------------
-await test('普通用户不能建后端项目（BACKEND_REQUIRES_VIP）', async () => {
+await test('普通用户项目模式不可用；后端形态校验按等级生效', async () => {
   for (const kind of ['npm', 'pnpm']) {
     const res = await fetch(`${BASE}/api/projects/explorer`, {
       method: 'POST',
@@ -930,7 +936,7 @@ await test('普通用户不能建后端项目（BACKEND_REQUIRES_VIP）', async 
     });
     const json = await res.json();
     assertEqual(res.status, 403, `普通用户建 ${kind} 项目应被拒绝`);
-    assertEqual(json.error, 'BACKEND_REQUIRES_VIP', `应返回 BACKEND_REQUIRES_VIP（实际 ${json.error}）`);
+    assertEqual(json.error, 'EXPLORER_REQUIRES_SVIP', `应返回 EXPLORER_REQUIRES_SVIP（实际 ${json.error}）`);
   }
   // 纯前端仍然可以
   const okRes = await fetch(`${BASE}/api/projects/explorer`, {
@@ -938,22 +944,24 @@ await test('普通用户不能建后端项目（BACKEND_REQUIRES_VIP）', async 
     headers: { ...AUTH, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: 'static-ok', kind: 'static' }),
   });
-  assertEqual(okRes.status, 200, '普通用户建纯前端项目应成功');
+  assertEqual(okRes.status, 403, '普通用户项目模式不可用（SVIP 门槛在前）');
 });
 
-await test('非法部署形态被拒绝（INVALID_KIND，不静默降级）', async () => {
+await test('SVIP 非法部署形态被拒绝（INVALID_KIND，不静默降级）', async () => {
+  // 该账号在下一个用例才 seed，这里先提前写入，避免回退到 dev-user
+  seedUser(dataDir, 'vip-backend-001', 'svip');
   const res = await fetch(`${BASE}/api/projects/explorer`, {
     method: 'POST',
-    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    headers: { 'X-Test-User': 'vip-backend-001', 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: 'bad-kind', kind: 'php' }),
   });
   assertEqual(res.status, 400, '非法 kind 应 400');
   assertEqual((await res.json()).error, 'INVALID_KIND');
 });
 
-await test('VIP 后端项目：npm 部署 → 进程常驻 → /p/ 反向代理生效', async () => {
+await test('SVIP 后端项目：npm 部署 → 进程常驻 → /p/ 反向代理生效', async () => {
   const vipId = 'vip-backend-001';
-  seedUser(dataDir, vipId, 'vip');
+  seedUser(dataDir, vipId, 'svip');
   const vipAuth = { 'X-Test-User': vipId };
 
   const created = await (await fetch(`${BASE}/api/projects/explorer`, {
@@ -1059,9 +1067,9 @@ await test('导出备份：VIP 可下载 ZIP，普通用户被拒', async () => 
   assertEqual((await denied.json()).error, 'EXPORT_REQUIRES_VIP');
 
   // 把项目所有者改成 VIP：导出应返回可解压的 ZIP
-  seedUser(dataDir, 'dev-user', 'vip');
+  seedUser(dataDir, 'dev-user', 'svip');
   const probe = await (await fetch(`${BASE}/api/stats`, { headers: AUTH })).json();
-  assertEqual(probe.tier, 'vip', `seed 后 tier 应为 vip（实际 ${probe.tier}，role=${probe.role}）`);
+  assertEqual(probe.tier, 'svip', `seed 后 tier 应为 svip（实际 ${probe.tier}，role=${probe.role}）`);
   const res = await fetch(`${BASE}/api/projects/${id}/export`, { headers: AUTH });
   assertEqual(res.status, 200, 'VIP 导出应成功');
   assertEqual(res.headers.get('content-type'), 'application/zip');

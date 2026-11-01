@@ -1,6 +1,6 @@
 // =============================================================================
-// 游客 10 分钟试用链路专项验证（真实 HTTP · 真实游客会话 · 无 DEV_NO_AUTH）
-// 覆盖：游客登录 → 粘贴建页 → 公开可访问 → 到期 410 → 状态 expired
+// 游客 7 天空闲过期链路专项验证（真实 HTTP · 真实游客会话 · 无 DEV_NO_AUTH）
+// 覆盖：游客登录 → 粘贴建页 → 公开可访问 → 连续 7 天无人访问后 410 → 状态 expired
 //       → 游客名额限制（1 个）→ 刷新重新计时 → 新游客身份重置
 // 运行：node dev/test-guest-ttl.mjs
 // =============================================================================
@@ -99,7 +99,7 @@ async function guestPaste(token, name = 'guest-page') {
   return res;
 }
 
-/// 篡改磁盘上的项目记录：把 expiresAt 改成过去（模拟 10 分钟到期）
+/// 篡改磁盘上的项目记录：把 expiresAt 改成过去（模拟连续 7 天无人访问到期）
 /// 磁盘 KV 的文件名 = encodeKey 后的完整 key（keys.project 已含编码）
 function expireProjectOnDisk(projectId) {
   const file = path.join(dataDir, keys.project(projectId));
@@ -115,7 +115,7 @@ function readProjectFromDisk(projectId) {
 }
 
 // ---------------------------------------------------------------------------
-console.log('\n[游客 10 分钟试用链路]');
+console.log('\n[游客 7 天空闲过期链路]');
 
 await waitForServer();
 
@@ -124,7 +124,7 @@ let deviceId1 = 'a1b2c3d4e5f6a7b8'; // DEVICE_ID_RE：16-64 位 [A-Za-z0-9-]
 let session1 = null;
 let project1 = null;
 
-await test('游客登录 → 粘贴建页 → expiresAt = now + 600', async () => {
+await test('游客登录 → 粘贴建页 → expiresAt = now + 7 天', async () => {
   session1 = await guestLogin(deviceId1);
   const res = await guestPaste(session1.token);
   assertEqual(res.status, 200, '游客粘贴应成功');
@@ -132,7 +132,7 @@ await test('游客登录 → 粘贴建页 → expiresAt = now + 600', async () =
   project1 = body.project;
   assert(project1.expiresAt, '游客项目必须设置 expiresAt');
   const delta = project1.expiresAt - Math.floor(Date.now() / 1000);
-  assert(delta > 590 && delta <= 600, `expiresAt 应约为 now+600，实际偏差 ${delta}s`);
+  assert(delta > 7 * 24 * 3600 - 10 && delta <= 7 * 24 * 3600, `expiresAt 应约为 now+7天，实际偏差 ${delta}s`);
   assert(project1.url?.includes(`/p/${project1.id}`), 'url 应为 /p/<id> 形式');
 });
 
@@ -181,7 +181,7 @@ await test('到期后：项目状态接口报 expired', async () => {
 });
 
 // 5. 已过期的游客项目：刷新 → 重新计时 10 分钟 → 恢复 200
-await test('游客刷新已过期项目 → 重新计时 10 分钟 → 恢复访问', async () => {
+await test('游客刷新已过期项目 → 重新计时 7 天 → 恢复访问', async () => {
   const res = await fetch(`${BASE}/api/projects/${project1.id}/refresh`, {
     method: 'POST',
     headers: { 'X-Pagemake-Token': session1.token },
@@ -189,7 +189,7 @@ await test('游客刷新已过期项目 → 重新计时 10 分钟 → 恢复访
   assertEqual(res.status, 200, `刷新应成功，实际 ${res.status}`);
   const after = readProjectFromDisk(project1.id);
   const delta = after.expiresAt - Math.floor(Date.now() / 1000);
-  assert(delta > 590 && delta <= 600, `刷新后 expiresAt 应重新约为 now+600，实际偏差 ${delta}s`);
+  assert(delta > 7 * 24 * 3600 - 10 && delta <= 7 * 24 * 3600, `刷新后 expiresAt 应重新约为 now+7天，实际偏差 ${delta}s`);
   const entry = await fetch(`${BASE}/p/${project1.id}`);
   assertEqual(entry.status, 200, '刷新后应恢复 200');
 });
@@ -206,7 +206,7 @@ await test('退出后以新游客身份登录 → 重新获得 1 个创建名额
 });
 
 // 7. 回归：新设备游客仍按 10 分钟试用
-await test('回归：新设备游客项目仍带 10 分钟 expiresAt', async () => {
+await test('回归：新设备游客项目仍带 7 天空闲 expiresAt', async () => {
   const reg = await fetch(`${BASE}/api/auth/guest`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -223,7 +223,7 @@ await test('回归：新设备游客项目仍带 10 分钟 expiresAt', async () 
   assertEqual(res.status, 200, '登录用户粘贴应成功');
   const body = await res.json();
   const expiry = body.project.expiresAt - Math.floor(Date.now() / 1000);
-  assert(expiry > 590 && expiry <= 600, `游客项目应设置约 10 分钟过期时间，实际 ${expiry}s`);
+  assert(expiry > 7 * 24 * 3600 - 10 && expiry <= 7 * 24 * 3600, `游客项目应设置约 7 天空闲过期时间，实际 ${expiry}s`);
 });
 
 // ---------------------------------------------------------------------------

@@ -37,8 +37,11 @@ enum FileValidationError: LocalizedError, Equatable {
 
 /// 选文件页本地校验：后缀 + 当前等级总大小
 enum FileValidator {
-    static let maxTotalBytes: Int64 = 5 * 1024 * 1024
-    static let staticAllowedExtensions: Set<String> = ["zip", "html", "css", "js"]
+    static let maxTotalBytes: Int64 = 300 * 1024
+    static let staticAllowedExtensions: Set<String> = [
+        "zip", "html", "css", "js", "png", "jpg", "jpeg", "gif", "webp",
+        "svg", "ico", "woff", "woff2", "ttf", "otf", "mp3", "mp4", "epk",
+    ]
     /// 后端项目需要 package.json、TS/JS 源码、配置和静态资源；ZIP 仍可直接上传。
     static let backendAllowedExtensions: Set<String> = [
         "zip", "html", "htm", "css", "js", "mjs", "cjs", "json",

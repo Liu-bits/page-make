@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 struct FilePickerView: View {
     /// 当前账号能否选择后端形态（VIP / SVIP / Ultra 才行）
     let canUseBackend: Bool
+    /// 当前账号能否打开项目模式（SVIP 及以上才行）
+    let canUseExplorer: Bool
     /// nil = Ultra 无上限
     let maxUploadBytes: Int64?
     let onPick: (CreateSource) -> Void
@@ -26,7 +28,6 @@ struct FilePickerView: View {
     // 粘贴模式内容
     @State private var html = ""
     @State private var css = ""
-    @State private var js = ""
 
     private static let ordinaryPasteLimitBytes: Int64 = 300 * 1024
 
@@ -42,7 +43,7 @@ struct FilePickerView: View {
     }
 
     private var pasteContent: PasteContent {
-        PasteContent(html: html, css: css, js: js)
+        PasteContent(html: html, css: css)
     }
 
     var body: some View {
@@ -156,7 +157,7 @@ struct FilePickerView: View {
             modeButton(.paste, icon: "chevron.left.forwardslash.chevron.right", titleKey: "pick_mode_paste")
             modeButton(.explorer, icon: "folder.badge.plus", titleKey: "mode_explorer")
         }
-        // 后端项目必须有 package.json；粘贴通道只收 HTML/CSS/JS，切到后端时把它禁用
+        // 粘贴通道只收 HTML/CSS，切到后端时把它禁用
         .onChange(of: kind) { _, newKind in
             if newKind.isBackend && mode == .paste {
                 mode = .files
@@ -171,10 +172,14 @@ struct FilePickerView: View {
     }
 
     private func modeButton(_ value: Mode, icon: String, titleKey: String) -> some View {
-        let disabled = value == .paste && kind.isBackend
+        let pasteDisabled = value == .paste && kind.isBackend
+        let explorerDisabled = value == .explorer && !canUseExplorer
+        let disabled = pasteDisabled || explorerDisabled
         return Button {
             guard !disabled else {
-                alertItem = AlertItem(message: L10n.string("paste_unavailable_for_backend"))
+                alertItem = AlertItem(message: explorerDisabled
+                    ? L10n.string("error_explorer_requires_svip")
+                    : L10n.string("paste_unavailable_for_backend"))
                 return
             }
             withAnimation(.snappy(duration: 0.24)) {
@@ -199,9 +204,9 @@ struct FilePickerView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - 部署形态（纯前端 / npm / pnpm）
+    // MARK: - 部署形态（纯前端 / npm / pnpm / js）
 
-    /// 三选一部署选项。非 VIP 也能看到 npm / pnpm，但是置灰不可选——
+    /// 四选一部署选项。非 VIP 也能看到 npm / pnpm / js，但是置灰不可选——
     /// 明确告诉用户「这是升级后解锁的能力」，比直接隐藏更容易理解。
     private var deployKindBar: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -371,13 +376,6 @@ struct FilePickerView: View {
                     placeholder: L10n.string("paste_css_placeholder"),
                     minHeight: 120
                 )
-                editor(
-                    title: L10n.string("paste_js"),
-                    text: $js,
-                    placeholder: L10n.string("paste_js_placeholder"),
-                    minHeight: 120
-                )
-
                 Text(sizeText)
                     .font(.caption)
                     .foregroundStyle(isTooLarge ? PageMakeTheme.coral : PageMakeTheme.inkSoft)
@@ -443,7 +441,6 @@ struct FilePickerView: View {
     private func applyTemplate(_ tpl: PasteTemplate) {
         html = tpl.html
         css = tpl.css
-        js = tpl.js
     }
 
     private func editor(title: String, text: Binding<String>, placeholder: String, minHeight: CGFloat) -> some View {

@@ -668,13 +668,14 @@ await test('等级归一：非法 role 与历史 isTest 账号', async () => {
   assert(!atLeast({ userId: 'a', role: 'vip' }, 'svip'), 'vip 不应满足 svip 门槛');
 });
 
-await test('配额：VIP 1MB / SVIP 100MB / Ultra 无限', async () => {
+await test('配额：普通 300KB / VIP 1MB / SVIP 10MB / Ultra 无限', async () => {
   const { quotaFor } = await import('../backend/lib/tiers.js');
   const MB = 1024 * 1024;
+  const KB = 1024;
   assertEqual(quotaFor({ userId: 'a', role: 'vip' }, 'backend'), 1 * MB, 'VIP 后端源码应为 1MB');
-  assertEqual(quotaFor({ userId: 'a', role: 'svip' }, 'backend'), 100 * MB, 'SVIP 应为 100MB');
+  assertEqual(quotaFor({ userId: 'a', role: 'svip' }, 'backend'), 10 * MB, 'SVIP 应为 10MB');
   assertEqual(quotaFor({ userId: 'a', role: 'ultra' }, 'static'), Number.POSITIVE_INFINITY, 'Ultra 静态应无上限');
-  assertEqual(quotaFor({ userId: 'a', role: 'user' }, 'static'), 5 * MB, '普通账号静态应保持 5MB');
+  assertEqual(quotaFor({ userId: 'a', role: 'user' }, 'static'), 300 * KB, '普通账号静态应为 300KB');
 });
 
 await test('后端部署权限：普通用户不可用，VIP 起可用', async () => {

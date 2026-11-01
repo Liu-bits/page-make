@@ -19,6 +19,8 @@ import { spawn } from 'node:child_process';
 import {
   BACKEND_INSTALL_TIMEOUT_MS,
   BACKEND_BUILD_TIMEOUT_MS,
+  BACKEND_INSTALL_TIMEOUT_MS_SVIP,
+  BACKEND_START_TIMEOUT_MS_SVIP,
   BACKEND_MAX_CONCURRENT,
   BACKEND_MAX_RESTARTS,
   BACKEND_MEMORY_MB,
@@ -229,14 +231,18 @@ function run(command, args, options = {}) {
     child.stdout?.on('data', cap);
     child.stderr?.on('data', cap);
 
-    const timer = setTimeout(() => {
-      timedOut = true;
-      terminateProcessTree(child, 'SIGKILL').catch(() => {
-        try { child.kill('SIGKILL'); } catch { /* 已退出 */ }
-      });
-      // 极少数容器里 taskkill/kill 也可能卡住；不能让发布任务永久悬挂。
-      forceDoneTimer = setTimeout(() => done(-1), 5000);
-    }, timeoutMs);
+    // timeoutMs = Infinity 表示该等级无超时限制（Ultra），不挂计时器。
+    let timer = null;
+    if (Number.isFinite(timeoutMs)) {
+      timer = setTimeout(() => {
+        timedOut = true;
+        terminateProcessTree(child, 'SIGKILL').catch(() => {
+          try { child.kill('SIGKILL'); } catch { /* 已退出 */ }
+        });
+        // 极少数容器里 taskkill/kill 也可能卡住；不能让发布任务永久悬挂。
+        forceDoneTimer = setTimeout(() => done(-1), 5000);
+      }, timeoutMs);
+    }
 
     const done = (code) => {
       if (settled) return;
@@ -270,17 +276,21 @@ function pmBinary(kind) {
  * 用 --omit=dev / --prod：生产容器里不装 devDependencies，省时间省磁盘。
  * 若项目没有 package.json，直接失败（后端项目必须有）。
  */
-async function installDeps(kind, srcDir) {
+async function installDeps(kind, srcDir, tier = 'vip') {
   const bin = pmBinary(kind);
   // 构建脚本通常依赖 devDependencies（vite/typescript/webpack 等）。
   // 只装生产依赖会让 `npm run build` 在发布阶段必然缺工具，因此先装完整依赖；
   // 用户代码本来就会在同一受限子进程中执行，这里不额外承诺 npm 层面的隔离。
   const args = kind === 'pnpm' ? ['install'] : ['install', '--no-package-lock'];
-  return run(bin.command, args, {
+  const timeoutMs = tier === 'ultra'
+    ? Number.POSITIVE_INFINITY
+    : (tier === 'svip' ? BACKEND_INSTALL_TIMEOUT_MS_SVIP : BACKEND_INSTALL_TIMEOUT_MS);
+  const result = await run(bin.command, args, {
     cwd: srcDir,
-    timeoutMs: BACKEND_INSTALL_TIMEOUT_MS,
+    timeoutMs,
     shell: bin.shell,
   });
+  return result;
 }
 
 /** 若 package.json 定义了 build 脚本则执行 */
@@ -456,11 +466,15 @@ export function deployBackendApp(args) {
   return serializeDeploy(args.projectId, () => deployBackendAppNow(args));
 }
 
-async function deployBackendAppNow({ kv, projectId, kind }) {
+async function deployBackendAppNow({ kv, projectId, kind, tier = 'vip' }) {
   if (!runtimeAvailable()) {
     throw Object.assign(new Error('RUNTIME_UNAVAILABLE'), { code: 'RUNTIME_UNAVAILABLE' });
   }
-  if (activeRuntimeCount() >= BACKEND_MAX_CONCURRENT && !runtimes.has(projectId)) {
+  if (
+    activeRuntimeCount() >= BACKEND_MAX_CONCURRENT
+    && tier !== 'ultra'
+    && !runtimes.has(projectId)
+  ) {
     throw Object.assign(new Error('RUNTIME_BUSY'), { code: 'RUNTIME_BUSY' });
   }
 
@@ -469,11 +483,11 @@ async function deployBackendAppNow({ kv, projectId, kind }) {
 
   const { dir: srcDir, files, bytes } = await materialize(kv, projectId);
   const pkg = await readPackageJson(srcDir);
-  if (!pkg) {
+  if (!pkg && kind !== 'js') {
     throw Object.assign(new Error('MISSING_PACKAGE_JSON'), { code: 'MISSING_PACKAGE_JSON' });
   }
 
-  const installed = await installDeps(kind, srcDir);
+  const installed = await installDeps(kind, srcDir, tier);
   if (installed.code !== 0) {
     throw Object.assign(new Error(installed.timedOut ? 'INSTALL_TIMEOUT' : 'INSTALL_FAILED'), {
       code: installed.timedOut ? 'INSTALL_TIMEOUT' : 'INSTALL_FAILED',
@@ -513,7 +527,10 @@ async function deployBackendAppNow({ kv, projectId, kind }) {
   runtimes.set(projectId, record);
 
   await spawnServer(record, startCommand.command, startCommand.args, record.shell);
-  const ready = await waitForPort(port, 60_000, record);
+  const startTimeoutMs = tier === 'ultra' ? 600_000 : (
+    tier === 'svip' ? BACKEND_START_TIMEOUT_MS_SVIP : 60_000
+  );
+  const ready = await waitForPort(port, startTimeoutMs, record);
   if (!ready) {
     await stop(projectId);
     throw Object.assign(new Error('START_TIMEOUT'), {

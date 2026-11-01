@@ -31,7 +31,7 @@
 ├── Dockerfile                  # 部署镜像（私有容器 / 任意容器平台）
 ├── dev/run-tests.mjs           # 后端单元测试：node dev/run-tests.mjs
 ├── dev/test-server.mjs         # 容器冒烟测试（HTTP 全流程）：node dev/test-server.mjs
-├── dev/test-guest-ttl.mjs      # 游客 10 分钟试用与身份重置
+├── dev/test-guest-ttl.mjs      # 游客 7 天空闲过期与身份重置
 ├── dev/test-assets.mjs         # HTML/CSS/JS 引用与静态资源回归
 ├── dev/test-admin.mjs          # VIP、封禁、解封、删号与后台安全
 |├── scripts/deploy-modelscope.sh # CI 部署：推送构建子集到部署仓库 Git
@@ -155,7 +155,7 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 - 创建网页必须登录（Apple / Google）或使用游客试用；游客由管理员升级 VIP 后保留原身份与作品
 - VIP 是现有 Apple / Google / 游客账号的附加权益，不提供独立 VIP 账号或邮箱密码登录
 - 等级从低到高为普通、VIP、SVIP、Ultra；管理员可在 `/admin` 原地调整，不更换 userId / 会话 / 项目
-- 项目配额：普通静态项目 5MB；VIP 1MB；SVIP 100MB；Ultra 不设业务上限
+- 项目配额：普通静态项目 300KB；VIP 1MB；SVIP 10MB；Ultra 不设业务上限
 - npm / pnpm 后端部署从 VIP 起可用；普通用户仍可上传，但部署选项只有纯前端
 - 升级链路：App 内设置页「升级 VIP」→ 提交申请（可附 300 字说明）→ 管理后台 `/admin`
   审核（批准保留原 userId / token / 项目，权益即时生效；驳回可附原因并允许重新提交）
@@ -175,7 +175,7 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 ## 已知限制（第一版）
 
 1. 单容器部署：单点故障（重启秒级恢复）、无 CDN（海外慢）、容量受机器限制（约 2 核 / 8GB + 持久盘，以空间控制台为准）
-2. 存储配额：普通静态项目 ≤ 5MB，VIP ≤ 1MB，SVIP ≤ 100MB，Ultra 不设业务上限；
+2. 存储配额：普通静态项目 ≤ 300KB，VIP ≤ 1MB，SVIP ≤ 10MB，Ultra 不设业务上限；
    后端项目按源码包计算，不含安装生成的 `node_modules`。实际仍受服务器磁盘与内存约束
 3. 容器模式无 1MB body / 200ms CPU 限制（沿用分片协议是出于兼容）
 4. Windows 无法本地编译 iOS → 依赖 CI macOS runner

@@ -33,11 +33,12 @@ enum ProjectStatus: String, Codable {
     var titleKey: String { "status_\(rawValue)" }
 }
 
-/// 部署形态（部署选项三选一）
+/// 部署形态（部署选项四选一）
 enum ProjectKind: String, Codable, CaseIterable, Identifiable {
     case staticSite = "static"
     case npm
     case pnpm
+    case js
 
     var id: String { rawValue }
 
@@ -49,6 +50,7 @@ enum ProjectKind: String, Codable, CaseIterable, Identifiable {
         case .staticSite: return "kind_static"
         case .npm: return "kind_npm"
         case .pnpm: return "kind_pnpm"
+        case .js: return "kind_js"
         }
     }
 
@@ -57,6 +59,7 @@ enum ProjectKind: String, Codable, CaseIterable, Identifiable {
         case .staticSite: return "kind_static_detail"
         case .npm: return "kind_npm_detail"
         case .pnpm: return "kind_pnpm_detail"
+        case .js: return "kind_js_detail"
         }
     }
 
@@ -65,6 +68,7 @@ enum ProjectKind: String, Codable, CaseIterable, Identifiable {
         case .staticSite: return "globe"
         case .npm: return "shippingbox"
         case .pnpm: return "shippingbox.fill"
+        case .js: return "curlybraces.square"
         }
     }
 }

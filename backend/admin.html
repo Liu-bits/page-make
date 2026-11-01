@@ -6,38 +6,92 @@
 <title>Page-make 管理后台</title>
 <style>
   * { box-sizing: border-box; margin: 0; }
-  body { font-family: -apple-system, "PingFang SC", system-ui, sans-serif; background: #f1f5f9; color: #0f172a; padding: 16px; }
-  .wrap { max-width: 960px; margin: 0 auto; }
-  h1 { font-size: 22px; margin: 8px 0 16px; }
-  h2 { font-size: 16px; margin: 24px 0 10px; color: #334155; }
-  .card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 14px; }
+  :root {
+    --bg: #f6f7fb;
+    --surface: #ffffff;
+    --surface-2: #f8fafc;
+    --text: #0f172a;
+    --text-2: #475569;
+    --text-3: #94a3b8;
+    --border: #e2e8f0;
+    --accent: #2563eb;
+    --accent-2: #7c3aed;
+    --danger: #dc2626;
+    --ok: #16a34a;
+    --warn: #d97706;
+    --radius: 14px;
+    --shadow: 0 1px 3px rgba(15,23,42,.08), 0 8px 24px rgba(15,23,42,.04);
+  }
+  body {
+    font-family: -apple-system, "PingFang SC", system-ui, sans-serif;
+    background:
+      radial-gradient(1200px 500px at 85% -10%, rgba(124,58,237,.08), transparent 60%),
+      radial-gradient(900px 400px at -10% 0%, rgba(37,99,235,.10), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    padding: 16px;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 8px 0 16px; letter-spacing: -.02em; }
+  h2 { font-size: 17px; margin: 28px 0 10px; color: var(--text-2); }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    box-shadow: var(--shadow);
+    margin-bottom: 14px;
+  }
   .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
-  .stat { text-align: center; padding: 12px 4px; }
-  .stat b { display: block; font-size: 24px; }
-  .stat span { font-size: 12px; color: #64748b; }
-  input, select { padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 15px; width: 100%; }
-  button { padding: 10px 16px; border: 0; border-radius: 10px; font-size: 14px; cursor: pointer; background: #2563eb; color: #fff; }
+  .stat {
+    text-align: center; padding: 14px 4px;
+    background: var(--surface-2); border-radius: 12px;
+    border: 1px solid var(--border);
+  }
+  .stat b { display: block; font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
+  .stat span { font-size: 12px; color: var(--text-3); }
+  input, select {
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+    font-size: 15px; width: 100%; background: #fff; color: var(--text);
+  }
+  input:focus, select:focus { outline: 2px solid rgba(37,99,235,.35); outline-offset: 1px; border-color: var(--accent); }
+  button {
+    padding: 10px 16px; border: 0; border-radius: 10px; font-size: 14px;
+    cursor: pointer; background: var(--accent); color: #fff;
+    transition: transform .12s ease, filter .12s ease;
+  }
+  button:hover { filter: brightness(1.06); }
+  button:active { transform: scale(.98); }
   button.gray { background: #64748b; }
-  button.red { background: #dc2626; }
-  button.green { background: #16a34a; }
-  button.gold { background: #d97706; }
+  button.red { background: var(--danger); }
+  button.green { background: var(--ok); }
+  button.gold { background: var(--warn); }
   button.sm { padding: 6px 10px; font-size: 12px; }
-  select.sm { padding: 5px 8px; font-size: 12px; border-radius: 8px; border: 1px solid #d8d2c8; background: #fff; vertical-align: middle; }
+  select.sm {
+    padding: 5px 8px; font-size: 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: #fff; vertical-align: middle;
+  }
   .row { display: flex; gap: 8px; margin-top: 10px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #e2e8f0; word-break: break-all; }
-  th { color: #64748b; font-weight: 600; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); word-break: break-all; }
+  th { color: var(--text-3); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  tbody tr:hover { background: var(--surface-2); }
   td button + button { margin-left: 4px; }
-  .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
   .tag.ok { background: #dcfce7; color: #15803d; }
   .tag.banned { background: #fee2e2; color: #b91c1c; }
   .tag.guest { background: #e0e7ff; color: #4338ca; }
   .tag.vip { background: #fef3c7; color: #92400e; }
   .tag.guest-vip { background: #ede9fe; color: #6d28d9; }
-  .muted { color: #94a3b8; font-size: 12px; }
-  .msg { padding: 10px 12px; border-radius: 10px; margin: 10px 0; font-size: 14px; display: none; }
-  .msg.err { background: #fee2e2; color: #b91c1c; }
-  .msg.ok { background: #dcfce7; color: #15803d; }
+  .tag.svip { background: #e0f2fe; color: #0369a1; }
+  .tag.ultra { background: #fae8ff; color: #a21caf; }
+  .muted { color: var(--text-3); font-size: 12px; }
+  .msg {
+    padding: 10px 12px; border-radius: 10px; margin: 10px 0; font-size: 14px;
+    display: none; border: 1px solid transparent;
+  }
+  .msg.err { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+  .msg.ok { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
   @media (max-width: 640px) { .stats { grid-template-columns: repeat(3, 1fr); } }
 </style>
 </head>
@@ -82,7 +136,8 @@
     <h2>付费等级（VIP / SVIP / Ultra）</h2>
     <div class="card">
       <p class="muted">等级从低到高为普通 / VIP / SVIP / Ultra。可直接在账户表下拉切换；
-        userId、项目、会话均保持不变。VIP 1MB，SVIP 100MB，Ultra 不设业务上限。</p>
+        userId、项目、会话均保持不变。纯前端：普通 300KB / VIP 1MB / SVIP 10MB / Ultra 无上限；
+        后端（npm / pnpm / js）：普通不可用，VIP 1MB / SVIP 10MB / Ultra 无上限。</p>
       <table id="vipTable" style="margin-top:10px">
         <thead><tr><th>账号</th><th>等级</th><th>类型</th><th>项目</th><th>升级时间</th><th>操作</th></tr></thead>
         <tbody></tbody>
@@ -287,13 +342,13 @@ function tierLabel(tier) {
   return { user: '普通', vip: 'VIP', svip: 'SVIP', ultra: 'Ultra' }[tier] || tier || '普通';
 }
 
-// 等级切换：VIP 可建后端项目（源码 ≤1MB），SVIP ≤100MB，Ultra 无上限
+// 等级切换：VIP 可建后端项目（源码 ≤1MB），SVIP ≤10MB，Ultra 无上限
 function setTier(userId, tier) {
   const hint = {
-    user: '恢复普通账号：只能建纯前端站点',
-    vip: 'VIP：可建 npm/pnpm 后端项目，源码上限 1MB',
-    svip: 'SVIP：后端源码上限 100MB',
-    ultra: 'Ultra：不限制项目大小',
+    user: '恢复普通账号：只能建纯前端站点（≤300KB）',
+    vip: 'VIP：可建 npm/pnpm/js 后端项目，源码上限 1MB',
+    svip: 'SVIP：后端源码上限 10MB，安装依赖最长 10 分钟，启动等待 5 分钟',
+    ultra: 'Ultra：不限制项目大小、依赖安装时长与后端进程数',
   }[tier] || '';
   if (!confirm(`将账号 ${userId} 的等级设为 ${tierLabel(tier)}？\n${hint}\n账号、项目与当前会话都会保留。`)) {
     load();
@@ -302,7 +357,7 @@ function setTier(userId, tier) {
   api(API.action, { action: 'setTier', userId, tier })
     .then((d) => {
       const extra = d.linksRenewed ? `，${d.linksRenewed} 个旧项目的链接限制已解除` : '';
-      const limited = d.linksLimited ? `，${d.linksLimited} 个项目的链接恢复 10 分钟限制` : '';
+      const limited = d.linksLimited ? `，${d.linksLimited} 个项目的链接恢复 7 天空闲过期` : '';
       msg(`已设为 ${tierLabel(d.tier)}，用户无需重新登录${extra}${limited}`);
       load();
     })
@@ -313,7 +368,7 @@ function upgradeVIP(userId) {
   if (!confirm('将账号 ' + userId + ' 升级为 VIP？\n账号、项目与当前会话都会保留。')) return;
   api(API.action, { action: 'upgradeVIP', userId })
     .then((d) => {
-      const extra = d.linksRenewed ? `，${d.linksRenewed} 个旧项目的 10 分钟链接限制已解除` : '';
+      const extra = d.linksRenewed ? `，${d.linksRenewed} 个旧项目的链接限制已解除` : '';
       msg('已升级为 VIP，用户无需重新登录' + extra);
       load();
     })
@@ -324,7 +379,7 @@ function downgradeVIP(userId) {
   if (!confirm('将账号 ' + userId + ' 降为普通等级？\n账号与项目会保留。')) return;
   api(API.action, { action: 'downgradeVIP', userId })
     .then((d) => {
-      const extra = d.linksLimited ? `，${d.linksLimited} 个项目的链接已恢复 10 分钟限制` : '';
+      const extra = d.linksLimited ? `，${d.linksLimited} 个项目的链接已恢复 7 天空闲过期` : '';
       msg('已降为普通等级' + extra);
       load();
     })
@@ -338,7 +393,7 @@ function reviewVIP(userId, approve) {
   api(API.action, { action: 'reviewVIPRequest', userId, approve, note })
     .then((d) => {
       const extra = approve && d.linksRenewed
-        ? `，${d.linksRenewed} 个旧项目的 10 分钟链接限制已解除`
+        ? `，${d.linksRenewed} 个旧项目的链接限制已解除`
         : '';
       msg((approve ? '已批准，用户无需重新登录' : '已驳回') + extra);
       load();

@@ -226,7 +226,7 @@ final class APIClient {
         provider: HostProvider,
         html: String,
         css: String,
-        js: String,
+        js: String = "",
         name: String
     ) async throws -> Project {
         let body = try encoder.encode(PasteRequest(

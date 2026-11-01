@@ -20,7 +20,7 @@ struct SettingsView: View {
                 VStack(spacing: 16) {
                     profileCard
                     if appState.isLoggedIn {
-                        if appState.session?.isGuestLimited == true {
+                        if appState.session?.role != .ultra {
                             vipUpgradeCard
                         }
                         usageCard
@@ -160,7 +160,15 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 sectionHeading(
                     icon: "crown.fill",
-                    title: L10n.string("vip_upgrade_title"),
+                    title: {
+                        let role = appState.session?.role ?? .user
+                        switch role {
+                        case .user: return L10n.string("vip_upgrade_title")
+                        case .vip: return L10n.string("upgrade_to_svip_title")
+                        case .svip: return L10n.string("upgrade_to_ultra_title")
+                        case .ultra: return L10n.string("tier_ultra")
+                        }
+                    }(),
                     subtitle: L10n.string("vip_upgrade_subtitle"),
                     tint: PageMakeTheme.gold
                 )

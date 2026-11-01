@@ -49,6 +49,8 @@ enum PlainLanguage {
         case "RUNTIME_TIMEOUT": return "error_upload_timeout"
         case "GUEST_LIMIT": return "error_guest_limit"
         case "GUEST_NO_EXPLORER": return "error_guest_no_explorer"
+        case "EXPLORER_REQUIRES_SVIP": return "error_explorer_requires_svip"
+        case "ALREADY_MAX_TIER": return "error_already_max_tier"
         case "VIP_REQUEST_GUEST_ONLY": return "vip_request_guest_only"
         default: return ""
         }

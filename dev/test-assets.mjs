@@ -91,9 +91,9 @@ async function login() {
   const upgraded = await fetch(`${BASE}/api/admin/action`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Admin-Token': admin.token },
-    body: JSON.stringify({ action: 'upgradeVIP', userId: guest.userId }),
+    body: JSON.stringify({ action: 'setTier', userId: guest.userId, tier: 'svip' }),
   });
-  assert(upgraded.ok, `升级资源测试 VIP 失败 HTTP ${upgraded.status}`);
+  assert(upgraded.ok, `升级资源测试 SVIP 失败 HTTP ${upgraded.status}`);
   return { token: guest.token, email: null };
 }
 
@@ -133,7 +133,7 @@ await test('诊断：../style.css、/style.css 不再误报缺失', async () => 
 });
 
 // ① 完整 HTML（自带模板形态：link + script 标签都在）
-await test('粘贴：完整 HTML 引用 style.css / script.js → 资源可访问', async () => {
+await test('粘贴：完整 HTML 引用 style.css（JS 已移除）→ 资源可访问', async () => {
   const token = sharedToken;
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -144,10 +144,9 @@ await test('粘贴：完整 HTML 引用 style.css / script.js → 资源可访�
 </head>
 <body>
   <h1>标题</h1>
-  <script src="script.js"></script>
 </body>
 </html>`;
-  const { status, body } = await paste(token, { name: 'tpl', html, css: 'h1 { color: red; }', js: 'console.log(1)' });
+  const { status, body } = await paste(token, { name: 'tpl', html, css: 'h1 { color: red; }' });
   assertEqual(status, 200, '粘贴应成功');
   const id = body.project.id;
 
@@ -158,36 +157,27 @@ await test('粘贴：完整 HTML 引用 style.css / script.js → 资源可访�
   // `style.css` 解析到 `/p/<id>/style.css`，而不是 `/p/style.css`。
   assert(text.includes(`<base href="/p/${id}/">`), `入口应注入项目级 <base>，实际：${text.slice(0, 240)}`);
   assert(text.includes('href="style.css"'), 'HTML 应保留 style.css 引用');
-  assert(text.includes('src="script.js"'), 'HTML 应保留 script.js 引用');
 
   const cssURL = new URL('style.css', new URL(`/p/${id}/`, BASE));
-  const jsURL = new URL('script.js', new URL(`/p/${id}/`, BASE));
   assertEqual(cssURL.pathname, `/p/${id}/style.css`, '浏览器解析 style.css 的路径应正确');
-  assertEqual(jsURL.pathname, `/p/${id}/script.js`, '浏览器解析 script.js 的路径应正确');
 
   const css = await fetch(cssURL);
   assertEqual(css.status, 200, 'style.css 应 200');
   assert((await css.text()).includes('color: red'), 'CSS 内容应一致');
 
-  const js = await fetch(jsURL);
-  assertEqual(js.status, 200, 'script.js 应 200');
-  assert((await js.text()).includes('console.log'), 'JS 内容应一致');
 });
 
 // ② 片段（无 html 结构）→ 自动包裹 + 注入引用
-await test('粘贴：HTML 片段 → 自动注入 link/script 且资源可访问', async () => {
+await test('粘贴：HTML 片段 → 自动注入 link 且资源可访问（JS 已移除）', async () => {
   const token = sharedToken;
-  const { status, body } = await paste(token, { name: 'frag', html: '<h1>片段</h1>', css: 'h1{color:blue}', js: 'var a=1' });
+  const { status, body } = await paste(token, { name: 'frag', html: '<h1>片段</h1>', css: 'h1{color:blue}' });
   assertEqual(status, 200, '粘贴应成功');
   const id = body.project.id;
   const page = await fetch(`${BASE}/p/${id}`);
   const text = await page.text();
   assert(text.includes('href="style.css"'), '片段应被注入 style.css 引用');
-  assert(text.includes('src="script.js"'), '片段应被注入 script.js 引用');
   const css = await fetch(`${BASE}/p/${id}/style.css`);
   assertEqual(css.status, 200, 'style.css 应 200');
-  const js = await fetch(`${BASE}/p/${id}/script.js`);
-  assertEqual(js.status, 200, 'script.js 应 200');
 });
 
 // ②-b 完整文档缺少 </head>：link 必须仍位于 head 内，不能拼到 <html> 外
@@ -286,16 +276,14 @@ await test('粘贴：三套内置模板逐字创建 → HTML/CSS/JS 全部可访
   const jsList = [...source.matchAll(/js: """\r?\n([\s\S]*?)\r?\n"""/g)].map((m) => m[1]);
   assertEqual(htmls.length, 3, '应解析出三套模板 HTML');
   assertEqual(cssList.length, 3, '应解析出三套模板 CSS');
-  assertEqual(jsList.length, 2, '应有模板包含 JS（博客模板为空）');
-  const blocks = htmls.map((html, index) => [html, cssList[index], jsList[index] ?? '']);
+  const blocks = htmls.map((html, index) => [html, cssList[index]]);
   for (const [index, block] of blocks.entries()) {
-    const [html, css, js] = block;
+    const [html, css] = block;
     const token = sharedToken;
     const { status, body } = await paste(token, {
       name: `builtin-${index + 1}`,
       html,
       css,
-      js,
     });
     assertEqual(status, 200, `模板 ${index + 1} 应创建成功`);
     assert(body.project.files.some((file) => file.path === 'style.css'), `模板 ${index + 1} 应包含 style.css`);
@@ -304,10 +292,6 @@ await test('粘贴：三套内置模板逐字创建 → HTML/CSS/JS 全部可访
     const cssRes = await fetch(`${BASE}/p/${body.project.id}/style.css`);
     assertEqual(cssRes.status, 200, `模板 ${index + 1} 的 style.css 应 200`);
     assert((await cssRes.text()).includes(css.trim().split('\n')[0].trim()), `模板 ${index + 1} 的 CSS 内容应一致`);
-    if (js.trim()) {
-      const jsRes = await fetch(`${BASE}/p/${body.project.id}/script.js`);
-      assertEqual(jsRes.status, 200, `模板 ${index + 1} 的 script.js 应 200`);
-    }
   }
 });
 
@@ -335,20 +319,15 @@ await test('粘贴：../style.css 与 /style.css → 归一后仍可访问', asy
     name: 'parent',
     html: '<html><head><link rel="stylesheet" href="../style.css"><script src="../app.js"></script></head><body><h1>x</h1></body></html>',
     css: 'h1 { color: red; }',
-    js: "console.log('a')",
   });
   assertEqual(a.status, 200, '粘贴应成功');
   const pathsA = a.body.project.files.map((f) => f.path);
   assert(pathsA.includes('style.css'), `CSS 应归一为 style.css，实际 ${pathsA.join(',')}`);
-  assert(pathsA.includes('app.js'), `JS 应归一为 app.js，实际 ${pathsA.join(',')}`);
   assert(!pathsA.some((p) => p.includes('..')), '不得出现含 .. 的路径');
   assertEqual((await fetch(`${BASE}/p/${a.body.project.id}/style.css`)).status, 200, 'style.css 应 200');
-  assertEqual((await fetch(`${BASE}/p/${a.body.project.id}/app.js`)).status, 200, 'app.js 应 200');
   const htmlA = await (await fetch(`${BASE}/p/${a.body.project.id}`)).text();
   assert(!htmlA.includes('href="../style.css"'), `HTML 引用应改写，实际仍含 ../：${htmlA.slice(0, 200)}`);
-  assert(!htmlA.includes('src="../app.js"'), 'HTML 引用应改写，实际仍含 ../');
   assert(htmlA.includes('href="style.css"'), 'HTML 应引用归一后的 style.css');
-  assert(htmlA.includes('src="app.js"'), 'HTML 应引用归一后的 app.js');
 
   const b = await paste(token, {
     name: 'root-abs',
@@ -392,15 +371,12 @@ await test('粘贴：外链引用字符串保持原样', async () => {
   const served = await (await fetch(`${BASE}/p/${body.project.id}`)).text();
   assert(served.includes('href="https://cdn.example.com/a.css"'), '外链 CSS 应原样保留');
   assert(served.includes('src="//cdn.example.com/b.js"'), '协议相对引用应原样保留');
-  // 用户显式粘贴的 CSS/JS 内容优先：即使 HTML 里已有外链引用，
-  // 也要注入本地 style.css/script.js，否则粘贴的内容就丢了
+  // 用户显式粘贴的 CSS 内容优先：即使 HTML 里已有外链引用，
+  // 也要注入本地 style.css，否则粘贴的内容就丢了
   assert(served.includes('href="style.css"'), 'HTML 无本地 CSS 引用时应注入本地 style.css');
-  assert(served.includes('src="script.js"'), 'HTML 无本地 JS 引用时应注入本地 script.js');
   const paths = body.project.files.map((f) => f.path);
   assert(paths.includes('style.css'), '粘贴的 CSS 内容应入库');
-  assert(paths.includes('script.js'), '粘贴的 JS 内容应入库');
   assertEqual((await fetch(`${BASE}/p/${body.project.id}/style.css`)).status, 200, 'style.css 应 200');
-  assertEqual((await fetch(`${BASE}/p/${body.project.id}/script.js`)).status, 200, 'script.js 应 200');
 });
 
 // ③-e ZIP 上传管线：ZIP 内 HTML 写 ../style.css 时，存储与引用必须同时归一
@@ -486,14 +462,12 @@ await test('粘贴：带查询串与 type 属性的引用 → 不重复注入且
       + '<link rel="stylesheet" type="text/css" href="style.css?v=123">'
       + '</head><body><h1>x</h1></body></html>',
     css: 'h1 { color: red; }',
-    js: "console.log('q')",
   });
   assertEqual(status, 200, '粘贴应成功');
   const paths = body.project.files.map((f) => f.path);
   assert(paths.includes('style.css'), `应存 style.css，实际 ${paths.join(',')}`);
-  assert(paths.includes('app.js'), `应存 app.js，实际 ${paths.join(',')}`);
-  assert(!paths.includes('script.js'), '不得因误判而重复注入 script.js');
-  assertEqual((await fetch(`${BASE}/p/${body.project.id}/app.js`)).status, 200, 'app.js?v=9 应 200');
+  assert(!paths.includes('app.js'), '粘贴模式不接收 JS 内容，不得入库');
+  assert(!paths.includes('script.js'), '不得注入 script.js');
   assertEqual((await fetch(`${BASE}/p/${body.project.id}/style.css`)).status, 200, 'style.css?v=123 应 200');
 });
 

@@ -191,7 +191,6 @@
 "paste_hint" = "Paste code directly — a page is generated (CSS / JS optional)";
 "paste_html" = "HTML";
 "paste_css" = "CSS";
-"paste_js" = "JavaScript";
 "paste_html_placeholder" = "Paste your HTML here…";
 "paste_create" = "Create page";
 "paste_content_required" = "Please paste HTML first";
@@ -219,6 +218,8 @@
 "provider_local_detail" = "Permanent links";
 "error_guest_limit" = "Standard guests can create 1 page. Sign in or upgrade to VIP for more.";
 "error_guest_no_explorer" = "Project Mode is available to signed-in accounts and guest VIPs";
+"error_explorer_requires_svip" = "Project Mode requires SVIP or higher";
+"error_already_max_tier" = "You already hold the highest tier";
 
 // MARK: - QR code sharing
 "qr_code" = "QR Code";
@@ -250,6 +251,8 @@
 "account_protected" = "Account and work are safely stored";
 "vip_upgrade_title" = "Upgrade to VIP";
 "vip_upgrade_subtitle" = "Keep your guest identity and projects while unlocking more projects, permanent links, and higher limits";
+"upgrade_to_svip_title" = "Upgrade to SVIP";
+"upgrade_to_ultra_title" = "Upgrade to Ultra";
 "vip_request_action" = "Request upgrade";
 "vip_request_view" = "View request status";
 "vip_request_pending" = "Under review · Check back later";
@@ -274,7 +277,6 @@
 
 // MARK: - Paste code (placeholders)
 "paste_css_placeholder" = "Optional: saved as the file you link (e.g. style.css)";
-"paste_js_placeholder" = "Optional: saved as the file you reference (e.g. app.js)";
 
 // MARK: - Project mode (explorer)
 "mode_explorer" = "Project Mode";
@@ -358,6 +360,8 @@
 "kind_static_detail" = "HTML / CSS / JS static site";
 "kind_npm_detail" = "Install dependencies and run Node";
 "kind_pnpm_detail" = "Install with pnpm and run Node";
+"kind_js" = "js version";
+"kind_js_detail" = "Run your JS / Node entry script directly";
 "deploy_kind_title" = "Deployment";
 "deploy_kind_locked" = "npm / pnpm require VIP or above";
 "deploy_kind_requires_vip" = "npm / pnpm backend deployment requires VIP or above";

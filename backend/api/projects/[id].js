@@ -55,7 +55,7 @@ export async function onRequest(context) {
     // 发布时允许切换部署形态（纯前端 ↔ npm ↔ pnpm）。
     // 切到后端必须同时满足：VIP 及以上 + 项目里有 package.json。
     if (body?.kind !== undefined) {
-      if (!['static', 'npm', 'pnpm'].includes(body.kind)) return fail('INVALID_KIND', 400);
+      if (!['static', 'npm', 'pnpm', 'js'].includes(body.kind)) return fail('INVALID_KIND', 400);
       if (body.kind !== 'static' && !canUseBackend(result.user)) {
         return fail('BACKEND_REQUIRES_VIP', 403);
       }
@@ -64,7 +64,7 @@ export async function onRequest(context) {
     const kind = normalizeKind(project.kind);
 
     if (isBackendKind(kind)) {
-      if (!files.has('package.json')) return fail('MISSING_PACKAGE_JSON', 400);
+      if (kind !== 'js' && !files.has('package.json')) return fail('MISSING_PACKAGE_JSON', 400);
       project.entryPath = null;
       project.status = STATUS.PROCESSING;
       project.errorCode = null;
@@ -76,7 +76,12 @@ export async function onRequest(context) {
       // 与分片上传一致，先返回 processing，再由客户端轮询 /status。
       const publishTask = (async () => {
         try {
-          const runtime = await deployBackendApp({ kv, projectId: project.id, kind });
+          const runtime = await deployBackendApp({
+            kv,
+            projectId: project.id,
+            kind,
+            tier: project.tier || 'vip',
+          });
           // 部署期间项目可能被删除；不能拿部署前的内存对象把记录“复活”。
           const latest = await kvGet(kv, keys.project(project.id));
           if (!latest) {

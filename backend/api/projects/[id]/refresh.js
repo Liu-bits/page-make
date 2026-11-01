@@ -6,7 +6,7 @@ import { deployBackendApp, stop as stopBackendApp } from '../../../lib/backend-r
 import { findEntry } from '../../../lib/diagnostics.js';
 import { appendLog, nowSeconds, kvGet, kvPut, keys } from '../../../lib/kv.js';
 import { ok, fail } from '../../../lib/responses.js';
-import { STATUS, GUEST_LINK_TTL_SECONDS, isBackendKind, normalizeKind } from '../../../lib/state.js';
+import { STATUS, GUEST_LINK_IDLE_SECONDS, isBackendKind, normalizeKind } from '../../../lib/state.js';
 import { isGuestLimited } from '../../../lib/session.js';
 import { canUseBackend } from '../../../lib/tiers.js';
 
@@ -42,7 +42,12 @@ export async function onRequest(context) {
 
       const refreshTask = (async () => {
         try {
-          const runtime = await deployBackendApp({ kv, projectId: project.id, kind });
+          const runtime = await deployBackendApp({
+            kv,
+            projectId: project.id,
+            kind,
+            tier: project.tier || 'vip',
+          });
           // 刷新期间项目可能被删除；只更新仍然存在的记录。
           const latest = await kvGet(kv, keys.project(project.id));
           if (!latest) {
@@ -108,9 +113,9 @@ export async function onRequest(context) {
     project.status = STATUS.READY;
     project.errorCode = null;
     project.entryPath = entry;
-    // 游客链接重新计时 10 分钟（登录用户长期有效，随部署 TTL）
+    // 游客链接按「连续 7 天无人访问」重新计时（登录用户长期有效）
     project.expiresAt = isGuestLimited(user)
-      ? nowSeconds() + GUEST_LINK_TTL_SECONDS
+      ? nowSeconds() + GUEST_LINK_IDLE_SECONDS
       : deploy.expiresAt;
     if (deploy.deploymentUrl) project.deploymentUrl = deploy.deploymentUrl;
     // 持久化：内存对象不会自动写回 KV（历史缺陷：刷新后列表/状态读到的仍是旧记录）

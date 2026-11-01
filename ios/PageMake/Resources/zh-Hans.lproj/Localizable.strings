@@ -191,7 +191,6 @@
 "paste_hint" = "直接粘贴代码，自动生成网页（CSS / JS 可选）";
 "paste_html" = "HTML";
 "paste_css" = "CSS";
-"paste_js" = "JavaScript";
 "paste_html_placeholder" = "在这里粘贴 HTML 代码…";
 "paste_create" = "创建网页";
 "paste_content_required" = "请先粘贴 HTML 代码";
@@ -219,6 +218,8 @@
 "provider_local_detail" = "链接长期有效";
 "error_guest_limit" = "普通游客只能创建 1 个网页，登录或升级 VIP 后可创建更多";
 "error_guest_no_explorer" = "项目模式仅对登录账号或 VIP 游客开放";
+"error_explorer_requires_svip" = "项目模式需要 SVIP 及以上等级";
+"error_already_max_tier" = "已经是最高等级，无需再申请";
 
 // MARK: - 二维码分享
 "qr_code" = "二维码";
@@ -250,6 +251,8 @@
 "account_protected" = "账号与作品已安全保存";
 "vip_upgrade_title" = "升级 VIP";
 "vip_upgrade_subtitle" = "保留当前游客身份与作品，申请更多项目、长期链接和更高容量";
+"upgrade_to_svip_title" = "升级 SVIP";
+"upgrade_to_ultra_title" = "升级 Ultra";
 "vip_request_action" = "申请升级";
 "vip_request_view" = "查看申请进度";
 "vip_request_pending" = "申请审核中 · 请稍后回来查看";
@@ -274,7 +277,6 @@
 
 // MARK: - 粘贴代码（占位符）
 "paste_css_placeholder" = "可选：保存为你在 <link> 里引用的文件名（如 style.css）";
-"paste_js_placeholder" = "可选：保存为你在 <script> 里引用的文件名（如 app.js）";
 
 // MARK: - 项目模式
 "mode_explorer" = "项目模式";
@@ -358,6 +360,8 @@
 "kind_static_detail" = "HTML / CSS / JS 静态站点";
 "kind_npm_detail" = "安装依赖并运行 Node 服务";
 "kind_pnpm_detail" = "使用 pnpm 安装并运行服务";
+"kind_js" = "js 版本";
+"kind_js_detail" = "直接运行 JS/Node 入口脚本";
 "deploy_kind_title" = "部署选项";
 "deploy_kind_locked" = "npm / pnpm 为 VIP 及以上特权";
 "deploy_kind_requires_vip" = "npm / pnpm 后端部署需要 VIP 或更高等级";

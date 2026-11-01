@@ -253,7 +253,7 @@ await test('游客升级前：可建第 1 个项目，第 2 个返回 GUEST_LIMI
   const first = await paste(vipToken, { name: 'first', html: '<h1>first</h1>' });
   assertEqual(first.status, 200, `第 1 个应成功，实际 ${first.status} ${JSON.stringify(first.body)}`);
   vipProject1 = first.body.project.id;
-  assert(first.body.project.expiresAt, '升级前游客项目应为 10 分钟链接');
+  assert(first.body.project.expiresAt, '升级前游客项目应带 7 天空闲过期时间');
 
   const second = await paste(vipToken, { name: 'second', html: '<h1>second</h1>' });
   assertEqual(second.status, 403, '升级前第 2 个应被拒绝');
@@ -299,12 +299,12 @@ await test('原游客 token 升级后立即生效：多项目、超大粘贴、�
 
 // 升级即清除游客期项目的 10 分钟过期时间：不清的话用户会看到「已升级但旧链接 410」。
 // 公开页是唯一权威判定处，直接打 /p/<id> 验证，不只看项目记录字段。
-await test('升级 VIP 立即清除旧游客项目的 10 分钟链接过期时间', async () => {
+await test('升级 VIP 立即清除旧游客项目的空闲链接过期时间', async () => {
   const guest = await guestLogin('vip-link-clear');
   const first = await paste(guest.token, { name: 'guest-link', html: '<h1>guest</h1>' });
   assertEqual(first.status, 200, '游客第 1 个项目应成功');
   const projectId = first.body.project.id;
-  assert(first.body.project.expiresAt, '游客项目升级前应带 10 分钟过期时间');
+  assert(first.body.project.expiresAt, '游客项目升级前应带 7 天空闲过期时间');
 
   // 升级前：公开页可访问（10 分钟窗口内）
   const beforeUpgrade = await json(fetch(`${BASE}/p/${projectId}`, {
@@ -327,14 +327,25 @@ await test('升级 VIP 立即清除旧游客项目的 10 分钟链接过期时�
   assertEqual(publicAfter.status, 200, '升级后旧游客项目的公开页应立即可访问');
 });
 
-await test('原游客 token 升级后可创建项目模式（explorer）', async () => {
+await test('项目模式：SVIP 及以上可用，VIP 与普通游客不可用', async () => {
   const created = await json(fetch(`${BASE}/api/projects/explorer`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Pagemake-Token': vipToken },
     body: JSON.stringify({ name: 'vim-vip' }),
   }));
-  assertEqual(created.status, 200, `VIP 游客应可使用项目模式，实际 ${created.status} ${JSON.stringify(created.body)}`);
-  assert(created.body.project?.id, '应返回新项目');
+  assertEqual(created.status, 403, `VIP 游客不应可用项目模式，实际 ${created.status} ${JSON.stringify(created.body)}`);
+  assertEqual(created.body.error, 'EXPLORER_REQUIRES_SVIP', '错误码应为 EXPLORER_REQUIRES_SVIP');
+
+  const up = await adminAction(adminToken, { action: 'setTier', userId: vipGuest.userId, tier: 'svip' });
+  assertEqual(up.status, 200, '应能升到 SVIP');
+  const asSvip = await json(fetch(`${BASE}/api/projects/explorer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Pagemake-Token': vipToken },
+    body: JSON.stringify({ name: 'explorer-svip' }),
+  }));
+  assertEqual(asSvip.status, 200, `SVIP 应可用项目模式，实际 ${asSvip.status} ${JSON.stringify(asSvip.body)}`);
+
+  assert(asSvip.body.project?.id, 'SVIP 应返回新项目');
 
   const down = await adminAction(adminToken, { action: 'downgradeVIP', userId: vipGuest.userId });
   assertEqual(down.status, 200, '应能取消 VIP');
@@ -344,7 +355,7 @@ await test('原游客 token 升级后可创建项目模式（explorer）', async
     body: JSON.stringify({ name: 'explorer-after-down' }),
   }));
   assertEqual(blocked.status, 403, '取消 VIP 后项目模式限制应恢复');
-  assertEqual(blocked.body.error, 'GUEST_NO_EXPLORER', '应返回 GUEST_NO_EXPLORER');
+  assertEqual(blocked.body.error, 'EXPLORER_REQUIRES_SVIP', '应返回 EXPLORER_REQUIRES_SVIP');
 });
 
 await test('取消 VIP：保留账号与项目，旧 token 权益恢复为普通游客', async () => {
@@ -365,9 +376,9 @@ await test('取消 VIP：保留账号与项目，旧 token 权益恢复为普通
   assertEqual(blocked.body.error, 'GUEST_LIMIT', '应返回 GUEST_LIMIT');
 });
 
-// 降级即恢复 10 分钟过期：不恢复的话原本长期有效的链接会无限期可访问，
+// 降级即恢复 7 天空闲过期：不恢复的话原本长期有效的链接会无限期可访问，
 // 等于绕过试用期限制（游客身份的安全缺口）。
-await test('取消 VIP 后游客身份的链接重新加上 10 分钟过期时间', async () => {
+await test('取消 VIP 后游客身份的链接重新加上 7 天空闲过期时间', async () => {
   const guest = await guestLogin('vip-link-relimit');
   const created = await paste(guest.token, { name: 'guest-relimit', html: '<h1>x</h1>' });
   assertEqual(created.status, 200, '游客第 1 个项目应成功');
@@ -390,10 +401,10 @@ await test('取消 VIP 后游客身份的链接重新加上 10 分钟过期时�
   const asGuest = (guestList.body.projects || []).find((p) => p.id === projectId);
   assert(asGuest.expiresAt, '降级后游客项目应重新带过期时间');
   const remaining = asGuest.expiresAt - Math.floor(Date.now() / 1000);
-  assert(remaining > 0 && remaining <= 600, `剩余时间应在 10 分钟内，实际 ${remaining} 秒`);
+  assert(remaining > 0 && remaining <= 7 * 24 * 3600, `剩余时间应在 7 天内，实际 ${remaining} 秒`);
 
   const publicPage = await json(fetch(`${BASE}/p/${projectId}`, { redirect: 'manual' }));
-  assertEqual(publicPage.status, 200, '刚降级时公开页仍可访问（10 分钟窗口内）');
+  assertEqual(publicPage.status, 200, '刚降级时公开页仍可访问（7 天窗口内）');
 });
 
 await test('历史邮箱密码账号清理：账号、项目、会话全部删除，Apple/Google 不受影响', async () => {
@@ -550,7 +561,7 @@ await test('setTier：VIP → SVIP → Ultra 逐级提升，配额同步变化',
   assert(toSvip.ok, '升到 SVIP 应成功');
   stats = await (await fetch(`${BASE}/api/stats`, { headers: userAuth })).json();
   assertEqual(stats.tier, 'svip');
-  assertEqual(stats.quota.backendMaxBytes, 100 * 1024 * 1024, 'SVIP 后端配额应为 100MB');
+  assertEqual(stats.quota.backendMaxBytes, 10 * 1024 * 1024, 'SVIP 后端配额应为 10MB');
 
   const toUltra = await setTier('ultra');
   assert(toUltra.ok, '升到 Ultra 应成功');
@@ -674,7 +685,7 @@ await test('游客提交 VIP 升级申请：状态 pending，重复提交返回�
   assert(ov.body.stats.vipRequestCount >= 1, '待审核计数应至少为 1');
 });
 
-await test('升级申请仅对普通游客开放：VIP 与登录账号不得提交', async () => {
+await test('升级申请按等级递进：VIP 可继续申请 SVIP', async () => {
   const vipGuest = await guestLogin('vip-request-already');
   const upgraded = await adminAction(adminToken, { action: 'upgradeVIP', userId: vipGuest.userId });
   assertEqual(upgraded.status, 200, '应先升级为 VIP');
@@ -683,8 +694,9 @@ await test('升级申请仅对普通游客开放：VIP 与登录账号不得提�
     headers: { 'Content-Type': 'application/json', 'X-Pagemake-Token': vipGuest.token },
     body: JSON.stringify({ note: '重复申请' }),
   }));
-  assertEqual(blocked.status, 409, 'VIP 账号不得重复申请');
-  assertEqual(blocked.body.error, 'ALREADY_VIP', '错误码应为 ALREADY_VIP');
+  assertEqual(blocked.status, 200, 'VIP 账号应可继续申请 SVIP');
+  assertEqual(blocked.body.request.status, 'pending', 'VIP 提交后应为 pending');
+  assertEqual(blocked.body.request.targetTier ?? 'vip', 'vip', '未带 targetTier 时按 vip 记录');
 
   const anonymous = await json(fetch(`${BASE}/api/vip-request`, {
     method: 'POST',

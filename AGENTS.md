@@ -140,7 +140,7 @@ E:/Page-make/
   后端 aud；ASWebAuthenticationSession + PKCE 手写，无 SDK）
 - VIP（权益等级，非独立账号）：后台 upgradeVIP / reviewVIPRequest 对**现有** Apple/Google/
   游客账号原地授予；升级后保留 userId、token、项目与作品，权益即时生效
-- 游客登录（deviceId → SHA-256 派生 `guest_<hash>`；**限 1 个项目；链接 10 分钟过期**；
+- 游客登录（deviceId → SHA-256 派生 `guest_<hash>`；**限 1 个项目；链接连续 7 天无人访问才过期**；
   退出登录时清除 deviceId 重置身份；App 内**不提供邮箱注册与邮箱密码登录**）
 
 **VIP 升级申请链路（App 内唯一升级入口）**
@@ -166,21 +166,21 @@ E:/Page-make/
 
 **建站（3 种方式）**
 - 上传 ZIP：分片 600KB × N（base64 后约 800KB/片），配额按等级：
-  普通静态 5MB / VIP 1MB / SVIP 100MB / Ultra 无业务上限；异步处理 + 轮询
-- 粘贴代码：HTML 必填 + CSS/JS 可选（合计 300KB）；css/js 文件名自动跟随 HTML 的
-  link href / script src；HTML 片段自动包裹完整文档；三套内置模板（主页/落地页/博客）
+  普通静态 300KB / VIP 1MB / SVIP 10MB / Ultra 无业务上限；异步处理 + 轮询
+- 粘贴代码：HTML 必填 + CSS 可选（合计 300KB，**不再支持 JS**）；css 文件名自动跟随 HTML 的
+  link href；HTML 片段自动包裹完整文档；三套内置模板（主页/落地页/博客）
 - 项目模式（Explorer）：Windows 风格资源管理器，支持路径栏/返回、文件与文件夹分区、
   详情、新建/重命名/删除、持久化空文件夹、发布后直接预览；文件总量与单文件大小
-  按 `tiers.js` 的等级配额执行；纯前端仅 html/css/js，后端项目额外允许
+  按 `tiers.js` 的等级配额执行；**需 SVIP 及以上**；纯前端仅 html/css/js，后端项目额外允许
   `package.json`、TS/JS、配置和静态资源；路径安全（禁 `..`、`\`、控制字符）；
   新建 HTML 骨架自动引用 style.css；publish 时 index.html 优先选入口 + 静态诊断
 
 **公开页与服务端**
-- `/p/<id>` 长期有效（登录用户）；游客 10 分钟；到期 410 中文过期页
+- `/p/<id>` 长期有效（登录用户）；游客连续 7 天无人访问才过期；到期 410 中文过期页
 - 宽容识别：静态 404 时按 basename（忽略目录/大小写）在项目内唯一匹配自动返回
 - 静态诊断：HTML 引用的资源缺失 → 「引用了 x，其实在 y」提示
 - PHP / C++：均不支持；ZIP 中的 `.php` 会跳过，项目模式拒绝 `.php`，公开路由对历史 `.php` 返回 404
-- 部署形态：纯前端 / npm / pnpm 三选一；普通用户只能选纯前端，后端形态从 VIP 起可用
+- 部署形态：纯前端 / npm / pnpm / js 四选一；普通用户只能选纯前端，后端形态从 VIP 起可用
 - 导出备份：`GET /api/projects/:id/export`，VIP 及以上可下载项目源码 ZIP（排除安装产物）
 - 账号等级：`user < vip < svip < ultra`，后台 `setTier` 原地调整 userId / 会话 / 项目
 - 入口选择统一：index.html → 任意 html（publish/findEntry/上传管线一致）
@@ -212,13 +212,13 @@ E:/Page-make/
 | 常量 | 值 | 说明 |
 |---|---|---|
 | SESSION_TTL_SECONDS | 7 天 | 登录态有效期（到期前 1 天 iOS 静默刷新） |
-| QUOTA.static | user 5MB / vip 1MB / svip 100MB / ultra ∞ | 纯前端项目总量 |
-| QUOTA.backend | user 0 / vip 1MB / svip 100MB / ultra ∞ | npm/pnpm 源码包总量 |
+| QUOTA.static | user 300KB / vip 1MB / svip 10MB / ultra ∞ | 纯前端项目总量 |
+| QUOTA.backend | user 0 / vip 1MB / svip 10MB / ultra ∞ | npm/pnpm/js 源码包总量 |
 | CHUNK_BYTES | 600KB | 分片大小 |
 | UPLOAD_TTL_SECONDS | 30 分钟 | 未完成上传清理 |
-| PASTE_MAX_BYTES | 300KB | 粘贴 HTML+CSS+JS 合计 |
+| PASTE_MAX_BYTES | 300KB | 粘贴 HTML+CSS 合计（JS 已移除） |
 | FILE_MAX_BYTES | 900KB | 历史兼容常量；编辑器实际按 `tiers.js` 配额 |
-| GUEST_LINK_TTL_SECONDS | 10 分钟 | 游客链接有效期 |
+| GUEST_LINK_IDLE_SECONDS | 7 天 | 游客链接空闲过期时间 |
 | BAN_LEVELS | L1/1天 L2/7天 L3/30天 L4/永久 | 封号分级（L4=色情暴恐恶意软件） |
 | TAKEDOWN_RETENTION_SECONDS | 7 天 | 违规项目保留留证 |
 | PROVIDERS | local（唯一） | edgeone/cloudflare 仅兼容旧客户端 |
@@ -348,9 +348,9 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
  - ZIP 解压必须同时限制「解压后总量」与「条目数」：init 只校验压缩包大小，
    306KB 的包能解出 300MB 打满容器持久卷（全站无法建站）→ lib/zip.js 默认实时拦截
    （ZIP_MAX_TOTAL_BYTES=32MB / ZIP_MAX_ENTRIES=500）。**上传管线必须传账号配额作为
-   maxTotalBytes**，否则 SVIP 100MB / Ultra 会被固定 32MB 截断；Ultra 的 Infinity
+   maxTotalBytes**，否则 SVIP 10MB / Ultra 会被固定 32MB 截断；Ultra 的 Infinity
    只代表没有业务配额，平台磁盘/内存仍是硬边界
- - 等级配额只在 tiers.js 维护：user 静态 5MB；VIP 1MB；SVIP 100MB；Ultra ∞。
+ - 等级配额只在 tiers.js 维护：user 静态 300KB；VIP 1MB；SVIP 10MB；Ultra ∞。
    上传 init、解压、项目模式文件、粘贴、导出、iOS 选文件校验必须读取同一份配额；
    任何一处写死 5MB / 900KB 都会让等级权益失真
  - iOS 大文件上传不能 `Data(contentsOf:)` 整包读入：SVIP/Ultra 会把 App 内存打爆。

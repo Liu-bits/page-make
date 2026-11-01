@@ -1,6 +1,6 @@
 // GET /p/:projectId — 公开访问（任何人可访问，无需登录）
 // 项目被 ban → 「该内容已被下架」；链接过期 → 过期提示页
-import { getKV, kvGet, keys, nowSeconds } from '../lib/kv.js';
+import { getKV, kvGet, kvPut, keys, nowSeconds } from '../lib/kv.js';
 import { contentTypeFor, htmlPage } from '../lib/responses.js';
 import { STATUS, isBackendKind, normalizeKind } from '../lib/state.js';
 import { injectPublicBase, rewriteLocalRefs } from '../lib/paths.js';
@@ -48,6 +48,13 @@ export async function onRequest(context) {
   if (!bytes) return htmlPage(404, 'notFound', request);
 
   const type = contentTypeFor(entry);
+  // 游客项目按「连续 7 天无人访问」过期：每次成功响应都刷新 lastAccessAt。
+  // 写回失败不影响本次访问（下次再补），避免公开路由被 KV 抖动拖垮。
+  if (project.expiresAt && project.userId?.startsWith('guest_')) {
+    project.lastAccessAt = nowSeconds();
+    project.expiresAt = project.lastAccessAt + (7 * 24 * 3600);
+    kvPut(kv, keys.project(id), project).catch(() => {});
+  }
   // 入口 URL 没有尾斜杠，相对资源会被浏览器解析到 /p/ 根。注入项目级
   // <base> 是唯一能同时覆盖 HTML/CSS/JS/图片与运行时 fetch 的统一下发兜底。
   let body = bytes;

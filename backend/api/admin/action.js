@@ -23,7 +23,7 @@ import { revokeUserSessions, isVIPUser } from '../../lib/session.js';
 import { TIERS, tierOf } from '../../lib/tiers.js';
 import {
   BAN_LEVELS,
-  GUEST_LINK_TTL_SECONDS,
+  GUEST_LINK_IDLE_SECONDS,
   STATUS,
   isBackendKind,
   normalizeKind,
@@ -257,9 +257,9 @@ async function downgradeVIP(kv, { userId }) {
   return applyTier(kv, user, 'user');
 }
 
-/** 给游客身份的项目重新加上 10 分钟链接过期时间（取消 VIP 时调用） */
+/** 给游客身份的项目重新加上 7 天空闲链接过期时间（取消 VIP 时调用） */
 async function reapplyGuestLinkExpiry(kv, userId) {
-  const expiresAt = nowSeconds() + GUEST_LINK_TTL_SECONDS;
+  const expiresAt = nowSeconds() + GUEST_LINK_IDLE_SECONDS;
   let limited = 0;
   await forEachUserProject(kv, userId, async (projectId) => {
     const project = await kvGet(kv, keys.project(projectId));

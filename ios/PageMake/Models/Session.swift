@@ -36,9 +36,22 @@ enum AccountRole: String, Codable, CaseIterable {
     /// 服务端配额快照尚未返回时的保守兜底；Ultra 的 nil 表示无上限。
     var defaultStaticMaxBytes: Int64? {
         switch self {
-        case .user: return 5 * 1024 * 1024
+        case .user: return 300 * 1024
         case .vip: return 1 * 1024 * 1024
-        case .svip: return 100 * 1024 * 1024
+        case .svip: return 10 * 1024 * 1024
+        case .ultra: return nil
+        }
+    }
+
+    /// 是否可打开项目模式（资源管理器）：SVIP 及以上
+    var canUseExplorer: Bool { rank >= AccountRole.svip.rank }
+
+    /// 升级申请的下一档等级；Ultra 已到顶返回 nil
+    var nextTier: AccountRole? {
+        switch self {
+        case .user: return .vip
+        case .vip: return .svip
+        case .svip: return .ultra
         case .ultra: return nil
         }
     }

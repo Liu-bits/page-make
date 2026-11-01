@@ -1,6 +1,6 @@
 // GET /p/:projectId/... — 公开访问项目内资源（catch-all 动态路由）
 // 新手宽容：精确路径 404 时按"文件名"在项目内做唯一匹配兜底（引用写错目录也能正常显示）
-import { getKV, kvGet, kvListAll, keys, nowSeconds, pathFromSiteKey } from '../../lib/kv.js';
+import { getKV, kvGet, kvListAll, kvPut, keys, nowSeconds, pathFromSiteKey } from '../../lib/kv.js';
 import { contentTypeFor, htmlPage } from '../../lib/responses.js';
 import { STATUS, isBackendKind, normalizeKind } from '../../lib/state.js';
 import { rewriteCssRefs } from '../../lib/paths.js';
@@ -73,6 +73,13 @@ export async function onRequest(context) {
     }
   }
   if (!bytes) return htmlPage(404, 'notFound', request);
+
+  // 游客项目按「连续 7 天无人访问」过期：子资源命中也刷新 lastAccessAt。
+  if (project.expiresAt && project.userId?.startsWith('guest_')) {
+    project.lastAccessAt = nowSeconds();
+    project.expiresAt = project.lastAccessAt + (7 * 24 * 3600);
+    kvPut(kv, keys.project(id), project).catch(() => {});
+  }
 
   // CSS 内部的 url() 引用（背景图/字体）同样要归一：与 HTML 的 link/script
   // 同一根因，但 HTML 侧修复覆盖不到 CSS 文件内容。只改 text/css，其他
