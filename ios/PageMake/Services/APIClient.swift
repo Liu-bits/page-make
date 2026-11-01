@@ -46,7 +46,8 @@ final class APIClient {
         body: Data? = nil,
         contentType: String? = "application/json",
         requiresAuth: Bool = true,
-        maxAttempts: Int? = nil
+        maxAttempts: Int? = nil,
+        timeout: TimeInterval = 25
     ) async throws -> Data {
         guard let url = URL(string: path, relativeTo: baseURL) else {
             throw APIError.invalidURL
@@ -61,7 +62,7 @@ final class APIClient {
             if Task.isCancelled { throw CancellationError() }
             var req = URLRequest(url: url)
             req.httpMethod = method
-            req.timeoutInterval = 25
+            req.timeoutInterval = timeout
             req.setValue("application/json", forHTTPHeaderField: "Accept")
             if let body {
                 req.httpBody = body
@@ -265,7 +266,12 @@ final class APIClient {
     }
 
     func projectStatus(_ id: String) async throws -> ProjectStatusResponse {
-        let data = try await request("/api/projects/\(id)/status")
+        // 大文件部署时服务端同步写盘会短暂阻塞事件循环，
+        // 25s 默认超时可能在这个窗口内触发「网络出错」。
+        let data = try await request(
+            "/api/projects/\(id)/status",
+            timeout: 60
+        )
         return try decoder.decode(ProjectStatusResponse.self, from: data)
     }
 

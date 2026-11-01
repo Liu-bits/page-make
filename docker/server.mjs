@@ -17,6 +17,7 @@
 // =============================================================================
 import http from 'node:http';
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -64,9 +65,11 @@ class DiskKV {
       buffer = Buffer.from(JSON.stringify(value), 'utf8');
     }
 
+    // 异步写盘：writeFileSync 会阻塞事件循环几秒（大文件），拖垮并发的
+    // 状态轮询请求。promises 版本让 Node 在等磁盘时继续响应其他请求。
     const tmp = `${this.file(key)}.tmp`;
-    fs.writeFileSync(tmp, buffer);
-    fs.renameSync(tmp, this.file(key));
+    await fsp.writeFile(tmp, buffer);
+    await fsp.rename(tmp, this.file(key));
     this.index.add(key);
   }
 
