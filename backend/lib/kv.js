@@ -35,6 +35,12 @@ export const keys = {
   log: (id) => `log_${encodeKey(id)}`,
   feedback: (id) => `feedback_${encodeKey(id)}`,
   vipRequest: (userId) => `vipreq_${encodeKey(userId)}`,
+  // 升级申请历史留档：每用户当前只有一条 vipreq_ 记录，申请下一等级时会覆盖
+  // 上一条。已批准的记录必须留证，因此覆盖前先归档到这里。
+  // 前缀刻意用 `vipreqlog_` 而**不是** `vipreq_log_`：后台概览用
+  // kvListAll(kv, 'vipreq_') 扫描待审队列，前缀相同会把归档记录一起扫进来，
+  // 并用旧记录覆盖用户当前申请状态。
+  vipRequestLog: (userId, at) => `vipreqlog_${encodeKey(userId)}_${at}`,
   ban: (id) => `ban_${encodeKey(id)}`,
   config: (name) => `config_${encodeKey(name)}`,
 };

@@ -12,6 +12,7 @@ import { bytesToBase64, base64ToBytes, base64urlToBytes, encodeKey, decodeKey } 
 import { decodeJwt } from '../backend/lib/apple-auth.js';
 import { createJwksLoader } from '../backend/lib/jwks.js';
 import { processUpload } from '../backend/lib/process.js';
+import { rewriteLocalRefs, rewriteCssRefs } from '../backend/lib/paths.js';
 import {
   STATUS, ERR, PROVIDERS, SESSION_TTL_SECONDS,
   MAX_TOTAL_BYTES, CHUNK_BYTES, BAN_LEVELS,
@@ -133,6 +134,32 @@ await test('zip 炸弹：解压总量超限抛 TOO_LARGE', async () => {
     ['index.html', '<h1>bomb</h1>'],
     ['big1.bin', big, { deflate: true }],
   ]);
+  let error;
+  try {
+    await unzip(zip);
+  } catch (e) {
+    error = e;
+  }
+  assert(error instanceof ZipError, '应为 ZipError');
+  assertEqual(error.code, 'TOO_LARGE');
+});
+
+await test('zip 炸弹：伪造中央目录声明的解压大小无法绕过（流式拦截）', async () => {
+  // 中央目录里的「解压后大小」是攻击者可任意伪造的字段：声明 1000 字节、
+  // 实际膨胀 40MB。修复前只信声明值，会先把整条解压进内存再判断总量。
+  const big = new Uint8Array(40 * 1024 * 1024);
+  const zip = Buffer.from(buildZip([
+    ['index.html', '<h1>forged</h1>'],
+    ['big1.bin', big, { deflate: true }],
+  ]));
+  let patched = 0;
+  for (let i = 0; i < zip.length - 4; i++) {
+    if (zip.readUInt32LE(i) === 0x02014b50) {
+      zip.writeUInt32LE(1000, i + 24); // 伪造 uncompressed size
+      patched++;
+    }
+  }
+  assert(patched >= 2, '应找到中央目录条目');
   let error;
   try {
     await unzip(zip);
@@ -733,6 +760,54 @@ await test('空项目导出仍生成合法 ZIP（EOCD 结构正确）', async ()
   const zip = buildZip([]);
   const files = await unzip(zip);
   assertEqual(files.size, 0, '空 ZIP 应解出 0 个文件');
+});
+
+console.log('\n[14] 过期数据回收');
+
+await test('过期会话与超期日志被清理，未过期的不动', async () => {
+  const { cleanupExpired } = await import('../backend/lib/maintenance.js');
+  const kv = createMockKV();
+  const now = nowSeconds();
+  const put = (key, value) => kv.put(key, JSON.stringify(value));
+
+  await put(keys.session('expired-token'), { userId: 'u1', expiresAt: now - 10 });
+  await put(keys.session('alive-token'), { userId: 'u1', expiresAt: now + 3600 });
+  await put(keys.userSession('u1', 'expired-token'), { userId: 'u1', expiresAt: now - 10 });
+  await put(`admin_session_${'a'.repeat(64)}`, { expiresAt: now - 1 });
+  await put(`admin_session_${'b'.repeat(64)}`, { expiresAt: now + 3600 });
+  await put(keys.log('old-log'), { createdAt: now - 40 * 24 * 3600 });
+  await put(keys.log('new-log'), { createdAt: now - 60 });
+
+  const result = await cleanupExpired(kv);
+  assertEqual(result.sessions, 2, '应删除 2 条过期用户会话（session_ + usession_）');
+  assertEqual(result.adminSessions, 1, '应删除 1 条过期管理员会话');
+  assertEqual(result.logs, 1, '应删除 1 条超期日志');
+
+  assert(await kv.get(keys.session('alive-token')), '未过期会话不应被删');
+  assert(await kv.get(`admin_session_${'b'.repeat(64)}`), '未过期管理员会话不应被删');
+  assert(await kv.get(keys.log('new-log')), '新日志不应被删');
+});
+
+console.log('\n[15] 引用改写的复杂度（防 DoS）');
+
+await test('未闭合标签的 HTML 改写保持线性', async () => {
+  // 修复前：200KB 的 `<img ` 要 70 秒（O(N·L)），公开页每次下发都会跑
+  const html = '<img '.repeat(40000);
+  const started = Date.now();
+  const out = rewriteLocalRefs(html);
+  const cost = Date.now() - started;
+  assertEqual(out.length, html.length, '没有可改写的引用时应原样返回');
+  assert(cost < 2000, `200KB 未闭合标签应在 2s 内完成，实际 ${cost}ms`);
+});
+
+await test('未闭合注释的 CSS 改写保持线性', async () => {
+  // 修复前：540KB 的 `@import/*` 要 42 秒
+  const css = '@import/*'.repeat(60000);
+  const started = Date.now();
+  const out = rewriteCssRefs(css);
+  const cost = Date.now() - started;
+  assertEqual(out, css, '没有可改写的引用时应原样返回');
+  assert(cost < 2000, `540KB 未闭合注释应在 2s 内完成，实际 ${cost}ms`);
 });
 
 console.log(`\n结果：${passed} 通过，${failed} 失败\n`);

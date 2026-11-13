@@ -14,10 +14,16 @@ const ADMIN_SESSION_TTL = 24 * 3600; // 24 小时
 // 登录限速：每 IP 每分钟 5 次（复用通用限流器，容器重启清零即可）
 const ADMIN_LOGIN_LIMIT = 5;
 const ADMIN_LOGIN_WINDOW_MS = 60_000;
+// 全局限速：即使 IP 头被伪造（XFF 可被客户端填），总尝试次数也有上界。
+// 单管理员场景下 30 次/分钟足够正常使用，暴力破解则毫无意义。
+const ADMIN_LOGIN_GLOBAL_LIMIT = 30;
 
-/** 后台登录限流：按 IP 每 60 秒最多 5 次（防暴力破解管理员密码） */
+/** 后台登录限流：按 IP 每 60 秒最多 5 次 + 全局每 60 秒最多 30 次 */
 export function loginRateLimited(request) {
-  return rateLimited(`admin-login:${clientIp(request)}`, ADMIN_LOGIN_LIMIT, ADMIN_LOGIN_WINDOW_MS);
+  // 先判全局，再判 IP：两者任一超限都拒绝
+  const globalLimited = rateLimited('admin-login:__global__', ADMIN_LOGIN_GLOBAL_LIMIT, ADMIN_LOGIN_WINDOW_MS);
+  const ipLimited = rateLimited(`admin-login:${clientIp(request)}`, ADMIN_LOGIN_LIMIT, ADMIN_LOGIN_WINDOW_MS);
+  return globalLimited || ipLimited;
 }
 
 /** 生成一次性初始管理员密码：16 字符，满足强度规则。 */

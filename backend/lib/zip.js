@@ -38,13 +38,48 @@ function decodeName(bytes, flags) {
   }
 }
 
-async function inflateRaw(raw) {
+/**
+ * 解压单条 deflate 条目，并在**解压过程中**限制输出字节数。
+ *
+ * 不能用 `new Response(stream).arrayBuffer()`：那会把整条条目一次性物化。
+ * 中央目录里声明的「解压后大小」是攻击者可随意伪造的字段——声明 1KB、
+ * 实际膨胀几百 MB 的条目会先把内存吃满，事后再校验总量已经来不及。
+ * 这里逐块读取，超限立即取消流（不再继续解压烧 CPU）。
+ *
+ * @param {Uint8Array} raw 压缩数据
+ * @param {number} maxBytes 本条允许的最大解压字节数（剩余配额）
+ */
+async function inflateRawBounded(raw, maxBytes) {
   if (typeof DecompressionStream === 'undefined') {
     throw new ZipError('STORAGE_ERROR', 'DecompressionStream 不可用，无法解压 deflate 条目');
   }
   const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-  const buffer = await new Response(stream).arrayBuffer();
-  return new Uint8Array(buffer);
+  const reader = stream.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > maxBytes) {
+        const label = Number.isFinite(maxBytes) ? `${maxBytes} 字节` : '当前等级上限';
+        throw new ZipError('TOO_LARGE', `ZIP 解压后体积过大（> ${label}）`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    // 抛错路径必须显式取消，否则底层流会继续解压
+    reader.cancel().catch(() => {});
+    reader.releaseLock?.();
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.length;
+  }
+  return out;
 }
 
 /**
@@ -118,12 +153,13 @@ export async function unzip(buffer, options = {}) {
     if (method === 0) {
       data = raw.slice();
     } else if (method === 8) {
-      data = await inflateRaw(raw);
+      // 剩余配额作为本条的硬上限：伪造 declaredSize 也炸不开内存
+      data = await inflateRawBounded(raw, maxTotalBytes - totalBytes);
     } else {
       throw new ZipError('STORAGE_ERROR', `不支持的压缩方式：${method}`);
     }
 
-    // 解压总量上限：边解压边累计，超限立即中止（而非解压完再判断）
+    // 解压总量上限（流式路径已在解压中拦截，这里是兜底）
     totalBytes += data.length;
     if (totalBytes > maxTotalBytes) {
       const label = Number.isFinite(maxTotalBytes) ? `${maxTotalBytes} 字节` : '当前等级上限';

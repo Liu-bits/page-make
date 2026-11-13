@@ -1,228 +1,42 @@
-# =============================================================================
-# Page-make CI/CD
-# -----------------------------------------------------------------------------
-# 触发条件：push（main / tag v*）、pull_request、手动触发
+# Page-make 主分支（main）—— 只做部署
 #
-# 需要的 GitHub 配置（Settings → Secrets and variables → Actions）：
-#   Variables: MODELSCOPE_SPACE   创空间标识（如 liu20/pagemake，格式 用户名/空间名）
-#   Secrets:   MODELSCOPE_TOKEN   ModelScope API Token（控制台 → 个人中心 → 访问令牌）
-#   （未配置时部署 job 自动跳过，不影响测试 CI）
+# 分工：
+#   debug 分支：跑全部测试、iOS 编译、IPA 构建（.github/workflows/debug.yaml）
+#   main  分支：只把已通过的代码部署到 ModelScope 创空间
 #
-# 环境要求（用户指定）：
-#   - iOS 编译：xcode-27 runner（= macOS 27.0.1 镜像，arm64；macos-27 标签 GitHub 尚未提供）
-#   - Xcode 27.0.1：Apple 实际版本线为 27.0.0 → 27.1.0 → 27.2(beta)，
-#     不存在 27.0.1，CI 锁定最接近的 27.0.0 GM（build 27A266a）并校验
-#   - 运行目标：优先 iOS 27.0.1 模拟器，未安装时回退 iOS 27.0（最接近）
-#   - 后端测试：ubuntu-latest + Node 22
+# 规则（必须遵守）：
+#   - 不允许直接向 main 推代码，只允许从 debug 合并（见 AGENTS.md §0）
+#   - 合并前 debug 上 backend-test / ios-build / ipa 三个 job 必须全绿
 #
-# 第一版约束：
-#   - iOS 编译只做 build + test，不签名、不打包 IPA、不上传 App Store
-#   - 部署只在 main 分支触发
-#   - 后端测试与 iOS 编译并行；部署依赖两者全部通过
-# =============================================================================
+# 需要的 GitHub 配置：
+#   Variables: MODELSCOPE_SPACE   创空间标识（格式 用户名/空间名）
+#   Secrets:   MODELSCOPE_TOKEN   ModelScope API Token
+#   （未配置时部署脚本自动跳过，不报错）
 
-name: Page-make CI/CD
+name: Page-make 部署（main）
 
 on:
   push:
     branches: [main]
-    tags: ["v*"]
-  pull_request:
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # 1. 后端逻辑测试（backend/ 纯逻辑，Node 直接跑）
-  # ---------------------------------------------------------------------------
-  backend-test:
-    name: "后端逻辑测试（Node 22）"
-    runs-on: ubuntu-latest
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 安装 Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: 运行后端单元测试（解压 / 诊断 / 状态机 / KV key / JWT 解码）
-        run: node dev/run-tests.mjs
-
-      - name: 运行自托管容器冒烟测试（HTTP 全流程）
-        run: node dev/test-server.mjs
-
-      - name: 运行游客 10 分钟试用链路测试（真实游客会话 · 到期 410 · 身份重置）
-        run: node dev/test-guest-ttl.mjs
-
-      - name: 运行 CSS/JS 引用全模式回归测试（粘贴/片段/子目录/探索器）
-        run: node dev/test-assets.mjs
-
-      - name: 运行管理后台测试（VIP 发号/历史兼容/封禁下架/解封恢复/删除账号）
-        run: node dev/test-admin.mjs
-
-      - name: 校验 backend 无「调用了未 import 的函数」（防止运行时 500 INTERNAL_ERROR）
-        run: node dev/check-handler-imports.mjs
-
-      - name: 校验中英本地化 key 完整且无重复
-        run: node scripts/check-localization.mjs
-
-      - name: 校验 Swift 无同作用域重复声明（本地无 iOS SDK，替代 -typecheck）
-        run: node scripts/check-swift-decls.mjs
-
-      - name: 校验无死文案键（删除本地化键后不留孤儿）
-        run: node scripts/check-dead-strings.mjs
-
-      - name: 校验 Docker 镜像可构建
-        run: docker build -t pagemake-test .
-
-  # ---------------------------------------------------------------------------
-  # 2. iOS 编译与单元测试（macOS 27 / Xcode 27.0.1 / iOS 27.0.1）
-  # ---------------------------------------------------------------------------
-  ios-build:
-    name: "iOS 编译与测试（xcode-27 · macOS 27.0.1 · Xcode 27.0.0 · iOS 27.0+）"
-    # xcode-27 标签 = macOS 27.0.1 镜像（预装 Xcode 27，arm64 公共预览）
-    runs-on: xcode-27
-    env:
-      XCODE_VERSION: "27.0.0"
-      SIM_OS_VERSION: "27.0.1"
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 选择 Xcode 27.0.0
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: "27.0.0"
-
-      - name: 校验 Xcode 版本必须为 27.0
-        run: |
-          echo "当前 Xcode：$(xcodebuild -version | head -1)"
-          xcodebuild -version | head -1 | grep -qE "^Xcode 27\.0(\.0)?$" || { echo "::error::Xcode 版本不是 27.0.x"; exit 1; }
-
-      - name: 安装 XcodeGen
-        run: brew install xcodegen || brew upgrade xcodegen
-
-      - name: 生成 Xcode 工程
-        working-directory: ios
-        run: xcodegen generate
-
-      - name: 解析 iOS 27.0.1 模拟器（未安装时回退到已安装的最新 iOS 运行时）
-        run: node ios/scripts/resolve-simulator.mjs >> "$GITHUB_ENV"
-
-      - name: 编译（Debug · 不签名）
-        working-directory: ios
-        run: |
-          set -o pipefail
-          xcodebuild \
-            -project PageMake.xcodeproj \
-            -scheme PageMake \
-            -configuration Debug \
-            -destination "$SIM_DEST" \
-            -derivedDataPath "$RUNNER_TEMP/build" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            build-for-testing
-
-      - name: 运行单元测试（iOS 27.0.1 模拟器）
-        working-directory: ios
-        run: |
-          xcodebuild \
-            -project PageMake.xcodeproj \
-            -scheme PageMake \
-            -configuration Debug \
-            -destination "$SIM_DEST" \
-            -derivedDataPath "$RUNNER_TEMP/build" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            test-without-building
-
-  # ---------------------------------------------------------------------------
-  # 3. 部署（仅 main 分支，依赖 backend-test + ios-build 全部通过）
-  #    唯一部署目标：ModelScope 创空间（Docker 类型，免费 CPU 空间）
-  #    推送构建子集到创空间 Git → 平台自动构建上线
-  #    配置：Variables MODELSCOPE_SPACE + Secrets MODELSCOPE_TOKEN
-  # ---------------------------------------------------------------------------
   deploy:
-    name: "部署到 ModelScope 创空间（仅 main 分支）"
-    needs: [backend-test, ios-build]
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    name: "部署到 ModelScope 创空间"
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 部署到 ModelScope 创空间（Docker）
+      - name: 推送构建子集到创空间（平台自动构建）
         env:
           MODELSCOPE_SPACE: ${{ vars.MODELSCOPE_SPACE }}
           MODELSCOPE_TOKEN: ${{ secrets.MODELSCOPE_TOKEN }}
         run: bash scripts/deploy-modelscope.sh
-
-  # ---------------------------------------------------------------------------
-  # 4. 构建未签名 IPA（仅 main / tag v* / 手动触发）
-  #    产物：Actions run 底部 Artifacts → PageMake-unsigned-ipa.zip
-  #    注意：未签名，正常 iPhone 无法直接安装（供自签/ TrollStore 类工具使用）
-  # ---------------------------------------------------------------------------
-  ipa:
-    name: "构建 IPA（未签名 · 可下载）"
-    runs-on: xcode-27
-    if: (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))) || github.event_name == 'workflow_dispatch'
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
-
-      - name: 安装 XcodeGen
-        run: brew install xcodegen
-
-      - name: 生成 Xcode 工程
-        working-directory: ios
-        run: xcodegen generate
-
-      - name: 编译归档（真机 · 不签名）
-        working-directory: ios
-        run: |
-          set -o pipefail
-          xcodebuild archive \
-            -project PageMake.xcodeproj \
-            -scheme PageMake \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -archivePath "$RUNNER_TEMP/PageMake.xcarchive" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGN_ENTITLEMENTS="" \
-            DEVELOPMENT_TEAM=""
-
-      - name: ad-hoc 签名并打包 IPA
-        run: |
-          mkdir -p Payload
-          cp -R "$RUNNER_TEMP/PageMake.xcarchive/Products/Applications/PageMake.app" Payload/
-          # ad-hoc 签名（无证书）：entitlements 嵌入代码签名，
-          # iLoader / Sideloadly 等重签工具可读取后重新签名
-          codesign --force --sign - --entitlements ios/PageMake/PageMake.entitlements "Payload/PageMake.app"
-          echo "已 ad-hoc 签名（含 Sign in with Apple entitlement）"
-          # 兜底：确保 archived-expanded-entitlements.xcent 存在（部分工具直接读它）
-          if [ ! -f "Payload/PageMake.app/archived-expanded-entitlements.xcent" ]; then
-            cp ios/PageMake/PageMake.entitlements "Payload/PageMake.app/archived-expanded-entitlements.xcent"
-            echo "已手动注入 archived-expanded-entitlements.xcent"
-          fi
-          zip -qr PageMake-unsigned.ipa Payload
-          rm -rf Payload
-          echo "IPA 大小：$(du -h PageMake-unsigned.ipa | cut -f1)"
-
-      - name: 上传 IPA 产物
-        uses: actions/upload-artifact@v4
-        with:
-          name: PageMake-unsigned-ipa
-          path: PageMake-unsigned.ipa
-          retention-days: 14

@@ -20,7 +20,7 @@ struct SettingsView: View {
                 VStack(spacing: 16) {
                     profileCard
                     if appState.isLoggedIn {
-                        if appState.session?.role != .ultra {
+                        if currentTier != .ultra {
                             vipUpgradeCard
                         }
                         usageCard
@@ -50,7 +50,7 @@ struct SettingsView: View {
             DocumentView(document: document)
         }
         .sheet(isPresented: $showVIPApplication) {
-            VIPUpgradeApplicationView()
+            VIPUpgradeApplicationView(tier: currentTier, nextTier: nextTier)
         }
         .confirmationDialog(
             L10n.string("delete_account_confirm_title"),
@@ -79,52 +79,44 @@ struct SettingsView: View {
         HStack(spacing: 16) {
             ZStack {
                 Circle()
-                    .fill(.white.opacity(0.1))
+                    .fill(Theme.elevatedBackground)
                 Circle()
-                    .stroke(.white.opacity(0.16), lineWidth: 1)
+                    .stroke(Theme.separator.opacity(0.55), lineWidth: 1)
                     .padding(5)
                 Image(systemName: appState.isLoggedIn ? "person.fill" : "person.crop.circle")
                     .font(.system(size: 27, weight: .medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.label)
             }
             .frame(width: 64, height: 64)
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(appState.isLoggedIn ? L10n.string("account_signed_in") : L10n.string("account_guest"))
                     .font(.system(.title3, design: .serif, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.label)
                 Text(accountDetail)
                     .font(.footnote)
-                    .foregroundStyle(.white.opacity(0.65))
+                    .foregroundStyle(Theme.secondaryLabel)
                     .lineLimit(1)
-                if let session = appState.session, session.role != .user {
-                    Text(L10n.string(session.role.titleKey))
+                if let role = appState.session?.role, role != .user {
+                    Text(L10n.string(currentTier.titleKey))
                         .font(.system(size: 10, weight: .bold, design: .rounded))
                         .textCase(.uppercase)
                         .tracking(0.6)
-                        .foregroundStyle(PageMakeTheme.gold)
+                        .foregroundStyle(Theme.premium)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(.white.opacity(0.11), in: Capsule())
+                        .background(Theme.premium.opacity(0.13), in: Capsule())
                 }
                 if appState.isLoggedIn {
                     Label(L10n.string("account_protected"), systemImage: "checkmark.shield.fill")
                         .font(.caption2.bold())
-                        .foregroundStyle(Color(red: 0.63, green: 0.91, blue: 0.82))
+                        .foregroundStyle(Theme.positive)
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(18)
-        .background(PageMakeTheme.heroGradient, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(alignment: .topTrailing) {
-            Image(systemName: "circle.hexagongrid.fill")
-                .font(.system(size: 74))
-                .foregroundStyle(.white.opacity(0.055))
-                .offset(x: 20, y: -18)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(color: PageMakeTheme.ink.opacity(0.16), radius: 20, y: 10)
+        .padding(Theme.cardPadding)
+        .glassPanel(tint: Theme.cardTint, radius: Theme.cardRadius)
     }
 
     private var accountDetail: String {
@@ -153,43 +145,101 @@ struct SettingsView: View {
         return L10n.string("account_signed_in")
     }
 
-    // MARK: - 用量
+    // MARK: - 等级与升级
+
+    /// 当前等级：服务端 `GET /api/vip-request` 快照优先，其次本地会话角色。
+    private var currentTier: AccountRole {
+        appState.vipUpgradeStatus?.tier ?? appState.session?.role ?? .user
+    }
+
+    /// 下一档：服务端 nextTier 优先；Ultra 为 nil（整张卡不显示）。
+    /// 注意要区分「服务端明确返回 null（已到顶）」与「快照还没加载」：
+    /// 用 `??` 会把两者混成一种，服务端说 Ultra 时又退回本地推算。
+    private var nextTier: AccountRole? {
+        if let status = appState.vipUpgradeStatus {
+            return status.nextTier
+        }
+        return currentTier.nextTier
+    }
+
+    /// 服务端是否允许申请（游客限制、审核中等情况由后端判定）。
+    private var canApplyUpgrade: Bool {
+        appState.vipUpgradeStatus?.canApply ?? (nextTier != nil)
+    }
+
+    private var upgradeTitle: String {
+        guard let nextTier else { return L10n.string("tier_ultra") }
+        switch nextTier {
+        // .user 只会在服务端下发了异常的 nextTier 时出现（正常链路 user 的下一档是 vip）；
+        // 兜底用「升级 VIP」文案，不要留空分支让 switch 不穷尽。
+        case .user: return L10n.string("vip_upgrade_title")
+        case .vip: return L10n.string("vip_upgrade_title")
+        case .svip: return L10n.string("upgrade_to_svip_title")
+        case .ultra: return L10n.string("upgrade_to_ultra_title")
+        }
+    }
 
     private var vipUpgradeCard: some View {
-        PageMakeCard {
+        PageMakeCard(tint: Theme.premiumTint) {
             VStack(alignment: .leading, spacing: 12) {
                 sectionHeading(
                     icon: "crown.fill",
-                    title: {
-                        let role = appState.session?.role ?? .user
-                        switch role {
-                        case .user: return L10n.string("vip_upgrade_title")
-                        case .vip: return L10n.string("upgrade_to_svip_title")
-                        case .svip: return L10n.string("upgrade_to_ultra_title")
-                        case .ultra: return L10n.string("tier_ultra")
-                        }
-                    }(),
+                    title: upgradeTitle,
                     subtitle: L10n.string("vip_upgrade_subtitle"),
-                    tint: PageMakeTheme.gold
+                    tint: Theme.premium
                 )
+
+                // 等级一览：当前 → 下一档（只能申请下一级）
+                HStack(spacing: 8) {
+                    tierChip(
+                        title: L10n.string("vip_current_tier"),
+                        value: L10n.string(currentTier.titleKey),
+                        tint: Theme.secondaryLabel
+                    )
+                    if let nextTier {
+                        Image(systemName: "arrow.right")
+                            .font(.caption2.bold())
+                            .foregroundStyle(Theme.tertiaryLabel)
+                        tierChip(
+                            title: L10n.string("vip_next_tier"),
+                            value: L10n.string(nextTier.titleKey),
+                            tint: Theme.premium
+                        )
+                    }
+                }
 
                 if let request = appState.vipUpgradeRequest {
                     Label(vipRequestStatusText(request), systemImage: vipRequestStatusIcon(request))
                         .font(.caption.bold())
                         .foregroundStyle(vipRequestStatusColor(request))
+                    if request.status == .pending, let requested = request.requestedTier {
+                        Text(L10n.format("vip_request_pending_tier_short", L10n.string(requested.titleKey)))
+                            .font(.caption2)
+                            .foregroundStyle(Theme.secondaryLabel)
+                    }
                 }
 
-                Button {
-                    showVIPApplication = true
-                } label: {
-                    Label(
-                        appState.vipUpgradeRequest?.status == .pending
-                            ? L10n.string("vip_request_view")
-                            : L10n.string("vip_request_action"),
-                        systemImage: "arrow.up.right.circle.fill"
-                    )
+                if let nextTier {
+                    Button {
+                        showVIPApplication = true
+                    } label: {
+                        Label(
+                            appState.vipUpgradeRequest?.status == .pending
+                                ? L10n.string("vip_request_view")
+                                : L10n.format("vip_request_upgrade_to", L10n.string(nextTier.titleKey)),
+                            systemImage: "arrow.up.right.circle.fill"
+                        )
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    // pending 时始终可进入查看进度；未申请时由服务端 canApply 决定
+                    .disabled(appState.vipUpgradeRequest == nil && !canApplyUpgrade)
+
+                    if appState.vipUpgradeRequest == nil && !canApplyUpgrade {
+                        Text(L10n.string("vip_request_not_available"))
+                            .font(.caption2)
+                            .foregroundStyle(Theme.secondaryLabel)
+                    }
                 }
-                .buttonStyle(PrimaryButtonStyle())
 
                 // 审核是后台人工处理的，App 不会收到推送；批准后必须主动拉一次
                 // 角色快照，否则用户看不到「已升级」，项目数/链接限制也不会解除。
@@ -197,17 +247,32 @@ struct SettingsView: View {
                     Task { await refreshVIPRequest() }
                 } label: {
                     if isRefreshingVIPRequest {
-                        ProgressView().tint(PageMakeTheme.inkSoft)
+                        ProgressView().tint(Theme.secondaryLabel)
                     } else {
                         Label(L10n.string("vip_request_refresh"), systemImage: "arrow.clockwise")
                             .font(.system(.caption, design: .rounded, weight: .semibold))
-                            .foregroundStyle(PageMakeTheme.inkSoft)
+                            .foregroundStyle(Theme.secondaryLabel)
                     }
                 }
                 .buttonStyle(.plain)
                 .disabled(isRefreshingVIPRequest)
             }
         }
+    }
+
+    private func tierChip(title: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(Theme.tertiaryLabel)
+            Text(value)
+                .font(.system(.caption, design: .rounded, weight: .bold))
+                .foregroundStyle(tint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .glassPanel(radius: 12)
     }
 
     /// 拉取最新角色与申请状态：管理员批准后用户点一下即可立刻拿到 VIP 权益。
@@ -240,9 +305,9 @@ struct SettingsView: View {
 
     private func vipRequestStatusColor(_ request: VIPUpgradeRequest) -> Color {
         switch request.status {
-        case .pending: return PageMakeTheme.gold
-        case .approved: return PageMakeTheme.sea
-        case .rejected: return PageMakeTheme.coral
+        case .pending: return Theme.premium
+        case .approved: return Theme.positive
+        case .rejected: return Theme.highlight
         }
     }
 
@@ -253,7 +318,7 @@ struct SettingsView: View {
                     icon: "circle.lefthalf.filled",
                     title: L10n.string("appearance_section"),
                     subtitle: L10n.string("appearance_hint"),
-                    tint: PageMakeTheme.coral
+                    tint: Theme.highlight
                 )
 
                 HStack(spacing: 7) {
@@ -284,13 +349,13 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 11)
             .background(
-                isSelected ? PageMakeTheme.ink : PageMakeTheme.surfaceSoft,
+                isSelected ? Theme.label : Theme.elevatedBackground,
                 in: RoundedRectangle(cornerRadius: 13, style: .continuous)
             )
-            .foregroundStyle(isSelected ? PageMakeTheme.paper : PageMakeTheme.inkSoft)
+            .foregroundStyle(isSelected ? Theme.background : Theme.secondaryLabel)
             .overlay {
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .stroke(isSelected ? Color.clear : PageMakeTheme.border, lineWidth: 1)
+                    .stroke(isSelected ? Color.clear : Theme.separator, lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
@@ -304,38 +369,38 @@ struct SettingsView: View {
                     icon: "chart.bar.fill",
                     title: L10n.string("stats_section"),
                     subtitle: L10n.string("stats_section_hint"),
-                    tint: PageMakeTheme.sea
+                    tint: Theme.positive
                 )
 
                 HStack(spacing: 8) {
                     metricTile(
                         value: "\(appState.stats?.projectCount ?? appState.projects.count)",
                         label: L10n.string("stats_projects"),
-                        tint: PageMakeTheme.coral
+                        tint: Theme.highlight
                     )
                     metricTile(
                         value: "\(appState.stats?.fileCount ?? appState.projects.reduce(0) { $0 + $1.fileCount })",
                         label: L10n.string("stats_files"),
-                        tint: PageMakeTheme.sea
+                        tint: Theme.positive
                     )
                     metricTile(
                         value: formatBytes(appState.stats?.totalSize ?? Int(appState.projects.reduce(Int64(0)) { $0 + $1.size })),
                         label: L10n.string("stats_size"),
-                        tint: PageMakeTheme.gold
+                        tint: Theme.premium
                     )
                 }
 
                 if let session = appState.session {
                     Divider()
-                        .overlay(PageMakeTheme.ink.opacity(0.06))
+                        .overlay(Theme.label.opacity(0.06))
                     HStack(spacing: 8) {
                         Label(L10n.format("quota_summary", quotaLabel(session)), systemImage: "externaldrive.fill")
                             .font(.caption)
-                            .foregroundStyle(PageMakeTheme.inkSoft)
+                            .foregroundStyle(Theme.secondaryLabel)
                         Spacer(minLength: 0)
                         Text(L10n.string(session.role.titleKey))
                             .font(.caption2.bold())
-                            .foregroundStyle(PageMakeTheme.gold)
+                            .foregroundStyle(Theme.premium)
                     }
                 }
             }
@@ -346,12 +411,12 @@ struct SettingsView: View {
         VStack(spacing: 5) {
             Text(value)
                 .font(.system(.headline, design: .rounded, weight: .bold))
-                .foregroundStyle(PageMakeTheme.ink)
+                .foregroundStyle(Theme.label)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             Text(label)
                 .font(.caption2)
-                .foregroundStyle(PageMakeTheme.inkSoft)
+                .foregroundStyle(Theme.secondaryLabel)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
@@ -371,7 +436,7 @@ struct SettingsView: View {
                     icon: "person.badge.key.fill",
                     title: L10n.string("account_section"),
                     subtitle: L10n.string("account_signed_out_hint"),
-                    tint: PageMakeTheme.coral
+                    tint: Theme.highlight
                 )
 
                 Button {
@@ -412,7 +477,7 @@ struct SettingsView: View {
                     icon: "wrench.and.screwdriver.fill",
                     title: L10n.string("tools_section"),
                     subtitle: L10n.string("tools_section_hint"),
-                    tint: PageMakeTheme.gold
+                    tint: Theme.premium
                 )
                 .padding(.bottom, 6)
 
@@ -421,7 +486,7 @@ struct SettingsView: View {
                         settingsRowContent(
                             icon: "square.and.arrow.up",
                             title: L10n.string("export_logs"),
-                            tint: PageMakeTheme.sea
+                            tint: Theme.positive
                         )
                     }
                     .buttonStyle(.plain)
@@ -434,7 +499,7 @@ struct SettingsView: View {
                     settingsRowContent(
                         icon: "bubble.left.and.bubble.right.fill",
                         title: L10n.string("feedback"),
-                        tint: PageMakeTheme.coral
+                        tint: Theme.highlight
                     )
                 }
                 .buttonStyle(.plain)
@@ -451,7 +516,7 @@ struct SettingsView: View {
                     icon: "doc.text.fill",
                     title: L10n.string("about_section"),
                     subtitle: L10n.string("about_section_hint"),
-                    tint: PageMakeTheme.inkSoft
+                    tint: Theme.secondaryLabel
                 )
                 .padding(.bottom, 6)
 
@@ -461,7 +526,7 @@ struct SettingsView: View {
                     settingsRowContent(
                         icon: "hand.raised.fill",
                         title: L10n.string("privacy_policy"),
-                        tint: PageMakeTheme.sea
+                        tint: Theme.positive
                     )
                 }
                 .buttonStyle(.plain)
@@ -474,7 +539,7 @@ struct SettingsView: View {
                     settingsRowContent(
                         icon: "checkmark.seal.fill",
                         title: L10n.string("user_agreement"),
-                        tint: PageMakeTheme.gold
+                        tint: Theme.premium
                     )
                 }
                 .buttonStyle(.plain)
@@ -484,11 +549,11 @@ struct SettingsView: View {
                 HStack {
                     Text(L10n.string("version_label"))
                         .font(.subheadline)
-                        .foregroundStyle(PageMakeTheme.inkSoft)
+                        .foregroundStyle(Theme.secondaryLabel)
                     Spacer()
                     Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
                         .font(.system(.subheadline, design: .monospaced, weight: .semibold))
-                        .foregroundStyle(PageMakeTheme.ink)
+                        .foregroundStyle(Theme.label)
                 }
                 .padding(.vertical, 12)
             }
@@ -504,7 +569,7 @@ struct SettingsView: View {
                 if let session = appState.session, session.isGuestLimited {
                     Label(L10n.string("guest_signout_hint"), systemImage: "info.circle")
                         .font(.caption)
-                        .foregroundStyle(PageMakeTheme.inkSoft)
+                        .foregroundStyle(Theme.secondaryLabel)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 4)
                 }
@@ -514,7 +579,7 @@ struct SettingsView: View {
                         : L10n.format("tier_active_hint", L10n.string(session.role.titleKey))
                     Label(hint, systemImage: "crown.fill")
                         .font(.caption)
-                        .foregroundStyle(PageMakeTheme.gold)
+                        .foregroundStyle(Theme.premium)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 4)
                 }
@@ -526,8 +591,8 @@ struct SettingsView: View {
                         .font(.system(.subheadline, design: .rounded, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
-                        .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-                        .foregroundStyle(PageMakeTheme.ink)
+                        .background(Theme.elevatedBackground, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                        .foregroundStyle(Theme.label)
                 }
                 .buttonStyle(.plain)
 
@@ -537,7 +602,7 @@ struct SettingsView: View {
                     HStack {
                         if isDeletingAccount {
                             ProgressView()
-                                .tint(PageMakeTheme.coral)
+                                .tint(Theme.highlight)
                         } else {
                             Image(systemName: "trash")
                         }
@@ -546,11 +611,11 @@ struct SettingsView: View {
                     .font(.system(.subheadline, design: .rounded, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
-                    .foregroundStyle(PageMakeTheme.coral)
-                    .background(PageMakeTheme.coral.opacity(0.07), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                    .foregroundStyle(Theme.highlight)
+                    .background(Theme.highlight.opacity(0.07), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
                     .overlay {
                         RoundedRectangle(cornerRadius: 15, style: .continuous)
-                            .stroke(PageMakeTheme.coral.opacity(0.17), lineWidth: 1)
+                            .stroke(Theme.highlight.opacity(0.17), lineWidth: 1)
                     }
                 }
                 .buttonStyle(.plain)
@@ -571,10 +636,10 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(.subheadline, design: .rounded, weight: .bold))
-                    .foregroundStyle(PageMakeTheme.ink)
+                    .foregroundStyle(Theme.label)
                 Text(subtitle)
                     .font(.caption2)
-                    .foregroundStyle(PageMakeTheme.inkSoft)
+                    .foregroundStyle(Theme.secondaryLabel)
             }
         }
     }
@@ -588,11 +653,11 @@ struct SettingsView: View {
                 .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             Text(title)
                 .font(.subheadline)
-                .foregroundStyle(PageMakeTheme.ink)
+                .foregroundStyle(Theme.label)
             Spacer()
             Image(systemName: "chevron.right")
                 .font(.caption2.bold())
-                .foregroundStyle(PageMakeTheme.inkSoft.opacity(0.4))
+                .foregroundStyle(Theme.secondaryLabel.opacity(0.4))
         }
         .frame(maxWidth: .infinity, minHeight: 46)
         .contentShape(Rectangle())
@@ -600,7 +665,7 @@ struct SettingsView: View {
 
     private var divider: some View {
         Rectangle()
-            .fill(PageMakeTheme.ink.opacity(0.055))
+            .fill(Theme.label.opacity(0.055))
             .frame(height: 1)
             .padding(.leading, 41)
     }

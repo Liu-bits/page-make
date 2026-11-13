@@ -25,10 +25,11 @@ import {
   BACKEND_MAX_RESTARTS,
   BACKEND_MEMORY_MB,
   BACKEND_PORT_START,
+  isBackendKind,
 } from './state.js';
 import { normalizeRelPath, isValidRelPath } from './paths.js';
 import { kvListAll, kvGet, keys, pathFromSiteKey } from './kv.js';
-import { canUseBackend } from './tiers.js';
+import { canUseBackend, tierOf } from './tiers.js';
 
 /** projectId → runtime 记录 */
 const runtimes = new Map();
@@ -90,12 +91,14 @@ function releasePort(port) {
 }
 
 /** 真正占用运行时名额的状态；failed/stopped 记录不能继续挤占并发上限 */
+const ACTIVE_STATUSES = ['starting', 'running', 'restarting'];
+
+function countsTowardQuota(record) {
+  return Boolean(record && ACTIVE_STATUSES.includes(record.status));
+}
+
 function activeRuntimeCount() {
-  return [...runtimes.values()].filter((record) => (
-    record.status === 'starting'
-    || record.status === 'running'
-    || record.status === 'restarting'
-  )).length;
+  return [...runtimes.values()].filter(countsTowardQuota).length;
 }
 
 /**
@@ -463,7 +466,34 @@ export function runtimeStatus() {
  */
 export function deployBackendApp(args) {
   assertSafeProjectId(args?.projectId);
-  return serializeDeploy(args.projectId, () => deployBackendAppNow(args));
+  return serializeDeploy(args.projectId, () => reserveAndDeploy(args));
+}
+
+// 并发名额必须「先占后做」：install/build 要跑几分钟，期间 runtimes 里还没有
+// 这条记录（记录到 deployBackendAppNow 尾部才写入）。只靠 activeRuntimeCount()
+// 判断时，多个项目同时首次发布会全部看到 0，一起突破 BACKEND_MAX_CONCURRENT。
+let reservedSlots = 0;
+
+async function reserveAndDeploy(args) {
+  const tier = args?.tier || 'vip';
+  // 「已知项目」必须限定为**当前确实计入 active 的状态**。
+  // 旧写法 runtimes.has() 对 failed/stopped 记录也返回 true → 走无预留分支，
+  // 但 deployBackendAppNow 开头 await stop() 会删掉该记录，于是整个 install
+  // 期间这条项目既不在 runtimes 里也没占预留名额，新项目可以把它挤掉，
+  // 总常驻数最终突破 BACKEND_MAX_CONCURRENT。
+  const known = countsTowardQuota(runtimes.get(args?.projectId));
+  // Ultra 不受并发限制；已在运行的项目重新部署不额外占名额
+  if (tier === 'ultra' || known) return deployBackendAppNow(args);
+
+  if (activeRuntimeCount() + reservedSlots >= BACKEND_MAX_CONCURRENT) {
+    throw Object.assign(new Error('RUNTIME_BUSY'), { code: 'RUNTIME_BUSY' });
+  }
+  reservedSlots += 1;
+  try {
+    return await deployBackendAppNow(args);
+  } finally {
+    reservedSlots -= 1;
+  }
 }
 
 async function deployBackendAppNow({ kv, projectId, kind, tier = 'vip' }) {
@@ -473,7 +503,8 @@ async function deployBackendAppNow({ kv, projectId, kind, tier = 'vip' }) {
   if (
     activeRuntimeCount() >= BACKEND_MAX_CONCURRENT
     && tier !== 'ultra'
-    && !runtimes.has(projectId)
+    // 与 reserveAndDeploy 同一判定：只有「已计入 active」的项目才豁免名额检查
+    && !countsTowardQuota(runtimes.get(projectId))
   ) {
     throw Object.assign(new Error('RUNTIME_BUSY'), { code: 'RUNTIME_BUSY' });
   }
@@ -550,13 +581,23 @@ export async function restoreAll(kv) {
     const project = await kvGet(kv, key);
     if (!project) continue;
     const kind = project.kind;
-    if (kind !== 'npm' && kind !== 'pnpm') continue;
+    // 三种后端形态都要恢复：只认 npm/pnpm 会让 js 项目在容器重启后永久 503
+    // （KV 里 status 仍是 ready，客户端显示在线，实际进程从未拉起）。
+    if (!isBackendKind(kind)) continue;
     if (project.status !== 'ready') continue;
     // 降级后的账号不能靠容器重启重新获得后端运行权益。
     const owner = await kvGet(kv, keys.user(project.userId));
     if (!owner || !canUseBackend(owner)) continue;
     try {
-      await deployBackendApp({ kv, projectId: project.id, kind });
+      // tier 必须按项目所有者当前等级传：restoreAll 此前不传，一律回落成
+      // 'vip'，SVIP/Ultra 的重型项目在容器重启后只有 60 秒启动窗口，
+      // 被误判 START_TIMEOUT 后还会写回 failed，等于重启一次永久下线。
+      await deployBackendApp({
+        kv,
+        projectId: project.id,
+        kind,
+        tier: tierOf(owner),
+      });
       restored += 1;
     } catch (error) {
       // 并发上限只表示暂时排不上，不应把项目永久标成 failed。
@@ -633,29 +674,56 @@ export async function proxy(projectId, request) {
       (res) => {
         const chunks = [];
         let total = 0;
+        let settled = false;
         const MAX = 20 * 1024 * 1024;
+        const finish = (value) => {
+          if (settled) return;
+          settled = true;
+          resolve(value);
+        };
         res.on('data', (chunk) => {
+          if (settled) return;
           total += chunk.length;
           if (total > MAX) {
+            // 超限必须**立刻 settle**：只 destroy 不会触发 'end'/'error'，
+            // Promise 会永久悬挂，连接与已收 chunk 一起泄漏。
             res.destroy();
+            finish(new Response(
+              JSON.stringify({ ok: false, error: 'UPSTREAM_TOO_LARGE' }),
+              { status: 502, headers: { 'Content-Type': 'application/json; charset=utf-8' } }
+            ));
             return;
           }
           chunks.push(chunk);
         });
         res.on('end', () => {
-          const responseHeaders = {};
+          const responseHeaders = new Headers();
           for (const [name, value] of Object.entries(res.headers)) {
             if (value === undefined) continue;
+            const lower = name.toLowerCase();
             // 逐跳头不能透传
-            if (['connection', 'keep-alive', 'transfer-encoding', 'upgrade'].includes(name.toLowerCase())) continue;
-            responseHeaders[name] = Array.isArray(value) ? value.join(', ') : value;
+            if (['connection', 'keep-alive', 'transfer-encoding', 'upgrade'].includes(lower)) continue;
+            // Set-Cookie 是数组，不能按逗号合并（Expires 里本身含逗号），
+            // 必须逐条 append，由适配层用 getSetCookie() 还原成多条
+            if (lower === 'set-cookie') {
+              for (const cookie of (Array.isArray(value) ? value : [value])) {
+                responseHeaders.append('set-cookie', cookie);
+              }
+              continue;
+            }
+            responseHeaders.set(lower, Array.isArray(value) ? value.join(', ') : value);
           }
-          resolve(new Response(Buffer.concat(chunks), {
-            status: res.statusCode || 200,
+          const status = res.statusCode || 200;
+          // 204/205/304 是「无 body」状态码：传任何 body（哪怕是空 Buffer）
+          // 都会让 Response 构造抛 TypeError → 整个请求变 500。
+          const nullBody = status === 204 || status === 205 || status === 304;
+          finish(new Response(nullBody ? null : Buffer.concat(chunks), {
+            status,
             headers: responseHeaders,
           }));
         });
-        res.on('error', () => resolve(null));
+        res.on('error', () => finish(null));
+        res.on('close', () => finish(null));
       }
     );
     upstream.on('error', () => resolve(null));

@@ -55,9 +55,10 @@ export function isValidRelPath(p) {
 const NON_LOCAL_RE = /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i;
 
 // 标签 / 属性匹配：attr 前加 (?<![-\w]) 防止 data-href、xlink:href 误命中
-const tagReFor = (tag) => new RegExp(`<${tag}\\b[^>]*>`, 'gi');
+// 标签体上限 4096 字符：未闭合标签若允许无限长，每次匹配都会扫到串尾，
+// 与 rewriteLocalRefs 是同一类二次复杂度（findLocalAsset 也走这里）
+const tagReFor = (tag) => new RegExp(`<${tag}\\b[^>]{0,4096}>`, 'gi');
 const attrReFor = (attr) => new RegExp(`(?<![-\\w])${attr}\\s*=\\s*["']([^"']*)["']`, 'i');
-const attrReFullFor = (attr) => new RegExp(`((?<![-\\w])${attr}\\s*=\\s*)(["'])([^"']*)\\2`, 'i');
 // 扩展名后可跟查询串/锚点（style.css?v=1）
 const extReFor = (ext) => new RegExp(`\\.${ext}(?:[?#]|$)`, 'i');
 
@@ -115,74 +116,64 @@ export function findLocalAsset(html, tag, attr, ext) {
  * 跳到站点外——与 CSS/JS 断链同一症状但漏了半边，这里补齐。
  */
 export function rewriteLocalRefs(html) {
-  const rewrite = (source, tag, attr, ext) => source.replace(
-    tagReFor(tag),
-    (tagText) => tagText.replace(attrReFullFor(attr), (whole, prefix, quote, value) => {
-      const normalized = localAssetRef(value, ext);
-      const target = normalized;
-      if (!target || target === value.trim()) return whole;
-      return `${prefix}${quote}${target}${quote}`;
-    })
-  );
+  // 手写单向扫描，**保证线性**。
+  //
+  // 早期实现是「按 13 种标签各跑一次正则」：未闭合标签会让 `[^>]*` 每次扫到
+  // 字符串末尾才失败，引擎再前进一个字符重试 → O(N·L)。实测 200KB 的 `<img `
+  // 要 70 秒，而粘贴 / ZIP 上传 / 项目模式 publish 以及**每次公开页下发**
+  // 都会调用本函数，等于匿名可反复触发的站点级 DoS。
+  //
+  // 换成带 `{0,4096}` 上限的正则后仍有 O(N·4096) 的常数项（200KB 仍要 2.5 秒），
+  // 所以这里改为游标单调前进：内层扫描到下一个 `<` 或 `>` 就停，游标随之跳过
+  // 已扫描区间，**每个字符最多被访问一次**，整体 O(N)。
+  const source = String(html ?? '');
+  const len = source.length;
+  const out = [];
+  let i = 0;
 
-  // 不限定扩展名的引用（图片/媒体/内嵌页/跳转/提交都可能带任意后缀或无后缀）
-  const rewriteAnyExt = (source, tag, attr) => source.replace(
-    tagReFor(tag),
-    (tagText) => tagText.replace(attrReFullFor(attr), (whole, prefix, quote, value) => {
-      const normalized = anyLocalRef(value);
-      const target = normalized;
-      if (!target || target === value.trim()) return whole;
-      return `${prefix}${quote}${target}${quote}`;
-    })
-  );
+  while (i < len) {
+    const lt = source.indexOf('<', i);
+    if (lt === -1) {
+      out.push(source.slice(i));
+      break;
+    }
+    out.push(source.slice(i, lt));
 
-  // link[href] 交给下面的通用规则处理，否则同一标签先被 CSS 专用规则
-  // 加上项目前缀，再被通用规则加一次，最终出现 `/p/<id>/p/<id>/...`。
-  let out = rewrite(html, 'script', 'src', 'js');
-  for (const [tag, attr] of [
-    ['img', 'src'], ['source', 'src'], ['iframe', 'src'], ['audio', 'src'],
-    ['video', 'src'], ['video', 'poster'], ['track', 'src'], ['embed', 'src'],
-    ['object', 'data'], ['a', 'href'], ['area', 'href'], ['form', 'action'],
-    // link 除样式表外还有 icon / manifest / preload 等，同样要归一
-    ['link', 'href'],
-  ]) {
-    out = rewriteAnyExt(out, tag, attr);
+    let j = lt + 1;
+    while (j < len && isTagNameChar(source[j])) j++;
+    if (j === lt + 1) {
+      // `<` 后面不是标签名（注释、文本里的比较符号等）：原样输出
+      out.push('<');
+      i = lt + 1;
+      continue;
+    }
+    const rawTag = source.slice(lt + 1, j);
+
+    // 从标签名之后找 `>`；提前遇到 `<` 说明当前不是完整标签
+    let k = j;
+    let gt = -1;
+    while (k < len && k - j <= MAX_TAG_BODY) {
+      const ch = source[k];
+      if (ch === '>') {
+        gt = k;
+        break;
+      }
+      if (ch === '<') break;
+      k++;
+    }
+
+    if (gt === -1) {
+      // 未闭合 / 超长：原样输出到扫描停止位置，游标前移（不回头重扫）
+      out.push(source.slice(lt, k));
+      i = k;
+      continue;
+    }
+
+    out.push(`<${rawTag}${rewriteTagBody(rawTag, source.slice(j, gt))}>`);
+    i = gt + 1;
   }
-  // srcset 是「URL + 描述符」的逗号分隔列表，不能当单一路径折叠，
-  // 否则第一个候选归一后整串被 normalizeRelPath 吃掉后半段
-  out = out.replace(tagReFor('img'), (t) => t.replace(attrReFullFor('srcset'), (w, p, q, v) => {
-    const parts = v.split(',').map((cand) => {
-      const m = cand.match(/^(\s*)(\S+)(\s.*)?$/);
-      if (!m) return cand;
-      const normalized = anyLocalRef(m[2]);
-      const target = normalized;
-      return `${m[1]}${target || m[2]}${m[3] || ''}`;
-    });
-    const joined = parts.join(',');
-    return joined === v ? w : `${p}${q}${joined}${q}`;
-  }));
-  out = out.replace(tagReFor('source'), (t) => t.replace(attrReFullFor('srcset'), (w, p, q, v) => {
-    const parts = v.split(',').map((cand) => {
-      const m = cand.match(/^(\s*)(\S+)(\s.*)?$/);
-      if (!m) return cand;
-      const normalized = anyLocalRef(m[2]);
-      const target = normalized;
-      return `${m[1]}${target || m[2]}${m[3] || ''}`;
-    });
-    const joined = parts.join(',');
-    return joined === v ? w : `${p}${q}${joined}${q}`;
-  }));
-  // 内联 style 属性里的 url()（与 CSS 文件内部同一处理）
-  out = out.replace(/(<[a-z][^>]*\sstyle\s*=\s*)(["'])([^"']*)\2/gi,
-    (whole, prefix, quote, value) => {
-      // HTML 实体引号（&quot;）会让属性值里出现嵌套文本，外层截取只能拿到
-      // content:&quot;url(../x)&quot; 这一段。这里先按属性名判断，
-      // 文本类属性（content/quotes/counter-*）整体跳过，避免改写展示文字。
-      if (/^\s*(?:content|quotes|counter-[a-z-]+)\s*:/i.test(value)) return whole;
-      const rewritten = rewriteCssRefs(value);
-      return rewritten === value ? whole : `${prefix}${quote}${rewritten}${quote}`;
-    });
-  return out;
+
+  return out.join('');
 }
 
 /**
@@ -225,13 +216,190 @@ function anyLocalRef(value) {
   return normalizeRelPath(raw) || null;
 }
 
+/**
+ * 取出引用值末尾的查询串/锚点（`?v=1`、`#team`）。
+ *
+ * normalizeRelPath 会剥掉这一段——那是给「存储路径」用的；但改写引用时若直接把
+ * 归一后的路径写回属性，用户写的 `about.html#team` 会变成 `about.html`（站内锚点
+ * 全部失效）、`a.css?v=3` 变成 `a.css`（缓存参数被抹掉）。所以改写要把这一段接回去。
+ */
+function refSuffix(value) {
+  const raw = String(value ?? '').trim();
+  const at = raw.search(/[?#]/);
+  return at === -1 ? '' : raw.slice(at);
+}
+
+// 标签体上限：超过这个长度的「标签」按普通文本处理（防病态输入）
+const MAX_TAG_BODY = 4096;
+
+function isTagNameChar(ch) {
+  return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+    || (ch >= '0' && ch <= '9') || ch === ':' || ch === '-' || ch === '_';
+}
+
+/** 改写单个标签体内的引用属性（body 已是有界片段） */
+function rewriteTagBody(rawTag, body) {
+  const rules = TAG_RULES[rawTag.toLowerCase()];
+  let out = body;
+  if (rules) {
+    for (const rule of rules) {
+      out = rule === 'srcset' ? rewriteSrcsetAttr(out) : rewriteRefAttr(out, rule);
+    }
+  }
+  // 内联 style 属性里的 url() / @import（div/span 等无规则标签也要覆盖）
+  if (/style/i.test(out)) out = rewriteInlineStyleAttr(out);
+  return out;
+}
+
+// 每种标签要改写的属性；'srcset' 是逗号分隔多值，单独处理
+const TAG_RULES = {
+  script: [{ attr: 'src', ext: 'js' }],
+  img: [{ attr: 'src' }, 'srcset'],
+  source: [{ attr: 'src' }, 'srcset'],
+  iframe: [{ attr: 'src' }],
+  audio: [{ attr: 'src' }],
+  video: [{ attr: 'src' }, { attr: 'poster' }],
+  track: [{ attr: 'src' }],
+  embed: [{ attr: 'src' }],
+  object: [{ attr: 'data' }],
+  a: [{ attr: 'href' }],
+  area: [{ attr: 'href' }],
+  form: [{ attr: 'action' }],
+  // link 除样式表外还有 icon / manifest / preload，统一按本地引用归一
+  link: [{ attr: 'href' }],
+};
+
+/** 改写单个标签体内的一个引用属性（body 已是有界片段） */
+function rewriteRefAttr(body, rule) {
+  const re = new RegExp(`((?<![-\\w])${rule.attr}\\s*=\\s*)(["'])([^"']*)\\2`, 'i');
+  return body.replace(re, (whole, prefix, quote, value) => {
+    const normalized = rule.ext ? localAssetRef(value, rule.ext) : anyLocalRef(value);
+    if (!normalized) return whole;
+    const target = `${normalized}${refSuffix(value)}`;
+    if (target === value.trim()) return whole;
+    return `${prefix}${quote}${target}${quote}`;
+  });
+}
+
+/** srcset 是「URL + 描述符」的逗号分隔列表，必须逐候选归一 */
+function rewriteSrcsetAttr(body) {
+  const re = /((?<![-\\w])srcset\s*=\s*)(["'])([^"']*)\2/i;
+  return body.replace(re, (whole, prefix, quote, value) => {
+    const parts = value.split(',').map((cand) => {
+      const m = cand.match(/^(\s*)(\S+)(\s.*)?$/);
+      if (!m) return cand;
+      const normalized = anyLocalRef(m[2]);
+      const target = normalized ? `${normalized}${refSuffix(m[2])}` : m[2];
+      return `${m[1]}${target}${m[3] || ''}`;
+    });
+    const joined = parts.join(',');
+    return joined === value ? whole : `${prefix}${quote}${joined}${quote}`;
+  });
+}
+
+/** 内联 style 属性里的 url() / @import（文本类属性整体跳过，避免改写展示文字） */
+function rewriteInlineStyleAttr(body) {
+  const re = /((?<![-\\w])style\s*=\s*)(["'])([^"']*)\2/i;
+  return body.replace(re, (whole, prefix, quote, value) => {
+    if (/^\s*(?:content|quotes|counter-[a-z-]+)\s*:/i.test(value)) return whole;
+    const rewritten = rewriteCssRefs(value);
+    return rewritten === value ? whole : `${prefix}${quote}${rewritten}${quote}`;
+  });
+}
+
 // CSS url() 引用：url(x) / url("x") / url('x') 三种写法都要覆盖
-const CSS_URL_RE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s]*))\s*\)/gi;
+//
+// **同样故意不用正则**（与下面的 @import 同因）：`url\(\s*(?:"([^"]*)"|…)\s*\)`
+// 在一个 `url(` 上失败时，正则引擎只把起点前移 1 个字符重试，而每次重试都可能
+// 扫到字符串末尾——`"url(".repeat(60000)`（240KB，远低于 300KB 粘贴上限）
+// 实测耗时 96 秒，`"url(\"a".repeat(n)` 也呈平方增长。CSS 由用户提供，且
+// /p/<id>/*.css 每次请求都会重新改写 → 匿名可触发的站点级 DoS。
+// 改为手写线性扫描：失败时返回安全前进位置（stop），由调用方推进 cursor。
 
 // CSS @import 的字符串形式：@import "a.css"; / @import 'a.css' screen;
-// 与 url() 是两个独立语法，此前只处理了 url()，字符串形式整段漏过
-// 允许 @import 与路径之间夹注释（CSS 规范允许，压缩器也常这么输出）
-const CSS_IMPORT_RE = /@import(?:[ \t\r\n\f]|\/\*[\s\S]*?\*\/)+(?:"([^"]*)"|'([^']*)')/gi;
+// 与 url() 是两个独立语法，此前只处理了 url()，字符串形式整段漏过。
+//
+// **这里故意不用正则**：`@import(?:空白|/\*[\s\S]*?\*/)+"…"` 这种写法里，惰性
+// 量词可以跨过后续的 `*/`，多个注释块会产生指数级回溯——实测 24 个 `/*x*/`
+// （仅 152 字节）就要 413ms，28 个约 5 秒。CSS 内容完全由用户提供，一次上传
+// 就能把单进程事件循环卡死（下发侧 /p/<id>/*.css 也会触发）。改为手写扫描：
+// indexOf + 逐段前进，复杂度线性。
+const CSS_IMPORT_KEYWORD = '@import';
+const CSS_WS_RE = /[ \t\r\n\f]/;
+
+/**
+ * 从 `@import` 关键字之后扫描到路径字符串（允许中间夹空白与注释）。
+ *
+ * 每轮循环都严格前进。**失败时必须返回已扫描到的位置**（stop），调用方据此
+ * 推进 cursor：否则 `@import/*` 这种「注释没闭合」的输入会让每次扫描都走到
+ * 字符串末尾，而 cursor 只前进 7 个字符 → O(N·L) 二次复杂度（实测 540KB
+ * 输入可卡 40 秒，且公开页每次请求都会重新改写，等于匿名可触发的站点级 DoS）。
+ *
+ * @returns {{quoteStart:number, quoteEnd:number, value:string, quote:string}
+ *   | {stop:number}} 成功返回路径位置，失败返回安全的前进位置
+ */
+function scanImportPath(css, keywordEnd) {
+  let j = keywordEnd;
+  while (j < css.length && CSS_WS_RE.test(css[j])) j++;
+  while (css[j] === '/' && css[j + 1] === '*') {
+    const close = css.indexOf('*/', j + 2);
+    // 注释未闭合：后面不可能再有路径，直接扫到结尾
+    if (close === -1) return { stop: css.length };
+    j = close + 2;
+    while (j < css.length && CSS_WS_RE.test(css[j])) j++;
+  }
+  const quote = css[j];
+  // 空白/注释之后不是引号：这个 @import 没有字符串形式，从当前位置继续
+  if (quote !== '"' && quote !== "'") return { stop: j };
+  const end = css.indexOf(quote, j + 1);
+  // 引号未闭合：扫到结尾
+  if (end === -1) return { stop: css.length };
+  return { quoteStart: j, quoteEnd: end, value: css.slice(j + 1, end), quote };
+}
+
+/** 区间是否全部落在「代码区」（非注释/非字符串） */
+function isAllCode(mask, offset, length) {
+  for (let i = offset; i < offset + length; i++) {
+    if (!mask[i]) return false;
+  }
+  return true;
+}
+
+/** 第二遍：改写 @import 字符串形式的本地引用，保留关键字后的空白与注释 */
+function rewriteImportRefs(css, mask) {
+  const lower = css.toLowerCase();
+  const out = [];
+  let cursor = 0;
+  while (cursor < css.length) {
+    const at = lower.indexOf(CSS_IMPORT_KEYWORD, cursor);
+    if (at === -1) {
+      out.push(css.slice(cursor));
+      break;
+    }
+    out.push(css.slice(cursor, at));
+    const keywordEnd = at + CSS_IMPORT_KEYWORD.length;
+    const hit = scanImportPath(css, keywordEnd);
+    if (hit.stop !== undefined) {
+      // 失败也要把 cursor 推进到扫描停止位置，否则同一段文本会被反复重扫
+      const stop = Math.max(hit.stop, keywordEnd);
+      out.push(css.slice(at, stop));
+      cursor = stop;
+      continue;
+    }
+    const pathLen = hit.quoteEnd - hit.quoteStart + 1;
+    const editable = isAllCode(mask, at, CSS_IMPORT_KEYWORD.length)
+      && isAllCode(mask, hit.quoteStart, pathLen);
+    const normalized = editable ? cssLocalRef(hit.value) : null;
+    const target = normalized ? `${normalized}${refSuffix(hit.value)}` : '';
+    if (!target || target === hit.value.trim()) {
+      out.push(css.slice(at, hit.quoteEnd + 1));
+    } else {
+      out.push(css.slice(at, hit.quoteStart), hit.quote, target, hit.quote);
+    }
+    cursor = hit.quoteEnd + 1;
+  }
+  return out.join('');
+}
 
 /**
  * 把 CSS 里的本地 url() 引用改写成与存储路径一致的形式
@@ -251,36 +419,140 @@ const CSS_IMPORT_RE = /@import(?:[ \t\r\n\f]|\/\*[\s\S]*?\*\/)+(?:"([^"]*)"|'([^
  */
 export function rewriteCssRefs(css) {
   const source = String(css ?? '');
-  const mask = cssCodeMask(source);
-  const isCode = (offset, length) => {
-    for (let i = offset; i < offset + length; i++) {
-      if (!mask[i]) return false;
-    }
-    return true;
-  };
-  return source.replace(CSS_URL_RE, (whole, dq, sq, bare, offset) => {
-    if (!isCode(offset, whole.length)) return whole;
-    if (isTextProperty(source, offset)) return whole;
-    const value = dq ?? sq ?? bare ?? '';
-    const quote = dq !== undefined ? '"' : (sq !== undefined ? "'" : '');
-    const normalized = cssLocalRef(value);
-    if (!normalized || normalized === value.trim()) return whole;
-    return `url(${quote}${normalized}${quote})`;
-  }).replace(CSS_IMPORT_RE, (whole, dq, sq, offset) => {
-    // @import 与路径之间可能有注释；注释本身不可改，但关键字与路径字符串可改。
-    // 只校验首尾（关键字 + 路径），避免把合法写法误判为注释而跳过。
-    if (!isCode(offset, '@import'.length)) return whole;
-    const pathStart = offset + whole.length - (dq ?? sq ?? '').length - 2;
-    if (!isCode(pathStart, (dq ?? sq ?? '').length + 2)) return whole;
-    const value = dq ?? sq ?? '';
-    const quote = dq !== undefined ? '"' : "'";
-    const normalized = cssLocalRef(value);
-    if (!normalized || normalized === value.trim()) return whole;
-    // 只替换路径字符串，保留 @import 后的原始空白/注释（如 @import/*x*/"a.css"）
-    const pathLiteral = `${quote}${value}${quote}`;
-    return whole.slice(0, whole.length - pathLiteral.length) + `${quote}${normalized}${quote}`;
-  });
+  const afterUrl = rewriteUrlRefs(source, cssCodeMask(source));
+  // 必须在 url() 改写**之后**重新计算 mask：改写会改变字符串长度，
+  // 沿用旧 mask 会让偏移量错位，把真实代码误判成注释（反之亦然）。
+  return rewriteImportRefs(afterUrl, cssCodeMask(afterUrl));
 }
+
+const CSS_URL_KEYWORD = 'url(';
+const CSS_ANY_WS_RE = /\s/;
+
+/**
+ * 从 `url(` 关键字之后扫描到路径字符串与右括号。
+ *
+ * 与 scanImportPath 同一约束：**失败时必须返回已扫描到的位置**（stop），
+ * 调用方据此推进 cursor，否则同一段文本会被反复重扫 → O(N·L) 平方复杂度。
+ *
+ * 三种失败各自的收敛方式：
+ *  - 裸值扫到结尾（既无 `)` 也无空白）：后面不可能再有 url(...)，直接收敛到末尾；
+ *  - 裸值后不是 `)`：从裸值终点继续，不会漏掉后续 url(；
+ *  - 引号未闭合：从开引号处继续（不能收敛到末尾——`url("url(a)` 里后一个
+ *    url(a) 仍是合法引用，旧正则也能匹配到它）。
+ *
+ * @returns {{start:number,end:number,value:string,quote:string}|{stop:number}}
+ *   end 是右括号下标（含），start 是路径内容起点
+ */
+function scanUrlRef(css, keywordEnd) {
+  const len = css.length;
+  let j = keywordEnd;
+  while (j < len && CSS_ANY_WS_RE.test(css[j])) j++;
+  const quote = css[j];
+  if (quote === '"' || quote === "'") {
+    const close = css.indexOf(quote, j + 1);
+    if (close === -1) return { stop: j };
+    let k = close + 1;
+    while (k < len && CSS_ANY_WS_RE.test(css[k])) k++;
+    if (css[k] !== ')') return { stop: j };
+    return { start: j, end: k, value: css.slice(j + 1, close), quote };
+  }
+  let k = j;
+  while (k < len && css[k] !== ')' && !CSS_ANY_WS_RE.test(css[k])) k++;
+  if (k >= len) return { stop: len };
+  let m = k;
+  while (m < len && CSS_ANY_WS_RE.test(css[m])) m++;
+  if (css[m] !== ')') return { stop: k };
+  return { start: j, end: m, value: css.slice(j, k), quote: '' };
+}
+
+/**
+ * 线性改写 CSS 里的 url() 本地引用
+ *
+ * 除扫描本身外还有一处必须做增量处理：`isTextProperty` 原本每次调用都从当前
+ * 位置向前回溯到最近的 `;`/`{` 再截取整段声明，同一段声明里出现 N 个 url()
+ * 就是 O(N²)（实测 48KB 的 `url(a)` 串行耗时 1.1 秒）。这里维护一个单调前进的
+ * 声明边界 + 按边界缓存的属性名判定，总代价降到 O(N)。
+ */
+function rewriteUrlRefs(source, mask) {
+  const lower = source.toLowerCase();
+  const out = [];
+  const isTextProp = createTextPropChecker(source);
+  let cursor = 0;
+  // 最近一个声明边界（; 或 {）的下标；-1 表示「文件开头」
+  let boundary = -1;
+  // boundary 已经推进到的位置，保证整串只被扫一遍
+  let scanned = 0;
+  while (cursor < source.length) {
+    const at = lower.indexOf(CSS_URL_KEYWORD, cursor);
+    if (at === -1) {
+      out.push(source.slice(cursor));
+      break;
+    }
+    out.push(source.slice(cursor, at));
+    for (let k = scanned; k < at; k++) {
+      const ch = source[k];
+      if (ch === ';' || ch === '{') boundary = k;
+    }
+    scanned = at;
+    const hit = scanUrlRef(source, at + CSS_URL_KEYWORD.length);
+    if (hit.stop !== undefined) {
+      // 失败也要把 cursor 推进到扫描停止位置，否则同一段文本会被反复重扫
+      const stop = Math.max(hit.stop, at + CSS_URL_KEYWORD.length);
+      out.push(source.slice(at, stop));
+      cursor = stop;
+      continue;
+    }
+    const wholeLen = hit.end + 1 - at;
+    const editable = isAllCode(mask, at, wholeLen) && !isTextProp(boundary);
+    const normalized = editable ? cssLocalRef(hit.value) : null;
+    const target = normalized ? `${normalized}${refSuffix(hit.value)}` : '';
+    if (!target || target === hit.value.trim()) {
+      out.push(source.slice(at, hit.end + 1));
+    } else {
+      out.push(source.slice(at, hit.start), hit.quote, target, hit.quote, ')');
+    }
+    cursor = hit.end + 1;
+  }
+  return out.join('');
+}
+
+/**
+ * 属性名判定器：按「声明边界」缓存结果。
+ *
+ * 属性名只取决于边界之后的那一小段文本（`<ws>name<ws>:`），与 url() 位置无关，
+ * 因此同一段声明里判定一次即可复用，避免逐个 url() 重复解析。
+ */
+function createTextPropChecker(source) {
+  let cachedBoundary = -2;
+  let cached = false;
+  return (boundary) => {
+    if (boundary !== cachedBoundary) {
+      cachedBoundary = boundary;
+      cached = parseTextProperty(source, boundary);
+    }
+    return cached;
+  };
+}
+
+/**
+ * 判断声明边界之后的属性名是否为 content / quotes / counter-*
+ * 这些属性的值是文本，里面的 url(...) 只是文字内容，不能当资源引用改写。
+ * 支持普通 CSS 与 HTML 内联 style 的 &quot; 实体形式（实体不是引号边界，
+ * 靠属性名兜底）。不截取整段声明，只按需读取开头几个字符。
+ */
+function parseTextProperty(source, boundary) {
+  const len = source.length;
+  let i = boundary + 1;
+  while (i < len && CSS_ANY_WS_RE.test(source[i])) i++;
+  const start = i;
+  while (i < len && /[a-z-]/i.test(source[i])) i++;
+  if (i === start) return false;
+  const prop = source.slice(start, i).toLowerCase();
+  while (i < len && CSS_ANY_WS_RE.test(source[i])) i++;
+  if (source[i] !== ':') return false;
+  return prop === 'content' || prop === 'quotes' || prop.startsWith('counter-');
+}
+
 
 /**
  * 公开入口前缀：项目入口是不带尾斜杠的 `/p/<id>`，浏览器会把它当成文件路径，
@@ -291,23 +563,6 @@ function normalizePublicBase(basePath) {
   const base = String(basePath ?? '').trim().replace(/\/+$/, '');
   if (!base || !base.startsWith('/')) return '';
   return base;
-}
-
-/**
- * 判断某个位置是否处于 content / quotes / counter-* 属性的值中
- * 这些属性的值是文本，里面的 url(...) 只是文字内容，不能当资源引用改写。
- * 支持普通 CSS 与 HTML 内联 style 的 &quot; 实体形式。
- */
-function isTextProperty(source, offset) {
-  // 从当前声明的起始（; 或 {）到 offset 之间取属性名。
-  // 允许值与 url() 之间夹引号、HTML 实体等文本，不要求紧邻。
-  let i = offset - 1;
-  while (i >= 0 && source[i] !== ';' && source[i] !== '{') i--;
-  const decl = source.slice(i + 1, offset);
-  const m = decl.match(/^\s*([a-z-]+)\s*:/i);
-  if (!m) return false;
-  const prop = m[1].toLowerCase();
-  return prop === 'content' || prop === 'quotes' || prop.startsWith('counter-');
 }
 
 /**

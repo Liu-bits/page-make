@@ -33,7 +33,9 @@ enum ProjectStatus: String, Codable {
     var titleKey: String { "status_\(rawValue)" }
 }
 
-/// 部署形态（部署选项四选一）
+/// 部署形态。创建页不再让用户手动选择：上传/项目模式会按项目里的
+/// `package.json` 与锁文件自动识别（见 `DeployKindDetector`），
+/// 这里只负责把最终形态在界面与接口之间传递。
 enum ProjectKind: String, Codable, CaseIterable, Identifiable {
     case staticSite = "static"
     case npm

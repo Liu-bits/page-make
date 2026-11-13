@@ -1,17 +1,18 @@
 # Page-make
 
-网页与 Node 服务托管工具：用户上传 ZIP、粘贴 HTML/CSS/JS，或使用项目模式管理虚拟文件，
-后台自动解压、找入口、诊断并生成可公开访问的链接。VIP 及以上可部署 npm / pnpm
-后端项目；普通用户仍可上传，但部署选项只能选择纯前端。PHP 与 C++ 不支持。
+网页与 Node 服务托管工具：用户上传 ZIP、粘贴 HTML/CSS，或使用项目模式管理虚拟文件，
+后台自动解压、找入口、诊断并生成可公开访问的链接。部署形态自动识别（含 `package.json`
+即为 npm / pnpm 后端）；VIP 及以上可部署后端项目，普通用户只能部署纯前端。PHP 与 C++ 不支持。
 
 - **iOS**：SwiftUI 纯原生实现 + AuthenticationServices（Sign in with Apple）
-- **后端**：Node 22 容器（Docker），npm / pnpm 项目在受限子进程中安装、构建与运行
+- **后端**：Node 22 容器（Docker），npm / pnpm / js 项目在受限子进程中安装、构建与运行
+- **部署**：ModelScope（Docker 类型空间）
 - **构建**：CI · `xcode-27` runner（macOS 27.0.1）· Xcode 27.0.0 · iOS 27.0 模拟器
 - **许可**：专有软件，保留所有权利
 
 > 架构说明：业务 handler 位于 `backend/`，由 `docker/server.mjs` 适配为普通
 > Node HTTP 服务，数据落盘到 `DATA_DIR`。静态站点直接由 `/p/<id>` 下发；
-> npm / pnpm 项目由 `backend/lib/backend-runtime.js` 安装、构建并反向代理；
+> npm / pnpm / js 项目由 `backend/lib/backend-runtime.js` 安装、构建并反向代理；
 > 发布与刷新是异步状态机，客户端轮询 `/status`，避免长请求被网关或 iOS 超时截断。
 
 ## 目录结构
@@ -28,13 +29,13 @@
 │   ├── p/[projectId]/          #   公开访问（静态文件或后端反向代理）
 │   └── lib/                    #   kv / zip / diagnostics / tiers / backend-runtime / process
 ├── docker/server.mjs           # 容器适配层（Node HTTP + 磁盘 KV）
-├── Dockerfile                  # 部署镜像（私有容器 / 任意容器平台）
+├── Dockerfile                  # 部署镜像（ModelScope Docker 空间）
 ├── dev/run-tests.mjs           # 后端单元测试：node dev/run-tests.mjs
 ├── dev/test-server.mjs         # 容器冒烟测试（HTTP 全流程）：node dev/test-server.mjs
 ├── dev/test-guest-ttl.mjs      # 游客 7 天空闲过期与身份重置
 ├── dev/test-assets.mjs         # HTML/CSS/JS 引用与静态资源回归
 ├── dev/test-admin.mjs          # VIP、封禁、解封、删号与后台安全
-|├── scripts/deploy-modelscope.sh # CI 部署：推送构建子集到部署仓库 Git
+├── scripts/deploy-modelscope.sh # CI 部署：推送子集到 ModelScope 创空间 Git → 平台自动构建
 ├── scripts/check-localization.mjs # 中英本地化 key 完整性校验
 └── .github/workflows/
     ├── page-make.yaml          #   主 CI/CD（测试 + 部署）
@@ -81,20 +82,20 @@ docker run -p 7860:7860 -e APPLE_CLIENT_ID=com.pagemake.app pagemake
 DEV_NO_AUTH=1 DATA_DIR=./data node docker/server.mjs
 ```
 
-## 部署到私有容器（唯一部署目标）
+## 部署到 ModelScope（唯一部署目标）
 
 ### 第一次部署（手动）
 
-1. 创建容器空间，SDK 类型选 **Docker**
-2. 把部署仓库同步到空间仓库（根目录 `Dockerfile` 即构建入口，服务监听 `0.0.0.0:7860`）
+1. 在 ModelScope 创建 Docker 类型空间
+2. 把部署仓库同步到空间仓库（根目录 `Dockerfile` 即构建入口）
 3. 空间**环境变量**配置 `APPLE_CLIENT_ID`（iOS Bundle ID，校验 Apple 登录）
 4. 上线后 iOS 端 `Config.baseURL` 改为空间域名
 
-约定：数据持久化在 `/mnt/workspace/pagemake-data`（重启不丢）；链接**长期有效**（自托管无预览域名限制），直到用户删除项目。
+约定：数据持久化在空间持久卷（重启不丢）；已登录用户的链接长期有效，直到用户删除项目；游客项目连续 7 天无人访问才过期。
 
 ### 之后每次提交（自动）
 
-配置仓库后，push 到 main 且测试全绿即自动部署：
+`debug` 分支全绿后合并到 `main`，`main` 上的部署工作流即自动推送构建子集：
 
 | 位置 | 名称 | 值 |
 | --- | --- | --- |
@@ -113,18 +114,17 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 - **单点**：容器重启期间短暂不可用（Node 冷启动 1~2 秒，数据不丢）
 - **网络**：国内快、海外慢（无 CDN）；用户主要在海外可改部署到 Oracle Always Free 等海外机房（同一镜像，零改动）
 - `DEV_NO_AUTH=1` **仅限本地调试**，生产环境禁止设置（等于关闭登录）
-- 部署形态由创建页选择：纯前端、npm、pnpm；npm / pnpm 仅 VIP 及以上可用
+- 部署形态由客户端**自动识别**：含 `package.json` 即为后端项目（有 `pnpm-lock.yaml` → pnpm，否则 npm），
+  否则为纯前端；后端形态仅 VIP 及以上可用，创建页不再提供形态选择
 
 ## CI
 
-`push main / tag v* / PR` 触发：
-
-| Job | runner | 内容 |
+| 分支 | 工作流 | 内容 |
 | --- | --- | --- |
-| backend-test | ubuntu-latest | Node 22 后端单测 + 容器冒烟测试（HTTP 全流程）+ Docker 镜像构建校验 |
-| ios-build | xcode-27（macOS 27.0.1） | Xcode 27.0.0 校验 → xcodegen → 编译（不签名）→ iOS 27.0 模拟器测试 |
-| ipa | xcode-27（macOS 27.0.1） | 仅 main / tag：真机归档（不签名）→ 打包 **未签名 IPA** 产物（CI 页面 Artifacts 下载） |
-| deploy | ubuntu-latest | 仅 main 分支，推送构建子集到部署空间（需配置 `MODELSCOPE_SPACE` / `MODELSCOPE_TOKEN`） |
+| `debug`（push / PR / tag） | `.github/workflows/debug.yaml` | backend-test（后端全部测试 + 静态检查 + Docker 构建）、ios-build（xcode-27 编译 + 单测）、ipa（未签名 IPA 产物） |
+| `main`（push） | `.github/workflows/page-make.yaml` | 只做部署：推送构建子集到 ModelScope 创空间 |
+
+所有代码先在 `debug` 分支跑绿，再合并到 `main`。`main` 不跑测试，因此**不允许直接向 main 推代码**。
 
 ## API 一览
 
@@ -139,7 +139,7 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 | `POST /api/upload/chunk` | 上传分片（600KB/片） |
 | `POST /api/upload/finish` | 完成上传，后台处理（processing → ready/failed） |
 | `GET /api/projects` | 我的项目列表 |
-| `POST /api/projects/paste` | 粘贴代码直接创建（HTML 必填，CSS/JS 可选，自动注入引用） |
+| `POST /api/projects/paste` | 粘贴代码直接创建（HTML 必填，CSS 可选；粘贴模式不接受 JS） |
 | `GET/POST /api/projects/:id` | 详情 / 重命名或删除（网关兼容：删除走 `POST action=delete`） |
 | `GET /api/projects/:id/export` | 导出项目源码 ZIP（VIP 及以上） |
 | `GET /api/projects/:id/status` | 状态轮询（每 2 秒） |
@@ -156,10 +156,12 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 - VIP 是现有 Apple / Google / 游客账号的附加权益，不提供独立 VIP 账号或邮箱密码登录
 - 等级从低到高为普通、VIP、SVIP、Ultra；管理员可在 `/admin` 原地调整，不更换 userId / 会话 / 项目
 - 项目配额：普通静态项目 300KB；VIP 1MB；SVIP 10MB；Ultra 不设业务上限
-- npm / pnpm 后端部署从 VIP 起可用；普通用户仍可上传，但部署选项只有纯前端
-- 升级链路：App 内设置页「升级 VIP」→ 提交申请（可附 300 字说明）→ 管理后台 `/admin`
-  审核（批准保留原 userId / token / 项目，权益即时生效；驳回可附原因并允许重新提交）
-- 单线路部署（私有容器），创建时无需选择线路
+- 部署形态自动识别（含 `package.json` → npm/pnpm 后端，否则纯前端）；后端形态从 VIP 起可用，
+  普通用户仍可上传，但只会按纯前端部署
+- 升级链路：App 内设置页显示**当前等级**，只能申请**下一等级**（普通 → VIP → SVIP → Ultra；
+  已是 Ultra 时不再显示申请入口）→ 提交申请（可附 300 字说明）→ 管理后台 `/admin` 审核
+  （批准后升到所申请的等级，保留原 userId / token / 项目；驳回可附原因并允许重新提交）
+- 单线路部署（ModelScope），创建时无需选择线路
 - 语言：跟随 iOS 系统语言（中文/英文，其他默认英文），不提供手动切换
 - 诊断详情是登录特权，未登录只显示「您的代码有错误」
 
@@ -167,7 +169,7 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 
 - [x] 隐私政策 / 用户协议：App 内直接展示（`ios/PageMake/Resources/Documents/`，中英双语随系统语言切换）
 - [ ] App Store Connect 填写「App 隐私」标签（数据收集类型声明）
-- [ ] 容器空间环境变量配置 `APPLE_CLIENT_ID`
+- [ ] ModelScope 空间环境变量配置 `APPLE_CLIENT_ID`
 - [ ] iOS 端 `Config.baseURL` 改为空间域名
 - [ ] 配置仓库变量 `PAGEMAKE_URL` 启用保活探测
 - [ ] 配置 `MODELSCOPE_SPACE` / `MODELSCOPE_TOKEN` 启用 CI 自动部署

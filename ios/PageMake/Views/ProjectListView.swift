@@ -113,10 +113,10 @@ struct ProjectListView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         Text(L10n.string("login_choose_title"))
                             .font(.system(.title3, design: .serif, weight: .bold))
-                            .foregroundStyle(PageMakeTheme.ink)
+                            .foregroundStyle(Theme.label)
                         Text(L10n.string("login_choose_hint"))
                             .font(.subheadline)
-                            .foregroundStyle(PageMakeTheme.inkSoft)
+                            .foregroundStyle(Theme.secondaryLabel)
 
                         VStack(spacing: 11) {
                             Button {
@@ -145,7 +145,7 @@ struct ProjectListView: View {
 
                 Label(L10n.string("public_links_note"), systemImage: "link")
                     .font(.footnote)
-                    .foregroundStyle(PageMakeTheme.inkSoft)
+                    .foregroundStyle(Theme.secondaryLabel)
                     .padding(.bottom, 20)
                 WorkspaceBottomSpacer()
             }
@@ -166,19 +166,19 @@ struct ProjectListView: View {
                     VStack(spacing: 18) {
                         ZStack {
                             Circle()
-                                .fill(PageMakeTheme.coral.opacity(0.11))
+                                .fill(Theme.highlight.opacity(0.11))
                                 .frame(width: 92, height: 92)
                             Image(systemName: "rectangle.and.pencil.and.ellipsis")
                                 .font(.system(size: 38, weight: .medium))
-                                .foregroundStyle(PageMakeTheme.coral)
+                                .foregroundStyle(Theme.highlight)
                         }
 
                         Text(L10n.string("quick_start_title"))
                             .font(.system(.title2, design: .serif, weight: .bold))
-                            .foregroundStyle(PageMakeTheme.ink)
+                            .foregroundStyle(Theme.label)
                         Text(L10n.string("quick_start_hint"))
                             .font(.subheadline)
-                            .foregroundStyle(PageMakeTheme.inkSoft)
+                            .foregroundStyle(Theme.secondaryLabel)
                             .multilineTextAlignment(.center)
 
                         Button(action: onCreateTapped) {
@@ -209,10 +209,10 @@ struct ProjectListView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(L10n.string("library_title"))
                             .font(.system(.title2, design: .serif, weight: .bold))
-                            .foregroundStyle(PageMakeTheme.ink)
+                            .foregroundStyle(Theme.label)
                         Text(L10n.format("library_count", visibleProjects.count))
                             .font(.caption)
-                            .foregroundStyle(PageMakeTheme.inkSoft)
+                            .foregroundStyle(Theme.secondaryLabel)
                     }
                     Spacer()
                     Menu {
@@ -227,11 +227,8 @@ struct ProjectListView: View {
                             .font(.caption.bold())
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)
-                            .background(PageMakeTheme.surface, in: Capsule())
-                            .foregroundStyle(PageMakeTheme.ink)
-                            .overlay {
-                                Capsule().stroke(PageMakeTheme.ink.opacity(0.08), lineWidth: 1)
-                            }
+                            .foregroundStyle(Theme.label)
+                            .glassEffect(.regular, in: Capsule())
                     }
                     .accessibilityLabel(L10n.string("sort_by"))
                 }
@@ -242,10 +239,10 @@ struct ProjectListView: View {
                     PageMakeCard {
                         HStack(spacing: 13) {
                             Image(systemName: "magnifyingglass")
-                                .foregroundStyle(PageMakeTheme.coral)
+                                .foregroundStyle(Theme.highlight)
                             Text(L10n.string("search_empty"))
                                 .font(.subheadline)
-                                .foregroundStyle(PageMakeTheme.inkSoft)
+                                .foregroundStyle(Theme.secondaryLabel)
                         }
                     }
                 } else {
@@ -352,7 +349,7 @@ struct ProjectListView: View {
                             .font(.system(.subheadline, design: .rounded, weight: .bold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(PageMakeTheme.coral, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                            .background(Theme.highlight, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                             .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)
@@ -369,7 +366,8 @@ struct ProjectListView: View {
                 .allowsHitTesting(false)
         }
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .shadow(color: PageMakeTheme.ink.opacity(0.18), radius: 24, x: 0, y: 14)
+        // 固定黑色阴影：Theme.label 在深色模式下是白色，会变成白色发光
+        .shadow(color: Color.black.opacity(0.18), radius: 24, x: 0, y: 14)
     }
 
     private func heroMetric(value: String, label: String) -> some View {
@@ -397,7 +395,7 @@ struct ProjectListView: View {
     private var searchField: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(PageMakeTheme.inkSoft)
+                .foregroundStyle(Theme.secondaryLabel)
             TextField(L10n.string("search_projects"), text: $searchText)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -406,7 +404,7 @@ struct ProjectListView: View {
                     searchText = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(PageMakeTheme.inkSoft.opacity(0.7))
+                        .foregroundStyle(Theme.secondaryLabel.opacity(0.7))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(L10n.string("clear_search"))
@@ -414,11 +412,7 @@ struct ProjectListView: View {
         }
         .padding(.horizontal, 15)
         .padding(.vertical, 12)
-        .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .stroke(PageMakeTheme.ink.opacity(0.07), lineWidth: 1)
-        }
+        .glassPanel(radius: 15)
     }
 
     private func projectCard(_ project: Project) -> some View {
@@ -436,11 +430,11 @@ struct ProjectListView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(project.name)
                         .font(.system(.headline, design: .rounded, weight: .bold))
-                        .foregroundStyle(PageMakeTheme.ink)
+                        .foregroundStyle(Theme.label)
                         .lineLimit(1)
                     Text(L10n.string(projectKindKey(project)))
                         .font(.caption)
-                        .foregroundStyle(PageMakeTheme.inkSoft)
+                        .foregroundStyle(Theme.secondaryLabel)
                 }
 
                 Spacer(minLength: 30)
@@ -458,49 +452,44 @@ struct ProjectListView: View {
             }
 
             Divider()
-                .overlay(PageMakeTheme.ink.opacity(0.06))
+                .overlay(Theme.label.opacity(0.06))
 
             HStack(spacing: 8) {
                 Image(systemName: project.publicURL == nil ? "clock" : "link")
                     .font(.caption)
-                    .foregroundStyle(project.publicURL == nil ? PageMakeTheme.gold : PageMakeTheme.sea)
+                    .foregroundStyle(project.publicURL == nil ? Theme.premium : Theme.positive)
                 Text(project.publicURL?.host ?? L10n.string("project_link_pending"))
                     .font(.caption)
-                    .foregroundStyle(PageMakeTheme.inkSoft)
+                    .foregroundStyle(Theme.secondaryLabel)
                     .lineLimit(1)
                 Spacer()
                 Text(DateParsing.display(project.createdAt))
                     .font(.caption2)
-                    .foregroundStyle(PageMakeTheme.inkSoft.opacity(0.8))
+                    .foregroundStyle(Theme.secondaryLabel.opacity(0.8))
                 Image(systemName: "chevron.right")
                     .font(.caption2.bold())
-                    .foregroundStyle(PageMakeTheme.inkSoft.opacity(0.45))
+                    .foregroundStyle(Theme.secondaryLabel.opacity(0.45))
             }
 
             if let errorCode = project.errorCode, project.status == .failed {
                 Label(PlainLanguage.message(forErrorCode: errorCode), systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(PageMakeTheme.coral)
+                    .foregroundStyle(Theme.highlight)
                     .lineLimit(2)
             }
         }
         .padding(17)
-        .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(PageMakeTheme.ink.opacity(0.065), lineWidth: 1)
-        }
-        .shadow(color: PageMakeTheme.ink.opacity(0.065), radius: 16, x: 0, y: 8)
-        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .glassPanel(radius: Theme.cardRadius)
+        .contentShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
     }
 
     private func metadataPill(icon: String, text: String) -> some View {
         Label(text, systemImage: icon)
             .font(.caption2)
-            .foregroundStyle(PageMakeTheme.inkSoft)
+            .foregroundStyle(Theme.secondaryLabel)
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
-            .background(PageMakeTheme.ink.opacity(0.045), in: Capsule())
+            .background(Theme.elevatedBackground, in: Capsule())
     }
 
     private func projectMenu(_ project: Project) -> some View {
@@ -518,9 +507,9 @@ struct ProjectListView: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(PageMakeTheme.inkSoft)
+                .foregroundStyle(Theme.secondaryLabel)
                 .frame(width: 28, height: 28)
-                .background(PageMakeTheme.ink.opacity(0.055), in: Circle())
+                .glassEffect(.regular.interactive(), in: Circle())
         }
         .accessibilityLabel(L10n.string("more_actions"))
     }
@@ -537,16 +526,16 @@ struct ProjectListView: View {
         VStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(PageMakeTheme.sea)
+                .foregroundStyle(Theme.positive)
             Text(L10n.string(titleKey))
                 .font(.caption2.bold())
-                .foregroundStyle(PageMakeTheme.inkSoft)
+                .foregroundStyle(Theme.secondaryLabel)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
-        .background(PageMakeTheme.paperWarm, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .glassPanel(radius: 14)
     }
 
     private func projectKindKey(_ project: Project) -> String {
@@ -567,11 +556,11 @@ struct ProjectListView: View {
     }
 
     private func projectTint(_ project: Project) -> Color {
-        if project.kind.isBackend { return PageMakeTheme.sea }
+        if project.kind.isBackend { return Theme.positive }
         switch project.sourceType {
-        case "explorer": return PageMakeTheme.sea
-        case "paste": return PageMakeTheme.coral
-        default: return PageMakeTheme.gold
+        case "explorer": return Theme.positive
+        case "paste": return Theme.highlight
+        default: return Theme.premium
         }
     }
 

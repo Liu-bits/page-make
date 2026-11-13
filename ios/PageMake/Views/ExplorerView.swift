@@ -16,6 +16,8 @@ struct ExplorerView: View {
     @State private var alertItem: AlertItem?
     @State private var isPublishing = false
     @State private var isWorking = false
+    /// 检测到后端项目但当前账号不是 VIP：等用户明确选择按纯前端发布或取消。
+    @State private var pendingBackendPublish = false
 
     init(project: Project) {
         self.initial = project
@@ -115,6 +117,7 @@ struct ExplorerView: View {
             Divider()
             content
         }
+        .background(PageMakeBackground())
         .navigationTitle(current.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -183,7 +186,7 @@ struct ExplorerView: View {
                 NewFileSheet(
                     initialDir: currentDir,
                     existingPaths: current.files.map(\.path),
-                    kind: current.kind
+                    kind: fileWhitelistKind
                 ) { path in
                     createFile(path: path, sheetId: sheet.id)
                 }
@@ -192,7 +195,7 @@ struct ExplorerView: View {
                     createFolder(path: path)
                 }
             case .rename(let entry):
-                RenameEntrySheet(entry: entry) { newName in
+                RenameEntrySheet(entry: entry, kind: fileWhitelistKind) { newName in
                     rename(entry, to: newName)
                 }
             case .edit(let path):
@@ -235,6 +238,18 @@ struct ExplorerView: View {
                 message: Text(item.message),
                 dismissButton: .default(Text(L10n.string("done")))
             )
+        }
+        .confirmationDialog(
+            L10n.string("deploy_backend_requires_vip_title"),
+            isPresented: $pendingBackendPublish,
+            titleVisibility: .visible
+        ) {
+            Button(L10n.string("deploy_publish_static")) {
+                Task { await performPublish(kind: .staticSite) }
+            }
+            Button(L10n.string("cancel"), role: .cancel) {}
+        } message: {
+            Text(L10n.string("deploy_backend_requires_vip_message"))
         }
         .overlay {
             if isWorking {
@@ -290,7 +305,7 @@ struct ExplorerView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(.bar)
+        .glassEffect(.regular, in: Rectangle())
     }
 
     // MARK: - 内容
@@ -339,6 +354,7 @@ struct ExplorerView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
             .animation(.default, value: currentDir)
         }
     }
@@ -385,9 +401,14 @@ struct ExplorerView: View {
                         .foregroundStyle(.tertiary)
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .glassPanel(radius: 14)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
         .swipeActions(edge: .trailing) {
             Button(role: .destructive) {
                 deleteTarget = entry
@@ -436,13 +457,13 @@ struct ExplorerView: View {
                 } label: {
                     Label(L10n.string("explorer_edit"), systemImage: "square.and.pencil")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 Button {
                     activeSheet = .rename(file)
                 } label: {
                     Label(L10n.string("rename"), systemImage: "pencil")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
             }
         }
         .font(.footnote)
@@ -453,19 +474,20 @@ struct ExplorerView: View {
             Spacer()
             Image(systemName: "folder.badge.plus")
                 .font(.system(size: 54))
-                .foregroundStyle(.blue)
+                .foregroundStyle(Theme.accent)
             Text(L10n.string("explorer_empty_title"))
                 .font(.system(.title3, design: .rounded, weight: .bold))
+                .foregroundStyle(Theme.label)
             Text(L10n.string("explorer_empty_hint"))
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondaryLabel)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 30)
             HStack {
                 Button(L10n.string("explorer_new_file")) { activeSheet = .newFile }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                 Button(L10n.string("explorer_new_folder")) { activeSheet = .newFolder }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
             }
             Button {
                 Task { await publish() }
@@ -477,7 +499,7 @@ struct ExplorerView: View {
                     systemImage: "hammer.fill"
                 )
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
             .disabled(isPublishing)
             Spacer()
         }
@@ -488,11 +510,11 @@ struct ExplorerView: View {
             Spacer()
             Image(systemName: "folder")
                 .font(.system(size: 46))
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Theme.tertiaryLabel)
             Text(L10n.string("explorer_empty_folder"))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondaryLabel)
             Button(L10n.string("explorer_new_file")) { activeSheet = .newFile }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
             Spacer()
         }
     }
@@ -505,17 +527,17 @@ struct ExplorerView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(current.publicURL == nil ? PageMakeTheme.gold : PageMakeTheme.sea)
+                            .fill(current.publicURL == nil ? Theme.premium : Theme.positive)
                             .frame(width: 7, height: 7)
                         Text(current.publicURL == nil
                              ? L10n.string("explorer_not_built")
                              : L10n.string("explorer_built"))
                             .font(.system(.caption, design: .rounded, weight: .bold))
-                            .foregroundStyle(PageMakeTheme.ink)
+                            .foregroundStyle(Theme.label)
                     }
                     Text(entrySummary)
                         .font(.caption2)
-                        .foregroundStyle(PageMakeTheme.inkSoft)
+                        .foregroundStyle(Theme.secondaryLabel)
                         .lineLimit(1)
                 }
 
@@ -541,9 +563,11 @@ struct ExplorerView: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
-                    .background(PageMakeTheme.coral,
-                                in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.label)
+                    .glassEffect(
+                        .regular.tint(Theme.highlight.opacity(0.38)).interactive(),
+                        in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    )
                 }
                 .buttonStyle(.plain)
                 .disabled(isPublishing)
@@ -556,7 +580,7 @@ struct ExplorerView: View {
                 HStack(spacing: 8) {
                     Text(url.absoluteString)
                         .font(.caption2.monospaced())
-                        .foregroundStyle(PageMakeTheme.inkSoft)
+                        .foregroundStyle(Theme.secondaryLabel)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 4)
@@ -575,12 +599,12 @@ struct ExplorerView: View {
                     .accessibilityLabel(L10n.string("qr_code"))
                 }
                 .font(.caption)
-                .foregroundStyle(PageMakeTheme.inkSoft)
+                .foregroundStyle(Theme.secondaryLabel)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(PageMakeTheme.surfaceSoft)
+        .glassEffect(.regular, in: Rectangle())
     }
 
     private var entrySummary: String {
@@ -602,6 +626,13 @@ struct ExplorerView: View {
 
     private func isEntry(_ path: String) -> Bool {
         current.entryPath == path
+    }
+
+    /// 文件扩展名白名单的依据：后端项目放宽到 package.json / TS / 配置与静态资源；
+    /// VIP 及以上在纯前端项目里也能先放后端文件，发布时再自动识别形态。
+    private var fileWhitelistKind: ProjectKind {
+        if current.kind.isBackend { return current.kind }
+        return appState.session?.canUseBackend == true ? .npm : .staticSite
     }
 
     private func fileKind(_ path: String) -> String {
@@ -711,10 +742,21 @@ struct ExplorerView: View {
     }
 
     private func publish() async {
+        // 部署形态自动识别：有 package.json 就是后端项目（pnpm-lock → pnpm，
+        // 否则 npm），没有则按纯前端发布。不再依赖创建时手选的形态。
+        let detected = DeployKindDetector.detect(paths: current.files.map(\.path))
+        if detected.isBackend && appState.session?.canUseBackend != true {
+            pendingBackendPublish = true
+            return
+        }
+        await performPublish(kind: detected)
+    }
+
+    private func performPublish(kind: ProjectKind) async {
         isPublishing = true
         defer { isPublishing = false }
         do {
-            var updated = try await APIClient.shared.publishProject(current.id, kind: current.kind)
+            var updated = try await APIClient.shared.publishProject(current.id, kind: kind)
             if updated.status == .processing {
                 updated = try await APIClient.shared.waitForProjectReady(current.id)
             }
@@ -766,20 +808,17 @@ struct NewFileSheet: View {
               !raw.hasSuffix("/") else { return nil }
         // 禁止控制字符与反斜杠
         if raw.unicodeScalars.contains(where: { $0.value < 32 }) { return nil }
-        // 纯前端只支持 html / css / js；后端项目额外允许 package.json 与源码/配置
-        let lower = raw.lowercased()
-        if kind.isBackend {
-            let allowed = [".html", ".htm", ".css", ".js", ".mjs", ".cjs", ".json",
-                           ".ts", ".tsx", ".jsx", ".md", ".txt", ".yml", ".yaml",
-                           ".toml", ".xml", ".graphql", ".gql", ".sql", ".map",
-                           ".wasm", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp",
-                           ".ico", ".bmp", ".avif", ".woff", ".woff2", ".ttf", ".otf",
-                           ".eot", ".mp3", ".mp4", ".webm", ".pdf", ".csv", ".lock"]
-            guard allowed.contains(where: { lower.hasSuffix($0) }) else { return nil }
-        } else {
-            guard lower.hasSuffix(".html") || lower.hasSuffix(".htm")
-                    || lower.hasSuffix(".css") || lower.hasSuffix(".js") else { return nil }
-        }
+        // 扩展名清单不再手写：后端走 FileValidator.backendAllowedExtensions，
+        // 纯前端收窄到服务端 STATIC_EXT_RE 允许的 html/htm/css/js
+        // （两处各维护一份必然漂移，改名那轮已经踩过）。
+        let ext = (raw as NSString).pathExtension.lowercased()
+        // 服务端 BACKEND_EXT_RE / STATIC_EXT_RE 都要求有扩展名，
+        // 所以无后缀文件名（Dockerfile 之类）在客户端也要拒绝，避免提交后 400。
+        guard !ext.isEmpty else { return nil }
+        let allowed = kind.isBackend
+            ? FileValidator.backendAllowedExtensions
+            : ["html", "htm", "css", "js"]
+        guard allowed.contains(ext) else { return nil }
         return raw
     }
 
@@ -858,7 +897,10 @@ struct NewFileSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(L10n.string("explorer_create_file")) {
                         if let path = normalizedPath {
-                            dismiss()
+                            // 不要在这里先 dismiss()：ExplorerView 的 createFile 会用
+                            // activeSheet 的 id 判断「是否还停留在新建面板」，
+                            // 提前关闭会让紧随其后的 activeSheet = .edit(path) 必然被丢弃，
+                            // 表现为「新建文件后编辑器不打开」。
                             onCreate(path)
                         }
                     }
@@ -930,15 +972,33 @@ struct NewFolderSheet: View {
 
 struct RenameEntrySheet: View {
     let entry: ExplorerView.ExplorerEntry
+    /// 项目形态决定可用的扩展名白名单；后端项目允许 json/ts/tsx/yml 等
+    let kind: ProjectKind
     let onRename: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var text: String
 
-    init(entry: ExplorerView.ExplorerEntry, onRename: @escaping (String) -> Void) {
+    init(entry: ExplorerView.ExplorerEntry, kind: ProjectKind = .staticSite, onRename: @escaping (String) -> Void) {
         self.entry = entry
+        self.kind = kind
         self.onRename = onRename
         _text = State(initialValue: entry.name)
+    }
+
+    /// 按项目形态放宽的重命名白名单。
+    /// 之前固定只允许 html/htm/css/js，后端项目里把 `server.ts` 改成 `server.mjs`
+    /// 或把配置改名都会被判为非法，用户只能删除重建。
+    /// 直接复用 `FileValidator` 的同一份清单：两处各维护一份必然逐渐失配
+    /// （曾漏掉 png/jpg/webp/ico/woff2/mp4/pdf/csv/graphql/lock）。
+    private var allowedExtensions: Set<String> {
+        if kind.isBackend {
+            return FileValidator.backendAllowedExtensions
+        }
+        // 纯前端**不能**直接复用上传白名单：服务端 `files.js` 的 STATIC_EXT_RE
+        // 只放行 html/htm/css/js，rename 分支对 from/to 都做校验。客户端放宽到
+        // png/jpg/zip 会让「改名成功」变成服务端 400。
+        return ["html", "htm", "css", "js"]
     }
 
     private var normalizedName: String? {
@@ -947,11 +1007,14 @@ struct RenameEntrySheet: View {
         guard !raw.isEmpty, raw.count <= 100,
               !raw.contains(".."), !raw.contains("/"),
               !raw.unicodeScalars.contains(where: { $0.value < 32 }) else { return nil }
-        if !entry.isFolder && !raw.contains(".") { raw += ".html" }
         if !entry.isFolder {
-            let lower = raw.lowercased()
-            guard lower.hasSuffix(".html") || lower.hasSuffix(".htm")
-                    || lower.hasSuffix(".css") || lower.hasSuffix(".js") else { return nil }
+            let ext = (raw as NSString).pathExtension.lowercased()
+            if ext.isEmpty {
+                // 纯前端补成 .html（把 `about` 改名成 `about.html` 是原行为）；
+                // 后端项目服务端 BACKEND_EXT_RE 要求有扩展名，无后缀会被 400 拒绝。
+                return kind.isBackend ? nil : raw + ".html"
+            }
+            guard allowedExtensions.contains(ext) else { return nil }
         }
         return raw
     }
@@ -1033,13 +1096,13 @@ struct FileEditorView: View {
                             .padding(.vertical, 6)
                         TextEditor(text: $content)
                             .font(.system(.footnote, design: .monospaced))
-                            .foregroundStyle(PageMakeTheme.codeText)
-                            .tint(PageMakeTheme.coral)
+                            .foregroundStyle(Theme.label)
+                            .tint(Theme.highlight)
                             .scrollContentBackground(.hidden)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
                             .padding(8)
-                            .background(PageMakeTheme.codeBackground)
+                            .background(Theme.elevatedBackground)
                     }
                 }
             }
@@ -1116,13 +1179,21 @@ struct FileEditorView: View {
     private func save() async {
         isSaving = true
         defer { isSaving = false }
+        // 保存期间用户可能继续输入：把「提交给服务端的内容」先拍快照。
+        // 之前成功后直接 original = content，会把保存期间新输入的字符也算成已保存，
+        // 用户再关闭编辑器时不会提示未保存，内容就悄悄丢了。
+        let snapshot = content
         do {
             let updated = try await APIClient.shared.addFile(
                 projectId: projectId,
                 path: path,
-                content: Data(content.utf8)
+                content: Data(snapshot.utf8)
             )
-            original = content
+            // 只有内容仍与快照一致时才标记为已保存；不一致说明用户还在输入，
+            // 保留 isModified == true，继续显示「未保存」。
+            if content == snapshot {
+                original = snapshot
+            }
             onSaved(updated)
         } catch let error as APIError {
             if case .http(_, let code) = error, code == "TOO_LARGE" {

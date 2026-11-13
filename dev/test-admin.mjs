@@ -696,7 +696,25 @@ await test('升级申请按等级递进：VIP 可继续申请 SVIP', async () =>
   }));
   assertEqual(blocked.status, 200, 'VIP 账号应可继续申请 SVIP');
   assertEqual(blocked.body.request.status, 'pending', 'VIP 提交后应为 pending');
-  assertEqual(blocked.body.request.targetTier ?? 'vip', 'vip', '未带 targetTier 时按 vip 记录');
+  assertEqual(blocked.body.request.targetTier, 'svip', 'VIP 的下一级应是 SVIP（不能跳级/退回 vip）');
+  assertEqual(blocked.body.nextTier, 'svip', '响应应带 nextTier');
+
+  // GET 必须返回当前等级与下一等级，供客户端决定按钮文案
+  const info = await json(fetch(`${BASE}/api/vip-request`, {
+    headers: { 'X-Pagemake-Token': vipGuest.token },
+  }));
+  assertEqual(info.body.tier, 'vip', 'GET 应返回当前等级');
+  assertEqual(info.body.nextTier, 'svip', 'GET 应返回下一等级');
+  assertEqual(info.body.canApply, false, '已有待审申请时 canApply 应为 false');
+
+  // 批准后必须升到**申请的等级**（SVIP），不能固定写成 vip
+  const approved = await adminAction(adminToken, {
+    action: 'reviewVIPRequest',
+    userId: vipGuest.userId,
+    approve: true,
+  });
+  assertEqual(approved.status, 200, '批准 SVIP 申请应成功');
+  assertEqual(approved.body.role, 'svip', `批准后角色应为 svip，实际 ${approved.body.role}`);
 
   const anonymous = await json(fetch(`${BASE}/api/vip-request`, {
     method: 'POST',
@@ -704,6 +722,27 @@ await test('升级申请按等级递进：VIP 可继续申请 SVIP', async () =>
     body: JSON.stringify({ note: '未登录' }),
   }));
   assertEqual(anonymous.status, 401, '未登录不得提交申请');
+});
+
+await test('Ultra 已到顶：不显示申请入口，POST 返回 NO_NEXT_TIER', async () => {
+  const guest = await guestLogin('vip-request-ultra');
+  const promoted = await adminAction(adminToken, { action: 'setTier', userId: guest.userId, tier: 'ultra' });
+  assertEqual(promoted.status, 200, '应能设为 Ultra');
+
+  const info = await json(fetch(`${BASE}/api/vip-request`, {
+    headers: { 'X-Pagemake-Token': guest.token },
+  }));
+  assertEqual(info.body.tier, 'ultra', 'GET 应返回 ultra');
+  assertEqual(info.body.nextTier, null, 'ultra 没有下一等级');
+  assertEqual(info.body.canApply, false, 'ultra 不可申请');
+
+  const res = await json(fetch(`${BASE}/api/vip-request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Pagemake-Token': guest.token },
+    body: JSON.stringify({ note: '还想升级' }),
+  }));
+  assertEqual(res.status, 409, 'ultra 提交申请应被拒');
+  assertEqual(res.body.error, 'NO_NEXT_TIER', '错误码应为 NO_NEXT_TIER');
 });
 
 await test('后台批准 VIP 申请：原游客会话立即获得 VIP 权益', async () => {

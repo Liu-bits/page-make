@@ -94,12 +94,12 @@ struct WorkspaceBottomSpacer: View {
     }
 }
 
-/// 全局背景：用柔和光斑与细微网格建立“创作工作台”氛围，
-/// 而不是一块没有层次的纯色背景。
+/// 全局背景：系统语义底色 + 柔和光斑，建立“创作工作台”氛围。
+/// 底色交给系统（浅色/深色自动适配），不再写死暖白/墨黑。
 struct PageMakeBackground: View {
     var body: some View {
         ZStack {
-            PageMakeTheme.paper
+            Theme.background
             GeometryReader { proxy in
                 Canvas { context, size in
                     let spacing: CGFloat = 24
@@ -116,22 +116,22 @@ struct PageMakeBackground: View {
                         path.addLine(to: CGPoint(x: size.width, y: y))
                         y += spacing
                     }
-                    context.stroke(path, with: .color(PageMakeTheme.ink.opacity(0.045)), lineWidth: 0.5)
+                    context.stroke(path, with: .color(Theme.separator.opacity(0.35)), lineWidth: 0.5)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
             }
             .mask(
-                LinearGradient(colors: [.black.opacity(0.8), .clear], startPoint: .top, endPoint: .bottom)
+                LinearGradient(colors: [.black.opacity(0.7), .clear], startPoint: .top, endPoint: .bottom)
             )
 
             Circle()
-                .fill(PageMakeTheme.coral.opacity(0.14))
+                .fill(Theme.highlight.opacity(0.12))
                 .frame(width: 280, height: 280)
                 .blur(radius: 70)
                 .offset(x: 150, y: -300)
 
             Circle()
-                .fill(PageMakeTheme.sea.opacity(0.12))
+                .fill(Theme.positive.opacity(0.10))
                 .frame(width: 320, height: 320)
                 .blur(radius: 85)
                 .offset(x: -170, y: 320)
@@ -140,21 +140,27 @@ struct PageMakeBackground: View {
     }
 }
 
-/// 统一的内容卡片，自动适配浅色与深色模式。
+/// 统一的内容卡片：液态玻璃面板，自动适配浅色与深色模式。
 struct PageMakeCard<Content: View>: View {
-    var padding: CGFloat = 18
+    var padding: CGFloat = Theme.cardPadding
+    /// 可选强调色 tint：VIP 卡等需要更醒目，但仍然是玻璃质感而不是色块
+    var tint: Color? = nil
     @ViewBuilder var content: Content
 
     var body: some View {
-        content
-            .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(PageMakeTheme.border, lineWidth: 1)
+        Group {
+            if let tint {
+                content
+                    .padding(padding)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .glassPanel(tint: tint, radius: Theme.cardRadius)
+            } else {
+                content
+                    .padding(padding)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .glassPanel(radius: Theme.cardRadius)
             }
-            .shadow(color: PageMakeTheme.shadow.opacity(0.14), radius: 18, x: 0, y: 8)
+        }
     }
 }
 
@@ -186,7 +192,7 @@ struct ErrorBanner: View {
             }
         }
         .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .glassPanel(radius: 14)
         .padding(.horizontal, 12)
         .padding(.top, 6)
     }
@@ -222,51 +228,42 @@ struct StatusBadge: View {
 
     private var backgroundColor: Color {
         switch status {
-        case .ready: return PageMakeTheme.sea
-        case .uploading, .processing: return Color(red: 0.16, green: 0.42, blue: 0.72)
-        case .failed: return PageMakeTheme.coral
-        case .expired: return PageMakeTheme.gold
+        case .ready: return Theme.positive
+        case .uploading, .processing: return Theme.accent
+        case .failed: return Theme.highlight
+        case .expired: return Theme.premium
         }
     }
 }
 
-/// 主要按钮（圆角胶囊）
+/// 主要按钮：液态玻璃 + 强调色 tint（prominent 但不使用整块饱和底色）
 struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(.headline, design: .rounded, weight: .bold))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(
-                LinearGradient(
-                    colors: [PageMakeTheme.coral, Color(red: 0.79, green: 0.22, blue: 0.17)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
+            .foregroundStyle(Theme.label)
+            .glassEffect(
+                .regular.tint(Theme.highlight.opacity(0.42)).interactive(),
                 in: RoundedRectangle(cornerRadius: 15, style: .continuous)
             )
-            .foregroundStyle(.white)
-            .shadow(color: PageMakeTheme.coral.opacity(0.24), radius: 12, y: 6)
-            .opacity(configuration.isPressed ? 0.8 : 1)
+            .opacity(configuration.isPressed ? 0.82 : 1)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }
 
-/// 次要按钮：白色纸张表面，用于不抢主操作的入口。
+/// 次要按钮：中性玻璃，用于不抢主操作的入口。
 struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(.headline, design: .rounded, weight: .semibold))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 13)
-            .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .stroke(PageMakeTheme.border, lineWidth: 1)
-            }
-            .foregroundStyle(PageMakeTheme.ink)
-            .opacity(configuration.isPressed ? 0.75 : 1)
+            .foregroundStyle(Theme.label)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .opacity(configuration.isPressed ? 0.78 : 1)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
@@ -274,45 +271,43 @@ struct SecondaryButtonStyle: ButtonStyle {
 
 /// 底部双入口：左侧标准新建/作品工作台，右侧个人设置。
 /// 设置从弹窗改为独立页签，才能稳定承载外观模式等长期偏好。
+/// 视觉上是一整块悬浮玻璃，两个页签各是一枚更小的玻璃胶囊（同屏多玻璃 → 容器合并）。
 struct MainTabBar: View {
     @Binding var selection: RootView.MainTab
     let onCreateTapped: () -> Void
 
     var body: some View {
-        HStack(spacing: 4) {
-            tabButton(
-                tab: .workspace,
-                icon: "square.grid.2x2.fill",
-                selectedIcon: "plus.square.fill",
-                title: L10n.string("tab_create"),
-                action: {
-                    if selection == .workspace {
-                        onCreateTapped()
-                    } else {
-                        selection = .workspace
+        GlassEffectContainer(spacing: 16) {
+            HStack(spacing: 6) {
+                tabButton(
+                    tab: .workspace,
+                    icon: "square.grid.2x2.fill",
+                    selectedIcon: "plus.square.fill",
+                    title: L10n.string("tab_create"),
+                    action: {
+                        if selection == .workspace {
+                            onCreateTapped()
+                        } else {
+                            selection = .workspace
+                        }
                     }
-                }
-            )
+                )
 
-            tabButton(
-                tab: .settings,
-                icon: "person.crop.circle",
-                selectedIcon: "person.crop.circle.fill",
-                title: L10n.string("tab_profile"),
-                action: {
-                    selection = .settings
-                }
-            )
+                tabButton(
+                    tab: .settings,
+                    icon: "person.crop.circle",
+                    selectedIcon: "person.crop.circle.fill",
+                    title: L10n.string("tab_profile"),
+                    action: {
+                        selection = .settings
+                    }
+                )
+            }
+            .padding(6)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.barRadius, style: .continuous))
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 8)
-        .padding(.bottom, 4)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(PageMakeTheme.border.opacity(0.7))
-                .frame(height: 0.5)
-        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 6)
     }
 
     private func tabButton(
@@ -332,11 +327,13 @@ struct MainTabBar: View {
                     .font(.system(size: 10, weight: .bold, design: .rounded))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
-            .foregroundStyle(isSelected ? PageMakeTheme.ink : PageMakeTheme.inkSoft)
-            .background(
-                isSelected ? PageMakeTheme.surfaceSoft : Color.clear,
-                in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+            .padding(.vertical, 8)
+            .foregroundStyle(isSelected ? Theme.label : Theme.secondaryLabel)
+            .glassEffect(
+                isSelected
+                    ? .regular.tint(Theme.highlight.opacity(0.30)).interactive()
+                    : .regular,
+                in: RoundedRectangle(cornerRadius: 20, style: .continuous)
             )
             .contentShape(Rectangle())
         }

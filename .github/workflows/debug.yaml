@@ -1,0 +1,186 @@
+# Page-make 调试分支 CI（debug）
+#
+# 职责：所有「验证类」工作都在 debug 分支完成
+#   - 后端 162+ 项测试与静态检查
+#   - iOS 编译 + 单元测试（xcode-27 runner）
+#   - 构建未签名 IPA（artifact 供下载）
+#   - Docker 镜像可构建校验
+#
+# main 分支只保留部署（见 page-make.yaml）。任何代码都必须先在 debug 上跑绿，
+# 再合并到 main，绝不允许直接往 main 推代码。
+#
+# 环境要求：
+#   - iOS 编译：xcode-27 runner（macOS 27.0.1 镜像），Xcode 27.0.0
+#   - 后端测试：ubuntu-latest + Node 22
+
+name: Page-make 调试分支 CI
+
+on:
+  push:
+    branches: [debug]
+    tags: ["v*"]
+  pull_request:
+    branches: [debug]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend-test:
+    name: "后端测试与静态检查（Node 22）"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 后端单元测试（解压 / 诊断 / 状态机 / KV key / JWT 解码 / 配额）
+        run: node dev/run-tests.mjs
+
+      - name: 容器冒烟测试（真实 HTTP 全流程）
+        run: node dev/test-server.mjs
+
+      - name: 游客链路测试（真实游客会话 · 空闲过期 410 · 身份重置）
+        run: node dev/test-guest-ttl.mjs
+
+      - name: CSS/JS 引用全模式回归
+        run: node dev/test-assets.mjs
+
+      - name: 管理后台测试（等级 / 封禁 / 删号 / VIP 申请）
+        run: node dev/test-admin.mjs
+
+      - name: 静态检查：调用了未 import 的函数
+        run: node dev/check-handler-imports.mjs
+
+      - name: 静态检查：中英本地化 key 完整且无重复
+        run: node scripts/check-localization.mjs
+
+      - name: 静态检查：Swift 同作用域重复声明
+        run: node scripts/check-swift-decls.mjs
+
+      - name: 静态检查：死文案键
+        run: node scripts/check-dead-strings.mjs
+
+      - name: 校验 Docker 镜像可构建
+        run: docker build -t pagemake-test .
+
+  ios-build:
+    name: "iOS 编译与测试（xcode-27 · Xcode 27.0.0）"
+    runs-on: xcode-27
+    env:
+      XCODE_VERSION: "27.0.0"
+      SIM_OS_VERSION: "27.0.1"
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 选择 Xcode 27.0.0
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "27.0.0"
+
+      - name: 校验 Xcode 版本必须为 27.0
+        run: |
+          echo "当前 Xcode：$(xcodebuild -version | head -1)"
+          xcodebuild -version | head -1 | grep -qE "^Xcode 27\.0(\.0)?$" || { echo "::error::Xcode 版本不是 27.0.x"; exit 1; }
+
+      - name: 安装 XcodeGen
+        run: brew install xcodegen || brew upgrade xcodegen
+
+      - name: 生成 Xcode 工程
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: 解析模拟器（优先 iOS 27.0.1，回退已安装最新）
+        run: node ios/scripts/resolve-simulator.mjs >> "$GITHUB_ENV"
+
+      - name: 编译（Debug · 不签名）
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project PageMake.xcodeproj \
+            -scheme PageMake \
+            -configuration Debug \
+            -destination "$SIM_DEST" \
+            -derivedDataPath "$RUNNER_TEMP/build" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build-for-testing
+
+      - name: 运行单元测试
+        working-directory: ios
+        run: |
+          xcodebuild \
+            -project PageMake.xcodeproj \
+            -scheme PageMake \
+            -configuration Debug \
+            -destination "$SIM_DEST" \
+            -derivedDataPath "$RUNNER_TEMP/build" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            test-without-building
+
+  ipa:
+    name: "构建未签名 IPA"
+    runs-on: xcode-27
+    # PR 只跑测试与编译，不归档 IPA（归档要额外十几分钟，PR 阶段没有产物需求）
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 生成 Xcode 工程
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: 编译归档（真机 · 不签名）
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project PageMake.xcodeproj \
+            -scheme PageMake \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/PageMake.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: ad-hoc 签名并打包 IPA
+        run: |
+          mkdir -p Payload
+          cp -R "$RUNNER_TEMP/PageMake.xcarchive/Products/Applications/PageMake.app" Payload/
+          codesign --force --sign - --entitlements ios/PageMake/PageMake.entitlements "Payload/PageMake.app"
+          echo "已 ad-hoc 签名（含 Sign in with Apple entitlement）"
+          if [ ! -f "Payload/PageMake.app/archived-expanded-entitlements.xcent" ]; then
+            cp ios/PageMake/PageMake.entitlements "Payload/PageMake.app/archived-expanded-entitlements.xcent"
+            echo "已手动注入 archived-expanded-entitlements.xcent"
+          fi
+          zip -qr PageMake-unsigned.ipa Payload
+          rm -rf Payload
+          echo "IPA 大小：$(du -h PageMake-unsigned.ipa | cut -f1)"
+
+      - name: 上传 IPA 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: PageMake-unsigned-ipa
+          path: PageMake-unsigned.ipa
+          retention-days: 14

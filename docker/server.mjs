@@ -19,6 +19,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -67,9 +68,20 @@ class DiskKV {
 
     // 异步写盘：writeFileSync 会阻塞事件循环几秒（大文件），拖垮并发的
     // 状态轮询请求。promises 版本让 Node 在等磁盘时继续响应其他请求。
-    const tmp = `${this.file(key)}.tmp`;
-    await fsp.writeFile(tmp, buffer);
-    await fsp.rename(tmp, this.file(key));
+    //
+    // 临时文件名必须**唯一**：同一 key 的并发写是常态（公开页每加载一个资源
+    // 都会写回游客 lastAccessAt，见 p/[projectId].js 与 [[default]].js）。
+    // 共用 `<key>.tmp` 时两个 write 会互相截断，rename 后得到半截 JSON，
+    // 之后该项目所有请求 JSON.parse 抛错 → 永久 500。
+    const tmp = `${this.file(key)}.${randomBytes(6).toString('hex')}.tmp`;
+    try {
+      await fsp.writeFile(tmp, buffer);
+      await fsp.rename(tmp, this.file(key));
+    } catch (error) {
+      // 失败时清掉自己的临时文件，避免持久卷里堆 `.tmp` 垃圾
+      await fsp.unlink(tmp).catch(() => {});
+      throw error;
+    }
     this.index.add(key);
   }
 
@@ -173,12 +185,53 @@ function toWebRequest(req, body) {
   return new Request(`${proto}://${host}${req.url}`, init);
 }
 
+// 请求体上限：readBody 会把整个 body 读进内存，且这一步发生在路由匹配与鉴权
+// 之前——公开端口上任何匿名请求都能用超大 body 把容器内存打满。分片上传协议
+// 只约束「合法客户端每片 600KB」，不是服务端强制，所以必须在这里兜底。
+// 32MB 足以覆盖 SVIP 10MB 文件的 base64（约 13.3MB）+ JSON 开销；
+// Ultra 需要更大时用 PAGEMAKE_MAX_BODY_BYTES 显式放开。
+const MAX_BODY_BYTES = Number(process.env.PAGEMAKE_MAX_BODY_BYTES) > 0
+  ? Number(process.env.PAGEMAKE_MAX_BODY_BYTES)
+  : 32 * 1024 * 1024;
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
+    const tooLarge = () => Object.assign(new Error('BODY_TOO_LARGE'), { code: 'BODY_TOO_LARGE' });
+
+    // 先看声明长度：超限直接拒绝，不必把 body 收完
+    const declared = Number(req.headers['content-length']);
+    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+      reject(tooLarge());
+      return;
+    }
+
     const chunks = [];
-    req.on('data', (chunk) => chunks.push(chunk));
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
+    let total = 0;
+    let overflow = false;
+    let settled = false;
+    const settle = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      fn(value);
+    };
+
+    req.on('data', (chunk) => {
+      if (overflow) return; // 已超限：继续消费但不再缓存，保证内存不涨
+      total += chunk.length;
+      if (total > MAX_BODY_BYTES) {
+        overflow = true;
+        chunks.length = 0;
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (overflow) settle(reject, tooLarge());
+      else settle(resolve, Buffer.concat(chunks));
+    });
+    req.on('error', (error) => settle(reject, error));
+    // 客户端中途断开：必须 settle，否则 Promise 永久挂起、已收 chunk 泄漏
+    req.on('aborted', () => settle(reject, Object.assign(new Error('REQUEST_ABORTED'), { code: 'REQUEST_ABORTED' })));
   });
 }
 
@@ -256,17 +309,46 @@ const server = http.createServer(async (req, res) => {
     const payload = Buffer.from(await response.arrayBuffer());
     const headers = {};
     response.headers.forEach((value, key) => {
+      // Set-Cookie 不能按逗号合并（Expires 里本身就有逗号），单独收集后按数组写出
+      if (key.toLowerCase() === 'set-cookie') return;
       headers[key] = value;
     });
+    // Set-Cookie 必须依赖 Node >= 20 的 getSetCookie()：
+    // response.headers.forEach 会把同名头按 ", " 合并，而 Expires 里本身含逗号，
+    // 合并后无法再拆开。低版本 Node 没有该方法时，多条 Set-Cookie 会被**整体丢弃**
+    // （不是退化成单条——for 循环里已经 return 掉了），因此 Dockerfile 固定 Node 22。
+    if (typeof response.headers.getSetCookie === 'function') {
+      const cookies = response.headers.getSetCookie();
+      if (cookies.length) headers['set-cookie'] = cookies;
+    }
     res.writeHead(response.status, headers);
     res.end(payload);
     console.log(`${req.method} ${pathname} → ${response.status} (${Date.now() - startedAt}ms)`);
   } catch (error) {
     console.error('[server]', error);
-    if (!res.headersSent) {
-      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: false, error: 'INTERNAL_ERROR' }));
+    if (res.headersSent) return;
+    if (error?.code === 'BODY_TOO_LARGE') {
+      // 明确告知客户端超限，然后断开连接（body 可能还没收完）。
+      // 注意**不能**在 res.end() 之后立刻 req.destroy()：此时响应还在发送缓冲里，
+      // 立刻销毁 socket 会发 RST，客户端拿到的是「网络错误 / 连接被重置」而不是
+      // 413，用户永远看不到「文件太大」这句提示。改为等响应刷出后再销毁，
+      // 并留一个兜底计时器，避免客户端不读响应导致连接悬挂。
+      res.writeHead(413, {
+        'Content-Type': 'application/json; charset=utf-8',
+        Connection: 'close',
+      });
+      const killTimer = setTimeout(() => {
+        try { req.destroy(); } catch { /* 已关闭 */ }
+      }, 2000);
+      if (typeof killTimer.unref === 'function') killTimer.unref();
+      res.end(JSON.stringify({ ok: false, error: 'TOO_LARGE' }), () => {
+        clearTimeout(killTimer);
+        try { req.destroy(); } catch { /* 已关闭 */ }
+      });
+      return;
     }
+    res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: false, error: 'INTERNAL_ERROR' }));
   }
 });
 
@@ -319,4 +401,22 @@ server.listen(PORT, '0.0.0.0', () => {
       if (count > 0) console.log(`已恢复 ${count} 个后端项目`);
     })
     .catch((error) => console.error('[runtime] 恢复后端项目失败', error));
+
+  // 过期会话 / 超期日志回收。TTL 只写在记录字段里，没有执行者就会无限堆积，
+  // 让 kvListAll 的全表扫描越来越慢。延迟 30s 执行一次（避开启动恢复抢 CPU），
+  // 之后每 6 小时一次；unref() 保证定时器不阻止进程退出。
+  const runCleanup = () => {
+    import(pathToFileURL(path.join(ROOT, 'backend/lib/maintenance.js')).href)
+      .then((m) => m.cleanupExpired(kv))
+      .then((result) => {
+        const total = result.sessions + result.adminSessions + result.logs;
+        if (total > 0) {
+          console.log(`[maintenance] 清理过期数据：会话 ${result.sessions}、`
+            + `管理员会话 ${result.adminSessions}、日志 ${result.logs}`);
+        }
+      })
+      .catch((error) => console.error('[maintenance] 清理失败', error));
+  };
+  setTimeout(runCleanup, 30_000).unref();
+  setInterval(runCleanup, 6 * 3600 * 1000).unref();
 });

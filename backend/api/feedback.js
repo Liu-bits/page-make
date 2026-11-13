@@ -6,8 +6,10 @@ import { requireAuth } from '../lib/session.js';
 import { ok, fail } from '../lib/responses.js';
 import { rateLimited, clientIp } from '../lib/ratelimit.js';
 
-// 限流：每 IP 每分钟 5 次（未登录可提交，需防脚本刷量打满 KV）
-const RATE_LIMIT = 5;
+// 限流：每 IP 每分钟 10 次（未登录可提交，需防脚本刷量打满 KV）。
+// 不用更严的 5 次/分：网关多跳时 clientIp 可能退化成同一个值（见
+// lib/ratelimit.js 的风险说明），桶一旦被共用，过严的配额会先误伤正常用户。
+const RATE_LIMIT = 10;
 const RATE_WINDOW_MS = 60_000;
 // 单条反馈长度上限：防止超长文本撑爆 KV 单值与后台渲染
 const MAX_MESSAGE_LENGTH = 2000;

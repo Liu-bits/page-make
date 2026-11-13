@@ -170,7 +170,7 @@
 "error_storage_error" = "Storage error, please try again later";
 "error_db_error" = "Service error, please try again later";
 "error_expired" = "Link expired — tap to refresh";
-"error_upload_timeout" = "Processing timed out (over 5 minutes), please retry";
+"error_upload_timeout" = "Processing timed out (over 30 minutes). Pull to refresh the list or retry later";
 "error_project_gone" = "Project no longer exists or was deleted";
 
 // MARK: - File management
@@ -253,7 +253,6 @@
 "vip_upgrade_subtitle" = "Keep your guest identity and projects while unlocking more projects, permanent links, and higher limits";
 "upgrade_to_svip_title" = "Upgrade to SVIP";
 "upgrade_to_ultra_title" = "Upgrade to Ultra";
-"vip_request_action" = "Request upgrade";
 "vip_request_view" = "View request status";
 "vip_request_pending" = "Under review · Check back later";
 "vip_request_approved" = "VIP is active";
@@ -262,14 +261,11 @@
 "vip_request_benefits_title" = "What you unlock";
 "vip_request_benefits" = "Upgrading keeps your account and work. VIP unlocks more projects, permanent public links, higher storage limits, and Project Mode.";
 "vip_request_pending_title" = "Request submitted";
-"vip_request_pending_detail" = "After review, this account refreshes automatically. No need to sign in again.";
 "vip_request_approved_title" = "Upgrade complete";
-"vip_request_approved_detail" = "This account is now VIP. Your identity and projects are preserved.";
 "vip_request_rejected_title" = "Request declined";
 "vip_request_rejected_detail" = "You can add more context and submit another request.";
 "vip_request_note_label" = "Notes (optional)";
 "vip_request_note_hint" = "Briefly describe how you plan to use the service, up to 300 characters.";
-"vip_request_submit" = "Submit upgrade request";
 "vip_request_guest_only" = "Only standard guest accounts can request an upgrade";
 "vip_request_submitted_title" = "Request submitted";
 "vip_request_submitted_message" = "After review, this account will be upgraded without signing in again.";
@@ -362,10 +358,6 @@
 "kind_pnpm_detail" = "Install with pnpm and run Node";
 "kind_js" = "js version";
 "kind_js_detail" = "Run your JS / Node entry script directly";
-"deploy_kind_title" = "Deployment";
-"deploy_kind_locked" = "npm / pnpm require VIP or above";
-"deploy_kind_requires_vip" = "npm / pnpm backend deployment requires VIP or above";
-"paste_unavailable_for_backend" = "npm / pnpm projects need package.json. Use upload or Project Mode instead";
 "export_backup" = "Export Backup";
 
 "pick_files_hint_limit" = "Supports .zip, .html, .css, .js. Multiple selection; current project limit is %@";
@@ -391,3 +383,28 @@
 "error_runtime_busy" = "Backend runtime capacity is full. Try again later";
 "error_runtime_unavailable" = "Backend runtime is unavailable on this server";
 "error_runtime_crashed" = "Backend process crashed repeatedly. Check runtime logs";
+
+// MARK: - Ban appeal / preview polling / auto-detected deployment / tiers
+"ban_appeal" = "Contact support";
+"ban_sign_out_hint" = "Signing out lets you start over with another account. The ban record stays.";
+"preview_still_processing" = "Still processing";
+"preview_still_processing_hint" = "The link is still being generated. Tap Refresh later to check again.";
+"preview_processing_hint" = "The first deployment installs dependencies and builds. This can take a few minutes — keep this page open.";
+"deploy_auto_detect" = "Auto-detected: npm / static";
+"deploy_auto_detect_hint" = "Detected from package.json and lock files — no manual choice needed";
+"deploy_backend_requires_vip_title" = "Backend projects need VIP";
+"deploy_backend_requires_vip_message" = "package.json found. npm / pnpm backend projects require VIP or above. You can upload as a static site (no Node runtime) or request an upgrade in Settings.";
+"deploy_kind_unknown_title" = "Couldn't detect the project type";
+"deploy_kind_unknown_message" = "This archive's file list can't be read (zip64, encrypted, or non-UTF-8 entry names), so we can't tell whether it's a backend project. You can upload it as a static site, or repackage and try again if you need a Node runtime.";
+
+"deploy_downgrade_static" = "Upload as static";
+"deploy_publish_static" = "Publish as static";
+"vip_current_tier" = "Current tier";
+"vip_next_tier" = "Next tier";
+"vip_request_upgrade_to" = "Request upgrade to %@";
+"vip_request_page_title" = "Upgrade to %@";
+"vip_request_pending_tier_detail" = "Upgrade to %@ requested. It takes effect automatically after review.";
+"vip_request_approved_tier_detail" = "Upgraded to %@. Your identity and projects are preserved.";
+"vip_request_pending_tier_short" = "Requested: %@";
+"vip_request_no_next_tier" = "You are already at the highest tier";
+"vip_request_not_available" = "This account cannot request an upgrade right now";

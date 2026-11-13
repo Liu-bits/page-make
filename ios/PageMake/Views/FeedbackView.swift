@@ -39,6 +39,8 @@ struct FeedbackView: View {
                     Text(L10n.string("feedback_message"))
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(PageMakeBackground())
             .navigationTitle(L10n.string("feedback"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

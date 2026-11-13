@@ -170,7 +170,7 @@
 "error_storage_error" = "存储出错了，稍后重试";
 "error_db_error" = "服务出错了，稍后重试";
 "error_expired" = "链接已过期，点击刷新";
-"error_upload_timeout" = "处理超时（超过 5 分钟），请重试";
+"error_upload_timeout" = "处理超时（超过 30 分钟）。可以下拉刷新列表查看最新状态，或稍后重试";
 "error_project_gone" = "项目不存在或已删除";
 
 // MARK: - 文件管理
@@ -253,7 +253,6 @@
 "vip_upgrade_subtitle" = "保留当前游客身份与作品，申请更多项目、长期链接和更高容量";
 "upgrade_to_svip_title" = "升级 SVIP";
 "upgrade_to_ultra_title" = "升级 Ultra";
-"vip_request_action" = "申请升级";
 "vip_request_view" = "查看申请进度";
 "vip_request_pending" = "申请审核中 · 请稍后回来查看";
 "vip_request_approved" = "VIP 已生效";
@@ -262,14 +261,11 @@
 "vip_request_benefits_title" = "升级后可以做什么";
 "vip_request_benefits" = "升级不会更换账号，也不会删除作品。VIP 可创建更多项目、使用长期公开链接与更大存储空间，并可使用项目模式。";
 "vip_request_pending_title" = "申请已提交";
-"vip_request_pending_detail" = "管理员审核后，当前账号会自动刷新权益，无需重新登录。";
 "vip_request_approved_title" = "升级成功";
-"vip_request_approved_detail" = "当前账号已升级为 VIP，身份与作品均已保留。";
 "vip_request_rejected_title" = "申请未通过";
 "vip_request_rejected_detail" = "你可以补充说明后再次提交。";
 "vip_request_note_label" = "申请说明（可选）";
 "vip_request_note_hint" = "可简要说明用途或升级需求，最多 300 字。";
-"vip_request_submit" = "提交升级申请";
 "vip_request_guest_only" = "只有普通游客账号需要申请升级";
 "vip_request_submitted_title" = "申请已提交";
 "vip_request_submitted_message" = "管理员审核后会为当前账号升级，无需重新登录。";
@@ -362,10 +358,6 @@
 "kind_pnpm_detail" = "使用 pnpm 安装并运行服务";
 "kind_js" = "js 版本";
 "kind_js_detail" = "直接运行 JS/Node 入口脚本";
-"deploy_kind_title" = "部署选项";
-"deploy_kind_locked" = "npm / pnpm 为 VIP 及以上特权";
-"deploy_kind_requires_vip" = "npm / pnpm 后端部署需要 VIP 或更高等级";
-"paste_unavailable_for_backend" = "npm / pnpm 项目需要 package.json，请改用上传或项目模式";
 "export_backup" = "导出备份";
 
 "pick_files_hint_limit" = "支持 .zip、.html、.css、.js，可多选；当前等级单项目上限 %@";
@@ -391,3 +383,28 @@
 "error_runtime_busy" = "后端运行位已满，请稍后重试";
 "error_runtime_unavailable" = "当前服务器暂不支持后端运行";
 "error_runtime_crashed" = "后端进程反复崩溃，请检查运行日志";
+
+// MARK: - 封禁申诉 / 预览轮询 / 部署形态自动识别 / 等级
+"ban_appeal" = "联系申诉";
+"ban_sign_out_hint" = "退出登录后可换一个账号重新开始；本次封禁记录仍会保留。";
+"preview_still_processing" = "仍在处理中";
+"preview_still_processing_hint" = "后台还在生成链接，可以稍后点「刷新」查看最新状态。";
+"preview_processing_hint" = "首次部署需要安装依赖并构建，可能需要几分钟，请保持页面打开。";
+"deploy_auto_detect" = "自动识别：npm / 纯前端";
+"deploy_auto_detect_hint" = "根据项目里的 package.json 与锁文件判断，无需手动选择";
+"deploy_backend_requires_vip_title" = "后端项目需要 VIP";
+"deploy_backend_requires_vip_message" = "检测到 package.json：npm / pnpm 后端项目需要 VIP 及以上等级。可以按纯前端上传（不会运行 Node 服务），或先到设置页申请升级。";
+"deploy_kind_unknown_title" = "无法识别项目类型";
+"deploy_kind_unknown_message" = "这个压缩包的文件清单读不出来（可能是 zip64、加密，或文件名不是 UTF-8），无法判断是不是后端项目。可以先按纯前端上传，需要 Node 运行时再重新打包上传。";
+
+"deploy_downgrade_static" = "按纯前端上传";
+"deploy_publish_static" = "按纯前端发布";
+"vip_current_tier" = "当前等级";
+"vip_next_tier" = "下一等级";
+"vip_request_upgrade_to" = "申请升级到 %@";
+"vip_request_page_title" = "升级到 %@";
+"vip_request_pending_tier_detail" = "已申请升级到 %@，管理员审核后自动生效。";
+"vip_request_approved_tier_detail" = "已升级到 %@，身份与作品均已保留。";
+"vip_request_pending_tier_short" = "已申请：%@";
+"vip_request_no_next_tier" = "已是最高等级，无需再申请";
+"vip_request_not_available" = "当前账号暂不可申请升级";

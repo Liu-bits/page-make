@@ -4,6 +4,8 @@
 # 背景：自托管容器在境内网络无法访问 googleapis.com，登录验签依赖内置种子
 #       （backend/data/*-jwks.json，由 CI 部署时刷新）。Google 会轮换签名密钥，
 #       本 workflow 每日从官方 JWKS 地址拉取并自动提交，保证种子不过期。
+# 推送到哪里：**debug**，不是 main。main 的 push 会直接触发生产部署且不跑测试，
+#       自动提交推 main 等于让机器绕过整条验证链。种子改动由人工合并到 main。
 # 手动触发：Actions → JWKS 种子刷新 → Run workflow
 # =============================================================================
 
@@ -24,6 +26,9 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+        with:
+          # 需要完整历史才能判断 debug 与当前 HEAD 的祖先关系（见下方推送步骤）
+          fetch-depth: 0
 
       - name: 安装 Node.js 22
         uses: actions/setup-node@v4
@@ -33,7 +38,7 @@ jobs:
       - name: 刷新种子（失败保留旧种子）
         run: node scripts/refresh-jwks.mjs
 
-      - name: 有变化则提交推送
+      - name: 有变化则提交推送到 debug
         run: |
           if git diff --quiet -- backend/data/; then
             echo "种子无变化，无需提交"
@@ -43,5 +48,16 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add backend/data/
           git commit -m "chore: 刷新 JWKS 种子（自动）"
-          git push
-          echo "✓ 种子已更新并推送"
+
+          # 绝不直接推 main：main 的 push 会立刻触发 page-make.yaml 的生产部署，
+          # 而 main 上不跑任何测试，等于把未经 CI 验证的提交直接上线。
+          # 改推 debug（验证分支），由人工确认三个 job 全绿后再合并到 main。
+          git fetch origin debug || true
+          if git rev-parse --verify origin/debug >/dev/null 2>&1 \
+             && ! git merge-base --is-ancestor origin/debug HEAD; then
+            # debug 上有未合并的提交：先把种子提交 rebase 到 debug 之上，
+            # 避免非快进推送失败。冲突会让本 job 明确失败，而不是静默丢种子。
+            git rebase origin/debug
+          fi
+          git push origin HEAD:debug
+          echo "✓ 种子已更新并推送到 debug（需人工合并到 main 后才会部署）"

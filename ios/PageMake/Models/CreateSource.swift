@@ -2,9 +2,11 @@ import Foundation
 
 /// 创建来源：上传文件 / 直接粘贴代码 / 项目模式（空白项目）
 enum CreateSource {
-    /// kind：部署形态（纯前端 / npm / pnpm），由创建页的部署选项决定
+    /// kind：部署形态，由项目文件自动识别（见 DeployKindDetector）。
+    /// 粘贴固定为纯前端；项目模式创建时按账号等级给一个可用的文件白名单，
+    /// 真正的形态在发布时按文件再次识别。
     case files([PickedFile], name: String, kind: ProjectKind)
-    case paste(PasteContent, name: String, kind: ProjectKind)
+    case paste(PasteContent, name: String)
     case explorer(name: String, kind: ProjectKind)
 }
 

@@ -55,9 +55,9 @@ final class UploadService: ObservableObject {
     }
 
     /// 粘贴代码直接创建（单次请求，无需分片与轮询）
-    /// 粘贴建站只产出纯前端项目：输入就是 HTML/CSS/JS，没有 package.json 可跑。
-    /// `kind` 参数仅为与调用方签名一致，内部固定按 static 处理。
-    func createPasted(_ content: PasteContent, provider: HostProvider, name: String, kind: ProjectKind = .staticSite) {
+    /// 粘贴建站只产出纯前端项目：输入就是 HTML/CSS，没有 package.json 可跑，
+    /// 部署形态固定为纯前端（不再由用户选择）。
+    func createPasted(_ content: PasteContent, provider: HostProvider, name: String) {
         let item = Item(name: name, provider: provider, status: .uploading)
         items.insert(item, at: 0)
         let itemId = item.id
@@ -168,9 +168,12 @@ final class UploadService: ObservableObject {
     }
 
     private func pollStatus(itemId: UUID, projectId: String) async {
-        // 后端项目安装 4 分钟 + 构建 3 分钟 + 启动 1 分钟，轮询窗口必须覆盖完整链路。
-        // 360 次 × 2 秒 = 12 分钟；404（项目已删）仍会立即退出。
-        let maxAttempts = 360
+        // 后端项目安装 4 分钟 + 构建 3 分钟 + 启动 1 分钟，但服务端按等级放开的
+        // 总超时是 SVIP 约 18 分钟、Ultra 约 23 分钟。轮询窗口必须覆盖最慢的一档：
+        // 900 次 × 2 秒 = 30 分钟。12 分钟窗口会在 Ultra 大项目上提前放弃，
+        // 把「仍在部署」误报成失败（用户随后下拉刷新才看到项目其实已就绪）。
+        // 404（项目已删）仍会立即退出。
+        let maxAttempts = 900
         var attempts = 0
 
         while !Task.isCancelled && attempts < maxAttempts {

@@ -15,20 +15,27 @@ struct UploadQueueView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if uploadService.items.isEmpty {
-                    VStack(spacing: 12) {
-                        ProgressView()
-                        Text(L10n.string("uploading"))
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    List {
-                        ForEach(uploadService.items) { item in
-                            itemRow(item)
+            ZStack {
+                PageMakeBackground()
+                Group {
+                    if uploadService.items.isEmpty {
+                        VStack(spacing: 12) {
+                            ProgressView()
+                            Text(L10n.string("uploading"))
+                                .foregroundStyle(Theme.secondaryLabel)
                         }
+                    } else {
+                        List {
+                            ForEach(uploadService.items) { item in
+                                itemRow(item)
+                                    .listRowBackground(Color.clear)
+                                    .listRowSeparator(.hidden)
+                                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            }
+                        }
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
                     }
-                    .listStyle(.insetGrouped)
                 }
             }
             .navigationTitle(L10n.string("upload_queue"))
@@ -46,12 +53,11 @@ struct UploadQueueView: View {
                 switch source {
                 case .files(let files, let name, let kind):
                     uploadService.upload(files: files, provider: provider, projectName: name, kind: kind)
-                case .paste(let content, let name, let kind):
+                case .paste(let content, let name):
                     uploadService.createPasted(
                         content,
                         provider: provider,
-                        name: name,
-                        kind: kind
+                        name: name
                     )
                 case .explorer:
                     // 项目模式由 RootView 直接创建并打开资源管理器，不进入上传队列
@@ -87,17 +93,17 @@ struct UploadQueueView: View {
                 ProgressView(value: item.progress)
                 Text(L10n.string("uploading"))
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondaryLabel)
             case .processing:
                 ProgressView()
                 Text(L10n.string("processing"))
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondaryLabel)
             case .failed:
                 if let message = item.errorMessage {
                     Text(message)
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.highlight)
                 }
             case .ready:
                 if let project = item.project {
@@ -116,7 +122,7 @@ struct UploadQueueView: View {
             case .expired:
                 Text(L10n.string("error_expired"))
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Theme.premium)
             }
 
             if item.status == .uploading || item.status == .processing {
@@ -127,22 +133,22 @@ struct UploadQueueView: View {
             }
         }
         .padding(12)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
+        .glassPanel(radius: 16)
     }
 
     @ViewBuilder
     private func statusLabel(_ item: UploadService.Item) -> some View {
         switch item.status {
         case .uploading:
-            Text(L10n.string("uploading")).font(.footnote).foregroundStyle(.secondary)
+            Text(L10n.string("uploading")).font(.footnote).foregroundStyle(Theme.secondaryLabel)
         case .processing:
-            Text(L10n.string("processing")).font(.footnote).foregroundStyle(.secondary)
+            Text(L10n.string("processing")).font(.footnote).foregroundStyle(Theme.secondaryLabel)
         case .ready:
-            Text(L10n.string("status_ready")).font(.footnote).foregroundStyle(.green)
+            Text(L10n.string("status_ready")).font(.footnote).foregroundStyle(Theme.positive)
         case .failed:
-            Text(L10n.string("upload_failed")).font(.footnote).foregroundStyle(.red)
+            Text(L10n.string("upload_failed")).font(.footnote).foregroundStyle(Theme.highlight)
         case .expired:
-            Text(L10n.string("status_expired")).font(.footnote).foregroundStyle(.orange)
+            Text(L10n.string("status_expired")).font(.footnote).foregroundStyle(Theme.premium)
         }
     }
 }

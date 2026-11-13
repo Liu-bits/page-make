@@ -19,11 +19,17 @@ struct FilePickerView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var mode: Mode = .files
-    /// 部署形态：纯前端 / npm / pnpm
-    @State private var kind: ProjectKind = .staticSite
     @State private var showPicker = false
     @State private var alertItem: AlertItem?
     @State private var projectName = ""
+    /// 需要用户明确确认的待定上传：不能静默降级成纯前端。
+    @State private var pendingBackendUpload: PendingBackendUpload?
+    /// 待回收的临时文件，只在页面真正关闭时删除（见 onDisappear）。
+    /// **不能**在弹窗关闭回调里立刻删：系统关闭回调与按钮 action 的执行顺序
+    /// 不确定，若先删文件，紧接着 onPick 拿到的 URL 已失效，上传必失败。
+    /// 交接给上传队列时把那一批从这里摘掉即可，不需要额外的「已交接」标志
+    /// （用布尔标志会让「先取消一批、再成功交接一批」时前一批永远不被回收）。
+    @State private var pendingRecycleFiles: [PickedFile] = []
 
     // 粘贴模式内容
     @State private var html = ""
@@ -31,9 +37,30 @@ struct FilePickerView: View {
 
     private static let ordinaryPasteLimitBytes: Int64 = 300 * 1024
 
+    /// 为什么需要用户确认
+    private enum PendingUploadReason {
+        /// 检测到后端项目（根目录 package.json），但当前账号没有 VIP 权限
+        case backendRequiresVIP
+        /// ZIP 中央目录读不出条目名，无法判定部署形态
+        case undetermined
+    }
+
+    private struct PendingBackendUpload: Identifiable {
+        let id = UUID()
+        let files: [PickedFile]
+        let name: String
+        let reason: PendingUploadReason
+    }
+
+    /// 上传时用于扩展名白名单/配额的形态：VIP 及以上按后端白名单收源码，
+    /// 普通账号只收静态资源；真正的部署形态由选中的文件自动识别。
+    private var uploadWhitelistKind: ProjectKind {
+        canUseBackend ? .npm : .staticSite
+    }
+
     private var supportedTypes: [UTType] {
         var types: [UTType] = []
-        let extensions = kind.isBackend
+        let extensions = canUseBackend
             ? FileValidator.backendAllowedExtensions
             : FileValidator.staticAllowedExtensions
         for ext in extensions {
@@ -67,7 +94,7 @@ struct FilePickerView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    deployKindBar
+                    autoDetectBar
                         .padding(.horizontal, 16)
                         .padding(.bottom, 12)
                 }
@@ -80,12 +107,46 @@ struct FilePickerView: View {
                     Button(L10n.string("cancel")) { dismiss() }
                 }
             }
+            .confirmationDialog(
+                L10n.string(pendingDialogTitleKey),
+                isPresented: Binding(
+                    get: { pendingBackendUpload != nil },
+                    set: { presented in
+                        guard !presented else { return }
+                        // 只清状态，不在这里删临时文件：系统关闭回调可能早于按钮
+                        // action 执行，先删文件会让随后的 onPick 拿到失效 URL。
+                        // 真正放弃时由 cancel 按钮 / onDisappear 统一回收。
+                        pendingBackendUpload = nil
+                    }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let pending = pendingBackendUpload {
+                    Button(L10n.string("deploy_downgrade_static")) {
+                        // 先把文件清单取出来，再清空待定状态（会触发上面的 setter）；
+                        // 这一批交给上传队列，从待回收列表摘掉；之前取消留下的
+                        // 其他临时文件仍会在 onDisappear 正常回收。
+                        let files = pending.files
+                        let name = pending.name
+                        let handedOff = Set(files.map(\.url))
+                        pendingRecycleFiles.removeAll { handedOff.contains($0.url) }
+                        pendingBackendUpload = nil
+                        onPick(.files(files, name: name, kind: .staticSite))
+                    }
+                    Button(L10n.string("cancel"), role: .cancel) {
+                        recycle(pending.files)
+                        pendingBackendUpload = nil
+                    }
+                }
+            } message: {
+                Text(L10n.string(pendingDialogMessageKey))
+            }
             .sheet(isPresented: $showPicker) {
                 DocumentPicker(types: supportedTypes) { urls in
                     // UIKit delegate 回调不保证主线程；直接改 @State 会触发
                     // “Publishing changes from background threads” 甚至崩溃。
                     Task { @MainActor in
-                        handlePicked(urls)
+                        await handlePicked(urls)
                     }
                 }
             }
@@ -96,7 +157,25 @@ struct FilePickerView: View {
                     dismissButton: .default(Text(L10n.string("done")))
                 )
             }
+            // 页面关闭时统一回收没有被交接出去的临时文件（取消 / 点空白处关闭）。
+            .onDisappear {
+                recycleLeftoverPendingFiles()
+            }
         }
+    }
+
+    // MARK: - 待定上传提示
+
+    private var pendingDialogTitleKey: String {
+        pendingBackendUpload?.reason == .undetermined
+            ? "deploy_kind_unknown_title"
+            : "deploy_backend_requires_vip_title"
+    }
+
+    private var pendingDialogMessageKey: String {
+        pendingBackendUpload?.reason == .undetermined
+            ? "deploy_kind_unknown_message"
+            : "deploy_backend_requires_vip_message"
     }
 
     // MARK: - 项目名称
@@ -111,12 +190,12 @@ struct FilePickerView: View {
             HStack(spacing: 6) {
                 Text(L10n.string("project_name_field"))
                     .font(.system(.caption, design: .rounded, weight: .bold))
-                    .foregroundStyle(PageMakeTheme.inkSoft)
+                    .foregroundStyle(Theme.secondaryLabel)
                     .textCase(.uppercase)
                     .tracking(0.4)
                 Text(L10n.string("editor_required"))
                     .font(.caption2.bold())
-                    .foregroundStyle(PageMakeTheme.coral)
+                    .foregroundStyle(Theme.highlight)
             }
             TextField(L10n.string("project_name_placeholder"), text: $projectName)
                 .font(.system(.body, design: .rounded, weight: .medium))
@@ -125,11 +204,7 @@ struct FilePickerView: View {
                 .submitLabel(.done)
                 .padding(.horizontal, 13)
                 .padding(.vertical, 12)
-                .background(PageMakeTheme.surfaceSoft, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(PageMakeTheme.border, lineWidth: 1)
-                }
+                .glassPanel(radius: 12)
                 .onChange(of: projectName) { _, newValue in
                     if newValue.count > 60 {
                         projectName = String(newValue.prefix(60))
@@ -137,7 +212,7 @@ struct FilePickerView: View {
                 }
             Text(L10n.string("project_name_hint"))
                 .font(.caption2)
-                .foregroundStyle(PageMakeTheme.inkSoft)
+                .foregroundStyle(Theme.secondaryLabel)
         }
     }
 
@@ -157,29 +232,16 @@ struct FilePickerView: View {
             modeButton(.paste, icon: "chevron.left.forwardslash.chevron.right", titleKey: "pick_mode_paste")
             modeButton(.explorer, icon: "folder.badge.plus", titleKey: "mode_explorer")
         }
-        // 粘贴通道只收 HTML/CSS，切到后端时把它禁用
-        .onChange(of: kind) { _, newKind in
-            if newKind.isBackend && mode == .paste {
-                mode = .files
-            }
-        }
         .padding(5)
-        .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 17, style: .continuous)
-                .stroke(PageMakeTheme.ink.opacity(0.07), lineWidth: 1)
-        }
+        .glassPanel(radius: 17)
     }
 
     private func modeButton(_ value: Mode, icon: String, titleKey: String) -> some View {
-        let pasteDisabled = value == .paste && kind.isBackend
         let explorerDisabled = value == .explorer && !canUseExplorer
-        let disabled = pasteDisabled || explorerDisabled
+        let disabled = explorerDisabled
         return Button {
             guard !disabled else {
-                alertItem = AlertItem(message: explorerDisabled
-                    ? L10n.string("error_explorer_requires_svip")
-                    : L10n.string("paste_unavailable_for_backend"))
+                alertItem = AlertItem(message: L10n.string("error_explorer_requires_svip"))
                 return
             }
             withAnimation(.snappy(duration: 0.24)) {
@@ -196,80 +258,38 @@ struct FilePickerView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
             .background(
-                mode == value && !disabled ? PageMakeTheme.ink : Color.clear,
+                mode == value && !disabled ? Theme.label : Color.clear,
                 in: RoundedRectangle(cornerRadius: 12, style: .continuous)
             )
-            .foregroundStyle(disabled ? PageMakeTheme.inkSoft.opacity(0.5) : (mode == value ? .white : PageMakeTheme.inkSoft))
+            .foregroundStyle(disabled
+                             ? Theme.tertiaryLabel
+                             : (mode == value ? Theme.background : Theme.secondaryLabel))
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - 部署形态（纯前端 / npm / pnpm / js）
+    // MARK: - 部署形态（自动识别，只读说明）
 
-    /// 四选一部署选项。非 VIP 也能看到 npm / pnpm / js，但是置灰不可选——
-    /// 明确告诉用户「这是升级后解锁的能力」，比直接隐藏更容易理解。
-    private var deployKindBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Text(L10n.string("deploy_kind_title"))
+    /// 形态选择控件已移除：部署方式由项目文件自动判断。
+    /// 这里只保留一行只读说明，让用户知道「不需要选」以及判断依据。
+    private var autoDetectBar: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "wand.and.stars")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.positive)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(L10n.string("deploy_auto_detect"))
                     .font(.system(.caption, design: .rounded, weight: .bold))
-                    .foregroundStyle(PageMakeTheme.inkSoft)
-                    .textCase(.uppercase)
-                    .tracking(0.4)
-                Spacer(minLength: 0)
-                if !canUseBackend {
-                    Text(L10n.string("deploy_kind_locked"))
-                        .font(.caption2.bold())
-                        .foregroundStyle(PageMakeTheme.coral)
-                }
+                    .foregroundStyle(Theme.label)
+                Text(L10n.string("deploy_auto_detect_hint"))
+                    .font(.caption2)
+                    .foregroundStyle(Theme.secondaryLabel)
             }
-
-            HStack(spacing: 8) {
-                ForEach(ProjectKind.allCases) { option in
-                    deployKindButton(option)
-                }
-            }
+            Spacer(minLength: 0)
         }
-        .padding(10)
-        .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 17, style: .continuous)
-                .stroke(PageMakeTheme.ink.opacity(0.07), lineWidth: 1)
-        }
-    }
-
-    private func deployKindButton(_ option: ProjectKind) -> some View {
-        let locked = option.isBackend && !canUseBackend
-        let selected = kind == option
-        return Button {
-            guard !locked else {
-                alertItem = AlertItem(message: L10n.string("deploy_kind_requires_vip"))
-                return
-            }
-            withAnimation(.snappy(duration: 0.22)) { kind = option }
-        } label: {
-            VStack(spacing: 5) {
-                Image(systemName: locked ? "lock.fill" : option.symbolName)
-                    .font(.system(size: 15, weight: .semibold))
-                Text(L10n.string(option.titleKey))
-                    .font(.caption2.bold())
-                    .lineLimit(1)
-                Text(L10n.string(option.detailKey))
-                    .font(.system(size: 9))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .opacity(0.75)
-            }
-            .frame(maxWidth: .infinity, minHeight: 62)
-            .padding(.vertical, 7)
-            .background(
-                selected && !locked ? PageMakeTheme.ink : PageMakeTheme.surfaceSoft,
-                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-            )
-            .foregroundStyle(locked ? PageMakeTheme.inkSoft.opacity(0.55) : (selected ? .white : PageMakeTheme.inkSoft))
-        }
-        .buttonStyle(.plain)
-        .accessibilityHint(locked ? L10n.string("deploy_kind_requires_vip") : "")
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassPanel(radius: 17)
     }
 
     // MARK: - 文件模式
@@ -282,7 +302,7 @@ struct FilePickerView: View {
                     eyebrowKey: "creation_zip_eyebrow",
                     titleKey: "pick_files_title",
                     detailKey: "pick_files_hint",
-                    tint: PageMakeTheme.gold,
+                    tint: Theme.premium,
                     detailText: uploadHint
                 )
 
@@ -292,10 +312,10 @@ struct FilePickerView: View {
 
                         Label(L10n.string("creation_zip_note"), systemImage: "checkmark.circle.fill")
                             .font(.subheadline.bold())
-                            .foregroundStyle(PageMakeTheme.ink)
+                            .foregroundStyle(Theme.label)
                         Text(L10n.string("creation_zip_detail"))
                             .font(.caption)
-                            .foregroundStyle(PageMakeTheme.inkSoft)
+                            .foregroundStyle(Theme.secondaryLabel)
                             .fixedSize(horizontal: false, vertical: true)
 
                         Button {
@@ -324,7 +344,7 @@ struct FilePickerView: View {
                     eyebrowKey: "creation_folder_eyebrow",
                     titleKey: "mode_explorer",
                     detailKey: "explorer_intro",
-                    tint: PageMakeTheme.sea
+                    tint: Theme.positive
                 )
 
                 PageMakeCard {
@@ -333,7 +353,10 @@ struct FilePickerView: View {
 
                         Button {
                             if let name = validatedProjectName() {
-                                onPick(.explorer(name: name, kind: kind))
+                                // 空白项目还没有文件可检测：VIP 及以上按后端白名单建，
+                                // 之后加 package.json 才能在发布时自动识别为 npm/pnpm。
+                                // 普通账号建纯前端项目（后端白名单与配额本来也不可用）。
+                                onPick(.explorer(name: name, kind: canUseBackend ? .npm : .staticSite))
                             }
                         } label: {
                             Label(L10n.string("explorer_create"), systemImage: "arrow.right")
@@ -357,7 +380,7 @@ struct FilePickerView: View {
                     eyebrowKey: "creation_code_eyebrow",
                     titleKey: "pick_mode_paste",
                     detailKey: "paste_hint",
-                    tint: PageMakeTheme.coral
+                    tint: Theme.highlight
                 )
 
                 nameField
@@ -378,14 +401,14 @@ struct FilePickerView: View {
                 )
                 Text(sizeText)
                     .font(.caption)
-                    .foregroundStyle(isTooLarge ? PageMakeTheme.coral : PageMakeTheme.inkSoft)
+                    .foregroundStyle(isTooLarge ? Theme.highlight : Theme.secondaryLabel)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 18)
         }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 0) {
-                Divider().overlay(PageMakeTheme.ink.opacity(0.06))
+                Divider().overlay(Theme.label.opacity(0.06))
                 Button {
                     submitPaste()
                 } label: {
@@ -398,8 +421,7 @@ struct FilePickerView: View {
                 .opacity(pasteContent.hasContent ? 1 : 0.42)
             }
             .background(.ultraThinMaterial)
-        }
-    }
+        }    }
 
     // MARK: - 模板
 
@@ -407,7 +429,7 @@ struct FilePickerView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.string("templates"))
                 .font(.system(.subheadline, design: .rounded, weight: .bold))
-                .foregroundStyle(PageMakeTheme.ink)
+                .foregroundStyle(Theme.label)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(PasteTemplates.all) { tpl in
@@ -417,18 +439,14 @@ struct FilePickerView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(L10n.string(tpl.nameKey))
                                     .font(.system(.subheadline, design: .rounded, weight: .bold))
-                                    .foregroundStyle(PageMakeTheme.ink)
+                                    .foregroundStyle(Theme.label)
                                 Text(L10n.string("use_template"))
                                     .font(.caption)
-                                    .foregroundStyle(PageMakeTheme.inkSoft)
+                                    .foregroundStyle(Theme.secondaryLabel)
                             }
                             .padding(12)
                             .frame(width: 150, alignment: .leading)
-                            .background(PageMakeTheme.surface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                    .stroke(PageMakeTheme.ink.opacity(0.07), lineWidth: 1)
-                            }
+                            .glassPanel(radius: 15)
                         }
                         .buttonStyle(.plain)
                     }
@@ -452,24 +470,24 @@ struct FilePickerView: View {
                     .frame(width: 7, height: 7)
                 Text(title)
                     .font(.system(.subheadline, design: .rounded, weight: .bold))
-                    .foregroundStyle(PageMakeTheme.ink)
+                    .foregroundStyle(Theme.label)
                 Spacer()
                 Text(L10n.string(isRequired ? "editor_required" : "editor_optional"))
                     .font(.caption2)
-                    .foregroundStyle(isRequired ? PageMakeTheme.coral : PageMakeTheme.inkSoft.opacity(0.8))
+                    .foregroundStyle(isRequired ? Theme.highlight : Theme.secondaryLabel.opacity(0.8))
             }
             ZStack(alignment: .topLeading) {
                 TextEditor(text: text)
                     .font(.system(.footnote, design: .monospaced))
-                    .foregroundStyle(PageMakeTheme.codeText)
-                    .tint(PageMakeTheme.coral)
+                    .foregroundStyle(Theme.label)
+                    .tint(Theme.highlight)
                     .scrollContentBackground(.hidden)
                     .padding(6)
                     .frame(minHeight: minHeight, alignment: .topLeading)
                 if text.wrappedValue.isEmpty {
                     Text(placeholder)
                         .font(.system(.footnote, design: .monospaced))
-                        .foregroundStyle(PageMakeTheme.inkSoft.opacity(0.55))
+                        .foregroundStyle(Theme.secondaryLabel.opacity(0.55))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 14)
                         .allowsHitTesting(false)
@@ -477,18 +495,14 @@ struct FilePickerView: View {
             }
         }
         .padding(12)
-        .background(PageMakeTheme.codeBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(PageMakeTheme.ink.opacity(0.07), lineWidth: 1)
-        }
+        .glassPanel(radius: 18)
     }
 
     private func editorTint(_ title: String) -> Color {
         switch title {
-        case L10n.string("paste_html"): return PageMakeTheme.coral
-        case L10n.string("paste_css"): return PageMakeTheme.sea
-        default: return PageMakeTheme.gold
+        case L10n.string("paste_html"): return Theme.highlight
+        case L10n.string("paste_css"): return Theme.positive
+        default: return Theme.premium
         }
     }
 
@@ -560,13 +574,16 @@ struct FilePickerView: View {
             alertItem = AlertItem(message: message)
             return
         }
-        onPick(.paste(pasteContent, name: name, kind: kind))
+        // 粘贴通道只产出纯前端项目（HTML + CSS，没有 package.json）；
+        // 形态由 CreateSource.paste 自身固定，不再传 kind。
+        onPick(.paste(pasteContent, name: name))
     }
 
     // MARK: - 文件选择
 
-    /// 拷贝到临时目录（脱离安全作用域资源）+ 本地校验
-    private func handlePicked(_ urls: [URL]) {
+    /// 拷贝到临时目录（脱离安全作用域资源）+ 本地校验。
+    /// 判定 ZIP 形态要读中央目录，因此是 async（读取本身在后台线程）。
+    private func handlePicked(_ urls: [URL]) async {
         guard let name = validatedProjectName() else { return }
         var picked: [PickedFile] = []
         func discardPicked() {
@@ -580,7 +597,7 @@ struct FilePickerView: View {
 
             let name = url.lastPathComponent
             let ext = name.lowercased().components(separatedBy: ".").last ?? ""
-            guard FileValidator.allowedExtensions(for: kind).contains(ext) else {
+            guard FileValidator.allowedExtensions(for: uploadWhitelistKind).contains(ext) else {
                 discardPicked()
                 alertItem = AlertItem(message: L10n.format("validation_extension", ext))
                 return
@@ -605,18 +622,55 @@ struct FilePickerView: View {
             }
         }
 
-        switch FileValidator.validate(picked, limitBytes: maxUploadBytes, kind: kind) {
+        switch FileValidator.validate(picked, limitBytes: maxUploadBytes, kind: uploadWhitelistKind) {
         case .success(let files):
-            onPick(.files(files, name: name, kind: kind))
+            // 部署形态由文件自动识别（**根目录** package.json / pnpm-lock.yaml）。
+            let detected = await DeployKindDetector.detect(files: files)
+            guard let detected else {
+                // ZIP 中央目录读不出条目名（zip64 / 加密 / 条目名非 UTF-8）：
+                // 无法判定是纯前端还是后端，必须让用户知情后再决定，
+                // 不能静默按纯前端上传（后端项目会缺 Node 运行时）。
+                pendingBackendUpload = PendingBackendUpload(
+                    files: files,
+                    name: name,
+                    reason: .undetermined
+                )
+                return
+            }
+            if detected.isBackend && !canUseBackend {
+                // 非 VIP 选了含 package.json 的项目：不能静默按纯前端上传，
+                // 让用户明确选择「降级纯前端」或取消去升级。
+                pendingBackendUpload = PendingBackendUpload(
+                    files: files,
+                    name: name,
+                    reason: .backendRequiresVIP
+                )
+                return
+            }
+            onPick(.files(files, name: name, kind: detected))
         case .failure(let error):
             discardPicked()
             alertItem = AlertItem(message: error.errorDescription ?? L10n.string("error_generic"))
         }
     }
 
+    /// 登记待回收的临时文件（真正的删除推迟到页面关闭，见 onDisappear）。
+    private func recycle(_ files: [PickedFile]) {
+        pendingRecycleFiles.append(contentsOf: files)
+    }
+
+    /// 页面关闭时回收：已交给上传队列的文件在交接时就从列表里摘掉了，
+    /// 这里只需要删剩下的（取消弹窗留下的那一批）。
+    private func recycleLeftoverPendingFiles() {
+        for file in pendingRecycleFiles {
+            try? FileManager.default.removeItem(at: file.url)
+        }
+        pendingRecycleFiles.removeAll()
+    }
+
     private var uploadHint: String {
-        let limitKey = kind.isBackend ? "pick_files_hint_backend_limit" : "pick_files_hint_limit"
-        let unlimitedKey = kind.isBackend ? "pick_files_hint_backend_unlimited" : "pick_files_hint_unlimited"
+        let limitKey = canUseBackend ? "pick_files_hint_backend_limit" : "pick_files_hint_limit"
+        let unlimitedKey = canUseBackend ? "pick_files_hint_backend_unlimited" : "pick_files_hint_unlimited"
         guard let maxUploadBytes else {
             return L10n.string(unlimitedKey)
         }

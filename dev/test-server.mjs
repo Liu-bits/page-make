@@ -651,6 +651,164 @@ await test('粘贴代码创建：参数校验', async () => {
   assertEqual((await noHtml.json()).error, 'BAD_REQUEST', '空 HTML 应报 BAD_REQUEST');
 });
 
+// 降级后不能靠「publish 不带 kind」继续占用后端常驻进程：
+// 权限校验必须按最终生效的 kind 判断，而不是只在显式传 kind 时判断。
+await test('降级后 publish 不带 kind 也不能继续跑后端项目', async () => {
+  const uid = 'downgrade-publish';
+  seedUser(dataDir, uid, 'svip');
+  const auth = { 'X-Test-User': uid };
+
+  const created = await (await fetch(`${BASE}/api/projects/explorer`, {
+    method: 'POST',
+    headers: { ...auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'downgrade-app', kind: 'npm' }),
+  })).json();
+  assert(created.ok, `SVIP 建后端项目应成功：${JSON.stringify(created)}`);
+  const id = created.project.id;
+
+  const put = await fetch(`${BASE}/api/projects/${id}/files`, {
+    method: 'POST',
+    headers: { ...auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      path: 'package.json',
+      content: textToBase64(JSON.stringify({
+        name: 'x', version: '1.0.0', private: true, scripts: { start: 'node server.js' },
+      })),
+    }),
+  });
+  assertEqual(put.status, 200, '写入 package.json 应成功');
+
+  // 降级为普通用户（DiskKV 每次读盘，改完立即生效）
+  seedUser(dataDir, uid, 'user');
+
+  const res = await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST',
+    headers: { ...auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'publish' }), // 故意不带 kind
+  });
+  assertEqual(res.status, 403, `降级后发布后端项目应 403，实际 ${res.status}`);
+  assertEqual((await res.json()).error, 'BACKEND_REQUIRES_VIP', '错误码应为 BACKEND_REQUIRES_VIP');
+});
+
+// 上传任务只能消费一次：否则同一份分片可以反复 finish，每次生成一个新项目
+// （配额绕过），失败时 upload 记录还会被保留，可无限刷失败记录。
+await test('finish 只能消费一次 + 缺分片直接拒绝 + 并发 finish 只成功一个', async () => {
+  const zip = buildZip([['index.html', '<h1>once</h1>']]);
+  const initUpload = async (size = zip.length) => (await fetch(`${BASE}/api/upload/init`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: [{ name: 'site.zip', size }] }),
+  })).json();
+  const putChunk = async (uploadId, bytes) => fetch(`${BASE}/api/upload/chunk`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uploadId, fileIndex: 0, chunkIndex: 0, data: bytes.toString('base64') }),
+  });
+  const finishOnce = async (uploadId) => {
+    const res = await fetch(`${BASE}/api/upload/finish`, {
+      method: 'POST',
+      headers: { ...AUTH, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uploadId }),
+    });
+    let json = null;
+    try { json = await res.json(); } catch { /* 非 JSON 响应 */ }
+    return { status: res.status, json };
+  };
+
+  // A. 一个分片都不传：直接 400，不能丢给后台对缺失分片反复重试
+  const initA = await initUpload();
+  const noChunk = await fetch(`${BASE}/api/upload/finish`, {
+    method: 'POST',
+    headers: { ...AUTH, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ uploadId: initA.uploadId }),
+  });
+  assertEqual(noChunk.status, 400, `缺分片应 400，实际 ${noChunk.status}`);
+  assertEqual((await noChunk.json()).message, 'CHUNKS_INCOMPLETE', '应提示分片不完整');
+
+  // B. 正常上传后重复 finish：第二次必须被拒（成功路径会删 upload 记录 → 404）
+  const initB = await initUpload();
+  const chunkRes = await putChunk(initB.uploadId, zip);
+  assert(chunkRes.ok, '分片上传应成功');
+  const first = await finishOnce(initB.uploadId);
+  assertEqual(first.status, 200, '首次 finish 应成功');
+  const second = await finishOnce(initB.uploadId);
+  assert(
+    second.status === 404 || second.status === 409,
+    `重复 finish 必须被拒，实际 ${second.status}`
+  );
+
+  // C. 失败路径：processUpload 失败时**保留** upload 记录（便于排查/重传），
+  //    所以这里能稳定命中 409 UPLOAD_ALREADY_CONSUMED。
+  //    B 的成功路径记录被删掉只会 404，单独断言 409 才真正覆盖「已消费」分支。
+  const garbage = Buffer.from('definitely-not-a-zip-payload');
+  const initC = await initUpload(garbage.length);
+  assert((await putChunk(initC.uploadId, garbage)).ok, '垃圾分片应被接收（内容校验在处理阶段）');
+  assertEqual((await finishOnce(initC.uploadId)).status, 200, '首次 finish 应成功（内容错误异步暴露）');
+  const repeatC = await finishOnce(initC.uploadId);
+  assertEqual(repeatC.status, 409, `已消费的上传再次 finish 应 409，实际 ${repeatC.status}`);
+  assertEqual(repeatC.json?.message, 'UPLOAD_ALREADY_CONSUMED', '应提示已消费');
+
+  // D. 并发 finish：加锁前两个请求都能读到 status=uploading 并各自生成项目
+  //    （配额绕过）。这里用必然失败的载荷，保证 upload 记录不会被删，
+  //    第二个请求能稳定走到 409 分支。
+  const initD = await initUpload(garbage.length);
+  assert((await putChunk(initD.uploadId, garbage)).ok, '并发用例分片上传应成功');
+  const [r1, r2] = await Promise.all([finishOnce(initD.uploadId), finishOnce(initD.uploadId)]);
+  const okCount = [r1, r2].filter((r) => r.status === 200).length;
+  const conflictCount = [r1, r2].filter((r) => r.status === 409).length;
+  assertEqual(okCount, 1, `并发 finish 必须只有一个成功，实际 ${JSON.stringify([r1.status, r2.status])}`);
+  assertEqual(conflictCount, 1, `另一个必须是 409，实际 ${JSON.stringify([r1.status, r2.status])}`);
+  const winner = r1.status === 200 ? r1 : r2;
+  assert(/^[a-f0-9]{32}$/.test(String(winner.json?.projectId || '')), '成功方应返回 projectId');
+});
+
+// 请求体上限：readBody 发生在路由匹配与鉴权之前，超大 body 必须在读入阶段挡住，
+// 否则公开端口上任何匿名请求都能把容器内存打满。
+await test('请求体超限：返回 413 而不是把内存吃满', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pagemake-body-'));
+  const port = 18796;
+  const bodyEnv = {
+    ...process.env,
+    PORT: String(port),
+    DATA_DIR: dir,
+    DEV_NO_AUTH: '1',
+    PAGEMAKE_MAX_BODY_BYTES: '1024',
+  };
+  for (const key of ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'all_proxy', 'ALL_PROXY']) {
+    delete bodyEnv[key];
+  }
+  const child = spawn(process.execPath, [path.resolve('docker/server.mjs')], {
+    env: bodyEnv,
+    stdio: 'ignore',
+  });
+  try {
+    const base = `http://127.0.0.1:${port}`;
+    for (let i = 0; i < 75; i++) {
+      try {
+        const probe = await fetch(`${base}/healthz`);
+        if (probe.ok) break;
+      } catch {
+        // 尚未启动
+      }
+      await sleep(200);
+    }
+    const res = await fetch(`${base}/api/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'feedback', message: 'x'.repeat(4096) }),
+    });
+    assertEqual(res.status, 413, `超限 body 应返回 413，实际 ${res.status}`);
+    assertEqual((await res.json()).error, 'TOO_LARGE', '错误码应为 TOO_LARGE');
+  } finally {
+    if (process.platform === 'win32') {
+      spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F']);
+    } else {
+      child.kill('SIGKILL');
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // 反馈接口防刷：未登录可提交，但必须限流，否则脚本可无限灌入打满 KV
 await test('反馈：可提交，且超限返回 429', async () => {
   const first = await (await fetch(`${BASE}/api/feedback`, {
@@ -661,7 +819,7 @@ await test('反馈：可提交，且超限返回 429', async () => {
   assert(first.ok, '正常反馈应被接收');
 
   let limited = 0;
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 15; i++) {
     const res = await fetch(`${BASE}/api/feedback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -669,7 +827,7 @@ await test('反馈：可提交，且超限返回 429', async () => {
     });
     if (res.status === 429) limited++;
   }
-  assert(limited > 0, '超过每 IP 每分钟 5 次后应返回 429');
+  assert(limited > 0, '超过每 IP 每分钟 10 次后应返回 429');
 
   const empty = await (await fetch(`${BASE}/api/feedback`, {
     method: 'POST',
@@ -982,7 +1140,18 @@ await test('SVIP 后端项目：npm 部署 → 进程常驻 → /p/ 反向代理
   const server = [
     "const http = require('node:http');",
     'const port = Number(process.env.PORT);',
-    "http.createServer((req, res) => {",
+    'http.createServer((req, res) => {',
+    // 204：无 body 状态码，代理层必须传 null body（否则 Response 构造抛错 → 500）
+    "  if (req.url === '/status204') { res.writeHead(204); res.end(); return; }",
+    // 多条 Set-Cookie：不能被逗号合并（Expires 本身含逗号）
+    "  if (req.url === '/cookies') {",
+    "    res.writeHead(200, { 'content-type': 'text/plain', 'set-cookie': [",
+    "      'a=1; Path=/; Expires=Wed, 21 Oct 2026 07:28:00 GMT',",
+    "      'b=2; Path=/',",
+    '    ] });',
+    "    res.end('cookies-ok');",
+    '    return;',
+    '  }',
     "  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });",
     "  res.end('backend-alive:' + req.url + '|prefix:' + (req.headers['x-forwarded-prefix'] || ''));",
     '}).listen(port, "127.0.0.1");',
@@ -1024,6 +1193,18 @@ await test('SVIP 后端项目：npm 部署 → 进程常驻 → /p/ 反向代理
   const slash = await fetch(`${BASE}/p/${id}/`);
   assertEqual(slash.status, 200, '尾斜杠不应 404');
 
+  // 204 无 body 状态码：修复前 Response 构造会抛错，整条请求变 500
+  const noContent = await fetch(`${BASE}/p/${id}/status204`);
+  assertEqual(noContent.status, 204, `上游 204 应原样透传，实际 ${noContent.status}`);
+
+  // 多条 Set-Cookie 必须逐条透传，不能被逗号合并成一条
+  const cookieRes = await fetch(`${BASE}/p/${id}/cookies`);
+  assertEqual(cookieRes.status, 200, '多 Cookie 响应应 200');
+  const cookieList = typeof cookieRes.headers.getSetCookie === 'function'
+    ? cookieRes.headers.getSetCookie()
+    : [];
+  assertEqual(cookieList.length, 2, `应透传 2 条 Set-Cookie，实际 ${cookieList.length}：${JSON.stringify(cookieList)}`);
+
   // 刷新链接必须走后端重启链路，不能误走纯前端 HTML 入口部署。
   const refreshed = await fetch(`${BASE}/api/projects/${id}/refresh`, {
     method: 'POST',
@@ -1050,6 +1231,68 @@ await test('SVIP 后端项目：npm 部署 → 进程常驻 → /p/ 反向代理
     0,
     '删除后端项目后常驻进程必须被回收，不能继续占用端口'
   );
+});
+
+// js 形态（单文件 Node 脚本）没有 package.json 是**正常状态**。
+// refresh.js 曾漏掉 `kind !== 'js'` 例外，导致这类项目永远刷新失败
+// （400 MISSING_PACKAGE_JSON），而 publish 走的是 projects/[id].js 的正确判定。
+await test('js 形态后端项目：无 package.json 也能刷新链接', async () => {
+  const jsUserId = 'dev-js-refresh';
+  seedUser(dataDir, jsUserId, 'svip');
+  const jsAuth = { 'X-Test-User': jsUserId };
+
+  const created = await (await fetch(`${BASE}/api/projects/explorer`, {
+    method: 'POST',
+    headers: { ...jsAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'js-app', kind: 'js' }),
+  })).json();
+  assert(created.ok, `建 js 项目应成功：${JSON.stringify(created)}`);
+  const id = created.project.id;
+
+  const serverSrc = [
+    "const http = require('node:http');",
+    'http.createServer((req, res) => {',
+    "  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });",
+    "  res.end('js-runtime-ok');",
+    "}).listen(Number(process.env.PORT), '127.0.0.1');",
+  ].join('\n');
+  const put = await fetch(`${BASE}/api/projects/${id}/files`, {
+    method: 'POST',
+    headers: { ...jsAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: 'server.js', content: textToBase64(serverSrc) }),
+  });
+  assertEqual(put.status, 200, '写入 server.js 应成功（故意不写 package.json）');
+
+  const published = await (await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST',
+    headers: { ...jsAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'publish', kind: 'js' }),
+  })).json();
+  assert(published.ok, `发布 js 项目应成功：${JSON.stringify(published)}`);
+  await waitForProjectReady(id, jsAuth);
+
+  const refreshed = await fetch(`${BASE}/api/projects/${id}/refresh`, {
+    method: 'POST',
+    headers: { ...jsAuth, 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  const refreshedJson = await refreshed.json();
+  assertEqual(
+    refreshed.status,
+    200,
+    `js 形态刷新不应要求 package.json，实际 ${refreshed.status}：${JSON.stringify(refreshedJson)}`
+  );
+  await waitForProjectReady(id, jsAuth);
+  const live = await fetch(`${BASE}/p/${id}`);
+  assertEqual(live.status, 200, '刷新后 js 项目仍可访问');
+  assert((await live.text()).includes('js-runtime-ok'), '刷新后应返回项目自身响应');
+
+  const del = await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST',
+    headers: { ...jsAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete' }),
+  });
+  assertEqual(del.status, 200, '删除 js 项目应成功');
 });
 
 await test('导出备份：VIP 可下载 ZIP，普通用户被拒', async () => {

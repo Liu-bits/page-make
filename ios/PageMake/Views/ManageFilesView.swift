@@ -68,6 +68,8 @@ struct ManageFilesView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(PageMakeBackground())
             .navigationTitle(L10n.string("manage_files"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

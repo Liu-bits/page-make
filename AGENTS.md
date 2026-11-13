@@ -1,7 +1,10 @@
 # AGENTS.md — Page-make 项目总纲（AI 操作手册）
 
-> 本文件是后续 AI Agent 接手本项目的必读文件。涵盖：用户规定的工作规则、设备规格、
-> 源码结构、功能清单、测试体系、CI/CD、账号配置、已知坑。**修改本项目前先读完本文。**
+> **本文件写给 AI Agent，不给人看。** 人看的入口是 `README.md`。
+> 所以这里可以直接点名：规则、优先级、唯一真相（哪个文件说了算）、什么禁止什么必须。
+>
+> **接手顺序**：本文件 §0 → `.agent/file/SUMMARY.md`（一行一文件的索引）
+> → 按需打开具体文件 → 再动代码。不要一上来通读源码。
 
 ---
 
@@ -9,25 +12,69 @@
 
 1. **不允许自行部署、不要浪费时间等构建**：代码推送 + CI 全绿 + IPA 下载替换本地后，
    **通知用户去 ModelScope 创空间控制台部署**即可。不要反复探活、不要等空间构建、
-  不要手动点「重新部署」（用户会自己操作）。ModelScope 自动构建经常不触发，
-  这在用户预期内，不是 bug。
-2. **提交顺序**：改代码 → 本地全量测试全绿 → `git commit`（中文详细 message）→
-   `git push`（偶发 502/schannel 中断，重试 1-2 次即成功）→ 等 CI 四 job 全绿 →
-   下载 IPA artifact 替换本地 `E:/Page-make/PageMake-unsigned.ipa` → 通知用户部署。
+   不要手动点「重新部署」（用户会自己操作）。ModelScope 自动构建经常不触发，
+   这在用户预期内，不是 bug。
+2. **提交顺序（debug → main，禁止直接推 main）**：
+   改代码 → 本地全量测试全绿 → `git commit`（中文详细 message）→
+   `git push origin debug`（偶发 502/schannel 中断，重试 1-2 次即成功）→
+   等 debug 的 CI 三个 job 全绿（backend-test / ios-build / ipa）→
+   下载 IPA artifact 替换本地 `E:/Page-make/PageMake-unsigned.ipa` →
+   `git checkout main && git merge debug && git push origin main`（触发部署）→
+   通知用户去 ModelScope 控制台确认部署。
 3. **本地 IPA 是旧版属正常**，最新版永远以 CI artifact（`PageMake-unsigned-ipa`）为准。
 4. 全程**简体中文**回复；commit message 用中文、写清「问题/修复/新增/测试」。
-5. `.workbuddy-ai/` 目录是项目数据（记忆/日志），**禁止删除**。
+5. **`.agent/` 是 AI 自己的工作数据目录，禁止删除、禁止改名、禁止移到别处**：
+   - `.agent/file/` —— 文件索引（`SUMMARY.md` 是一行一文件的入口）
+   - `.agent/memory/YYYY-MM-DD.md` —— 每日工作日志
+   - `.agent/` 不进版本库（`.gitignore` 已忽略），属于本机数据
 6. 本地无法编译 iOS（无 Xcode）——Swift 改动只能靠 CI 验证，提交前尽量复用文件中
    已验证过的写法（见第 8 节 Swift 坑）。
-7. 每次实质性工作完成后，追加当日工作日志到 `.workbuddy-ai/memory/YYYY-MM-DD.md`。
+7. **改代码必须连带更新 `.agent/`（硬性）**：
+   - 新增 / 删除 / 重命名文件，或改动了导出符号 → 立刻重跑
+     `node dev/build-file-index.mjs`（只读源码，安全可重复执行）
+   - 改动了业务规则 / 常量 / 接口 / 已知坑 → 同步更新本文件对应章节
+   - 索引与实际代码不一致 = 下一次接手会被误导，属于必须修的缺陷
+8. 每次实质性工作完成后，追加当日工作日志到 `.agent/memory/YYYY-MM-DD.md`
+   （写：做了什么、为什么、踩了什么坑、测试结果）。
+9. **读代码先读索引，别整文件读**：`SUMMARY.md` 定位 → 文件 <150 行直接读全文 →
+   ≥150 行先看该文件的「区块 / 导出」再 `grep -n` 定位，只读相关行段。
+10. **唯一真相清单（改之前先确认改的是中心，不是副本）**：
+
+    | 关注点 | 唯一真相文件 | 违反后果 |
+    |---|---|---|
+    | 等级与配额 | `backend/lib/tiers.js` | 任何地方写死 300KB/1MB/5MB 都会让权益失真 |
+    | 业务常量 | `backend/lib/state.js` | 各 handler 各写一套超时/上限 |
+    | 路由表 | `docker/server.mjs` 的 `ROUTES` | `backend/index.js` 只有 9 行，别去那里找路由 |
+    | 路径归一 | `backend/lib/paths.js` | 只改存储不改下发 = 半截修复（见 §8） |
+    | 鉴权与权益 | `backend/lib/session.js` | 内联 `role === 'vip'` 会漏掉 svip/ultra |
+    | 中英文案 | `ios/PageMake/Resources/{zh-Hans,en}.lproj/Localizable.strings` | 两套必须同改，缺 key 会显示空字符串 |
+
+### 0.1 分支策略（debug / main）
+
+| 分支 | 职责 | CI 工作流 |
+|---|---|---|
+| `debug` | 所有开发与验证 | `.github/workflows/debug.yaml`：后端全部测试 + iOS 编译/单测 + 未签名 IPA |
+| `main` | 只存生产代码 | `.github/workflows/page-make.yaml`：**只做部署**，不跑测试 |
+
+硬性规则：
+
+- **禁止直接向 main 推代码**，只允许 `git merge debug` 合并进去。
+- 合并前 debug 上三个 job（backend-test / ios-build / ipa）必须全绿。
+  **main 上不跑测试，没有任何安全网**，所以这一步不能跳。
+- IPA artifact 从 **debug 的 CI run** 下载；main 不再构建 IPA。
+- 分支名固定 `debug`，不要改成 dev/test/staging（workflow 的 `on.branches` 写死了）。
+- 热修复也要走 debug（哪怕只改一行），否则 main 会失去"只接收已验证提交"的性质。
+- 本地 `git branch -a` 里 debug 是本地分支；首次推送用 `git push -u origin debug`。
+- **唯一例外**：`jwks-refresh.yaml` 每日自动提交 `backend/data/*.json` 到默认分支
+  （只改公钥种子，不碰代码），会顺带触发一次部署，属预期行为。
 
 ---
 
 ## 1. 项目概述
 
-- **是什么**：iOS App + 自托管后端，让用户在手机上创建/发布静态网页与 Node 服务。
-  上传 ZIP、粘贴 HTML/CSS/JS、或虚拟文件夹管理器三种方式建站，生成公开链接分享。
-  普通用户只能部署纯前端；VIP / SVIP / Ultra 可部署 npm / pnpm 后端项目。
+- **是什么**：iOS App + 自托管后端（**部署在 ModelScope**），让用户在手机上创建/发布静态网页与 Node 服务。
+  上传 ZIP、粘贴 HTML/CSS、或虚拟文件夹管理器三种方式建站，生成公开链接分享。
+  普通用户只能部署纯前端；VIP / SVIP / Ultra 可部署 npm / pnpm / js 后端项目。
 - **仓库**：私有仓库（专有软件，保留所有权利）
 - **技术栈**：
   - iOS：SwiftUI + XcodeGen（`ios/project.yml` 描述工程），最低 iOS 27.0，无第三方 SDK
@@ -48,8 +95,8 @@
 | 项 | 规格 / 路径 |
 |---|---|
 | OS | Windows（Git Bash 可用；bash 工具走 Git Bash 语法） |
-| Node（首选 managed） | `C:/Users/liu20/.workbuddy-ai/binaries/node/versions/22.22.2-6/node.exe` |
-| Python（managed） | `C:/Users/liu20/.workbuddy-ai/binaries/python/versions/3.13.12/python.exe` |
+| Node | 用 PATH 上的 `node`（本机实测 v26.8.1 可跑全部测试；CI 固定 Node 22）。需要特定版本时用工作区依赖加载返回的绝对路径，**不要写死某台机器的安装路径** |
+| Python | 仅在辅助脚本时用，PATH 上的 `python` 即可（实测 3.13.x） |
 | Swift | 6.4 toolchain：`C:/Users/liu20/AppData/Local/Programs/Swift/Toolchains/6.4.0+Asserts/usr/bin/swiftc.exe`，**仅用于 `-parse` 语法检查**；运行前必须先清除大写 `HTTPS_PROXY/HTTP_PROXY/ALL_PROXY` 环境变量（大小写重复键导致 Swift runtime 崩溃） |
 | Xcode | **本地没有**。iOS 编译/测试/打包全部靠 GitHub Actions |
 | git 推送 | 必须走沙箱 HTTP 代理（如 `git -c http.proxy=http://127.0.0.1:18081 -c https.proxy=http://127.0.0.1:18081 push`；**端口随会话变化**，失败先探测当前代理端口），直连不通；偶发 502 重试即可 |
@@ -63,13 +110,16 @@
 
 ```
 E:/Page-make/
-├── AGENTS.md                # 本文件
+├── AGENTS.md                # 本文件（写给 AI）
+├── .agent/                  # AI 工作数据（gitignore，禁止删除）
+│   ├── file/                #   文件索引：SUMMARY.md 一行一文件；backend/ios/infra 为详细版
+│   └── memory/              #   每日工作日志 YYYY-MM-DD.md
 ├── Have-not.md              # 已知限制/未做功能（过审披露用）
-├── README.md                # 项目说明 + 上线清单
+├── README.md                # 项目说明 + 上线清单（写给人的）
 ├── Dockerfile               # node:22-alpine，PORT=7860，ENTRYPOINT=server.mjs
 ├── PageMake-unsigned.ipa    # 本地 IPA 副本（gitignore，旧版正常，以 CI artifact 为准）
 ├── backend/                 # 后端全部代码（容器与 CI 测试共用同一份）
-│   ├── index.js             #   EdgeOne 风格 handler（路由表在文件头部注释）
+│   ├── index.js             #   仅根路径服务信息（9 行）；**路由表在 docker/server.mjs 的 ROUTES**
 │   ├── admin.html           #   管理后台单页（/admin，PBKDF2 登录，token 存 sessionStorage）
 │   ├── api/                 #   API 路由
 │   │   ├── auth.js          #     Apple 登录（identityToken → JWKS 验签）
@@ -86,7 +136,7 @@ E:/Page-make/
 │   │   ├── stats.js         #     用量统计
 │   │   └── upload/          #     init / chunk(600KB 分片) / finish / [uploadId](取消)
 │   ├── lib/                 #   核心库
-│   │   ├── kv.js            #     KV 抽象（EdgeOne KV / DiskKV 双实现）+ keys() 键空间
+│   │   ├── kv.js            #     KV 访问层（env.PAGEMAKE 绑定）+ keys() 键空间 + kvGet/kvPut
 │   │   ├── state.js         #     全部业务常量（见第 4 节）
 │   │   ├── session.js       #     会话（7 天 TTL）、requireAuth、isBanned、isVIPUser、
 │   │   │                    #     isGuestLimited（权益判断统一入口）
@@ -114,12 +164,13 @@ E:/Page-make/
 │   │                        #   WebView / QRCodeView / BannedView / SettingsView
 │   │                        #   (统计/删账号/游客提示/VIP 申请) / UploadQueueView /
 │   │                        #   VIPUpgradeApplicationView
-│   ├── Resources/           #   Documents/(中英 .txt) + en/zh-Hans.lproj（各 335 键，0 重复）
+│   ├── Resources/           #   Documents/(中英 .txt) + en/zh-Hans.lproj（各 339 键，0 重复）
 │   ├── PageMake.entitlements  # applesignin（免费 Apple ID 用不了，游客登录兜底）
 │   └── PrivacyInfo.xcprivacy  # 隐私清单（过审）
 ├── ios/project.yml          # XcodeGen 描述（改工程结构改这里，勿直接改 xcodeproj）
 ├── ios/PageMakeTests/       # 5 个单测文件（含密码强度边界与错误码映射）
 ├── dev/                     # 测试脚本（见第 5 节）+ make-zip.mjs
+│                            #   + build-file-index.mjs（生成 .agent/file/ 索引，改代码后必跑）
 ├── scripts/
 │   ├── deploy-modelscope.sh # CI 部署：推送子集到创空间 Git → 平台自动构建
 │   ├── refresh-jwks.mjs     # 拉取官方 JWKS 写种子（失败保留旧种子）
@@ -144,15 +195,17 @@ E:/Page-make/
   退出登录时清除 deviceId 重置身份；App 内**不提供邮箱注册与邮箱密码登录**）
 
 **VIP 升级申请链路（App 内唯一升级入口）**
-- App：设置页「升级 VIP」卡 → `VIPUpgradeApplicationView` 提交（可选 300 字说明）→ 轮询状态
-- 接口：`GET /api/vip-request` 读当前状态；`POST /api/vip-request` 提交/重提交（同 IP 每分 5 次）
-- 规则：仅 `isGuestLimited()` 的普通游客可提交；已是 VIP → 409 `ALREADY_VIP`；
-  pending 重复提交返回原记录（`duplicate: true`，不覆盖说明）；approved 后再提交 409；
-  rejected 可重新提交
-- 后台：`/admin` 概览扫描 `vipreq_` 前缀列出申请（含 email/accountKind/role/项目数/账号状态）
-  与 `stats.vipRequestCount`；`reviewVIPRequest { userId, approve, note }` 审核，批准走同一套
-  `upgradeVIP`（原地写 role=vip + vipSince、删 isTest、**不换 userId、不销毁会话**），
-  驳回写 status=rejected + reviewNote；非 pending 记录 409 `VIP_REQUEST_ALREADY_REVIEWED`
+- App：设置页显示**当前等级**，只能申请**下一等级**（user→vip→svip→ultra）；
+  `tier==ultra` 时整张卡片不渲染；`VIPUpgradeApplicationView` 提交（可选 300 字说明）→ 轮询状态
+- 接口：`GET /api/vip-request` → `{ tier, nextTier, canApply, request }`；
+  `POST /api/vip-request` 提交/重提交（同 userId+IP 每分 5 次）
+- 规则：任意登录账号都可申请**紧邻的下一级**（不能跳级）；ultra → 409 `NO_NEXT_TIER`；
+  同一 targetTier 的 pending 重复提交返回原记录（`duplicate: true`，不覆盖说明）；
+  rejected 可重新提交；**不再有「批准过就永久禁止再申请」**（批准后等级推进，nextTier 随之变化）
+- 后台：`/admin` 概览扫描 `vipreq_` 前缀列出申请；`reviewVIPRequest { userId, approve, note }`
+  审核，批准时把角色提升到**记录里的 targetTier**（不是固定 vip），原地写 role + vipSince、
+  删 isTest、**不换 userId、不销毁会话**；驳回写 status=rejected + reviewNote；
+  非 pending 记录 409 `VIP_REQUEST_ALREADY_REVIEWED`；覆盖旧记录前会归档到 `vipreqlog_`
 
 **VIP 权益变更必须同步项目链接（本轮修复）**
 - `upgradeVIP` / `reviewVIPRequest(approve)` 批准时会调用 `clearGuestLinkExpiry`，
@@ -203,7 +256,7 @@ E:/Page-make/
 - 项目列表搜索 + 排序（最新/最旧/名称/大小）+ 滑动重命名
 - 二维码分享（CoreImage CIFilter.qrCodeGenerator + ShareLink）
 - WebView 预览（reloadToken、轮询 150 次上限、runtimeErrors 去重上限 50）
-- 中英本地化（各 335 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
+- 中英本地化（各 339 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
 - 设置页 VIP 升级卡（皇冠图标 + 申请状态 + 申请/查看进度）；项目模式顶部固定构建栏
 - 隐私政策/用户协议 App 内展示（Documents 双语文档，文件名后缀区分语言）
 
@@ -225,22 +278,21 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 162 项 + 静态检查，提交前必须全绿）
+## 5. 测试体系（共 172 项 + 静态检查，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
-| `node dev/run-tests.mjs` | 49 | 单元测试（含 JWKS 三级加载、动态 ZIP 解压配额、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容、密码强度、MIME、等级配额、ZIP 写入器） |
-| `node dev/test-server.mjs` | 51 | 容器冒烟（真实 HTTP 全流程；含等级上传配额、压缩包小于配额但解压后超限、普通用户后端拒绝、npm 后端全链路反向代理、导出备份、ZIP PHP 过滤、Explorer 全流程、限流、删号 KV 残留、Apple/Google 合法 token 登录） |
+| `node dev/run-tests.mjs` | 53 | 单元测试（含 JWKS 三级加载、动态 ZIP 解压配额、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容、密码强度、MIME、等级配额、ZIP 写入器） |
+| `node dev/test-server.mjs` | 55 | 容器冒烟（真实 HTTP 全流程；含等级上传配额、压缩包小于配额但解压后超限、普通用户后端拒绝、npm 后端全链路反向代理、导出备份、ZIP PHP 过滤、Explorer 全流程、限流、删号 KV 残留、Apple/Google 合法 token 登录） |
 | `node dev/check-handler-imports.mjs` | 1 | 静态扫「被调用但未 import/未定义」的标识符（ESM 惰性绑定让这类错误只在运行时炸成 500；已接入 CI） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
-| `node dev/test-assets.mjs` | 25 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
-| `node dev/test-admin.mjs` | 29 | 后台（密码安全、VIP/SVIP/Ultra 等级切换、配额同步、封禁下架/解封、删号、邮箱密码入口删除、VIP 升级申请全链路） |
-| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 335 键） |
-| `node scripts/check-dead-strings.mjs` | 1 | 死文案键扫描：查无 Swift 引用的本地化键。对 `status_/account_/template_/project_kind_/ban_level_` 前缀插值引用的键单列为「动态引用，需人工确认」，不计入死键 |
+| `node dev/test-assets.mjs` | 26 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
+| `node dev/test-admin.mjs` | 30 | 后台（密码安全、VIP/SVIP/Ultra 等级切换、配额同步、封禁下架/解封、删号、邮箱密码入口删除、VIP 升级申请全链路） |
+| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 339 键） |
+| `node scripts/check-dead-strings.mjs` | 1 | 死文案键扫描：查无 Swift 引用的本地化键。对 `status_/account_/template_/project_kind_/ban_level_` 前缀插值引用的键单列为「动态引用，需人工确认」，不计入死键。**注意：本脚本只打印、从不 `exit 1`，是提示性检查，不是门禁** |
 | `node scripts/check-swift-decls.mjs` | 1 | Swift 同作用域属性包装器重复声明扫描（替代本地缺失的 `-typecheck`；已接入 CI backend-test job） |
 
-> Node 优先用 `mcp__codex_app__load_workspace_dependencies` 返回的运行时绝对路径；
-> AGENTS 里旧版 `C:/Users/liu20/.workbuddy-ai/.../node.exe` 可能已不存在。
+> Node 用 PATH 上的 `node`（或工作区依赖加载返回的绝对路径）；不要写死机器安装路径。
 > 测试脚本坑：`fail()` 的 error 字段是错误码字符串本身；
 > DiskKV 文件名 = `encodeKey(keys.project(id))`；DEV_NO_AUTH 下测试身份用 `X-Test-User` 头。
 
@@ -253,7 +305,8 @@ E:/Page-make/
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
-| page-make.yaml | push/PR to main | 四 job：backend-test（Node22 跑 162 项 + 本地化检查 + 死键扫描 + 重复声明扫描 + Docker 构建）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天）→ deploy（仅 main：scripts/deploy-modelscope.sh） |
+| debug.yaml | push/PR to **debug**、tag v* | 三 job：backend-test（Node22 跑 172 项 + 本地化/死键/重复声明扫描 + Docker 构建）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天） |
+| page-make.yaml | push to **main** | **只一个 deploy job**：scripts/deploy-modelscope.sh。测试/编译全部在 debug，见 §0.1 |
 | keepalive.yaml | 每 10 分钟 | 探 `${PAGEMAKE_URL}/healthz`，**必须带 UA**（`-A "PageMake-Keepalive/1.0"`），并回显 /api/config 的 jwks 诊断 |
 | jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子并提交（境内拉不到 Google，只能靠 runner） |
 
@@ -263,9 +316,9 @@ E:/Page-make/
 ### 6.2 部署链路（用户负责最后一步）
 
 ```
-push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ + docker/）
-推送到创空间 Git（commit "deploy: <sha>"）→ ModelScope 平台自动构建（约 4 分钟）
-→ 新实例上线
+push debug → debug CI 三 job 全绿 → 合并 main → main 的 deploy job 把构建子集
+（Dockerfile + backend/ + docker/）推送到创空间 Git（commit "deploy: <sha>"）
+→ ModelScope 平台自动构建（约 4 分钟）→ 新实例上线
 ```
 
 - **Agent 职责到此为止**：通知用户去控制台确认/点「重新部署」。平台自动构建偶尔
@@ -369,6 +422,19 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
    `npm.cmd` / `pnpm.cmd` 并 `shell: true`；Linux 容器直接走命令名
  - 后端项目运行时子进程 env 只能给最小集合（PATH/HOME/PORT/HOST/NODE_ENV/NODE_OPTIONS），
    绝不能继承宿主 `process.env`，否则会把平台 Token / 密钥暴露给用户代码
+ - **`restoreAll` 必须用 `isBackendKind()` 判断，不能枚举 `npm`/`pnpm`**：曾写成
+   `if (kind !== 'npm' && kind !== 'pnpm') continue`，导致容器重启后 `js` 形态项目
+   永不拉起、公开页一直 503，而 KV 里状态还是 `ready`。三种后端形态要一起处理；
+   恢复时还要把 `tier: tierOf(owner)` 传下去，否则 SVIP/Ultra 的重型项目会被按 vip
+   的 60 秒启动超时误判 `START_TIMEOUT`
+ - **引用改写/解析的正则一律不能有「无限长尾量词」**（`[^>]*`、`[^"]*`、`[\s\S]*?` 反复套用）：
+   用户 HTML/CSS 完全可控，未闭合标签/注释会让引擎每次扫到串尾再回退 →
+   O(N·L) 二次复杂度，单文件就能卡死单进程事件循环，且公开页每次请求都会跑。
+   2026-11-13 实测：`rewriteLocalRefs` 遇到 200KB 的 `<img ` 要 **70 秒**；
+   CSS `@import(?:空白|注释)+"…"` 遇 152 字节的 24 个注释块要 413ms（指数回溯）。
+   现行做法：`rewriteLocalRefs` 用**游标单调前进的手写扫描**（每字符最多访问一次），
+   `@import` 用 `indexOf` 扫描且失败时必须返回已扫描位置供调用方推进 cursor。
+   新增任何「按标签/按注释逐段匹配」的逻辑都要照这个模式写，并补一条耗时断言测试
  - `docker/server.mjs` 里的模块路径必须用 `pathToFileURL(path.join(ROOT, ...))`；
    用 `new URL('./backend/...', import.meta.url)` 在容器布局下会指向错误目录
  - 未登录可写的接口（feedback 等）必须加 IP 限流：否则脚本可无限刷量打满 KV →
@@ -432,7 +498,7 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
   `rg "<case 名>" ios/` 与 `node scripts/check-dead-strings.mjs` 都要跑。
 - **`swiftc -parse` 只查语法，查不出重复声明**：`-parse` 不建符号表，
   `invalid redeclaration of 'xxx'` 这类语义错误本地全绿、CI 才炸（exit 65），
-  而且 iOS job 一失败，ipa 和 deploy 跟着失败/跳过，后端 162 项全绿也白搭。
+  而且 iOS job 一失败，ipa 和 deploy 跟着失败/跳过，后端 172 项全绿也白搭。
   2026-10-25 实测踩到：给 SettingsView 加刷新按钮时重复声明了
   `@State private var showVIPApplication`（上一轮已加过一份）。
   缓解手段：Windows 工具链没有 iOS SDK，`-typecheck` 会直接
@@ -467,7 +533,7 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
 4. **10-23** 全流程交付（run 39101031130 四 job 全绿；IPA 584KB 替换本地；
    创空间自动构建上线并实证 JWKS 种子回退生效）
 
-> 详细踩坑记录见 `.workbuddy-ai/memory/2026-10-16.md` 和 `2026-10-17.md`。
+> 详细踩坑记录见 `.agent/memory/2026-10-16.md` 和 `2026-10-17.md`。
 
 ---
 
@@ -521,11 +587,10 @@ push main → CI 全绿 → deploy job 把构建子集（Dockerfile + backend/ +
    - 问题：后端 VIP 只能由管理后台 `upgradeVIP` 手动发号，App 内**没有任何升级入口**，
      游客在客户端完全看不到「升级」这件事，只能等管理员操作。这是「游客无法升级」
      的直接原因（不是接口不通，是没有入口）。
-   - 新增 `backend/api/vip-request.js`：`GET` 读状态 / `POST` 提交。仅 `isGuestLimited()`
-     的普通游客可提交；VIP → 409 `ALREADY_VIP`；未登录 401；`note` 上限 300 字；
-     复用 `lib/ratelimit.js`（同 IP 每分 5 次，组键 `userId+IP`）。
-     pending 重复提交返回原记录（`duplicate: true`，不覆盖说明）；approved 后再提交 409
-     不覆盖留档；rejected 后可重新提交回 pending。
+   - 新增 `backend/api/vip-request.js`：`GET` 读状态 / `POST` 提交。未登录 401；`note` 上限 300 字；
+     复用 `lib/ratelimit.js`（同 userId+IP 每分 5 次）。
+     > 2026-11-13 已改为「任意账号只能申请下一等级」：ultra → `NO_NEXT_TIER`，
+     > pending 重复提交返回原记录，批准后等级推进、不再永久禁止再申请。以本文 §4 为准。
    - 后台 `/admin`：概览扫描 `vipreq_` 前缀返回 `vipRequests`（email/accountKind/role/
      projectCount/userStatus）+ `stats.vipRequestCount`（pending 数）；新增「VIP 升级申请」
      卡片与 `reviewVIPRequest { userId, approve, note }`。批准走同一套 `upgradeVIP`

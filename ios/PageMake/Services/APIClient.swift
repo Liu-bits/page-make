@@ -276,8 +276,9 @@ final class APIClient {
     }
 
     /// 后端项目的安装/构建/启动在服务端异步执行；客户端统一轮询到终态。
-    /// 360 次 × 2 秒覆盖 4 分钟安装 + 3 分钟构建 + 1 分钟启动及排队余量。
-    func waitForProjectReady(_ id: String, maxAttempts: Int = 360) async throws -> Project {
+    /// 900 次 × 2 秒 = 30 分钟：SVIP 服务端超时约 18 分钟、Ultra 约 23 分钟，
+    /// 12 分钟窗口会在 Ultra 大项目上提前放弃，把「仍在部署」误报成失败。
+    func waitForProjectReady(_ id: String, maxAttempts: Int = 900) async throws -> Project {
         for attempt in 0..<maxAttempts {
             if Task.isCancelled { throw CancellationError() }
             if attempt > 0 {
@@ -453,8 +454,21 @@ final class APIClient {
 
     /// 读取文本文件内容（编辑器载入用）
     func readTextFile(projectId: String, path: String) async throws -> String {
-        let encoded = path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? path
-        let data = try await request("/api/projects/\(projectId)/files?path=\(encoded)")
+        // 不能用 `.urlQueryAllowed`：它会放行 `+ & = ? ;` 等子分隔符，
+        // `C++.html` 拼进查询串后会被服务端解析成 `C  .html`（读文件必然 404）。
+        // 统一交给 URLComponents 按 queryItems 编码，由它决定哪些字符需要转义。
+        guard var components = URLComponents(
+            url: URL(string: "/api/projects/\(projectId)/files", relativeTo: baseURL) ?? baseURL,
+            resolvingAgainstBaseURL: true
+        ) else { throw APIError.invalidURL }
+        components.queryItems = [URLQueryItem(name: "path", value: path)]
+        // URLComponents 不转义 `+`（RFC 3986 允许它出现在 query 中），但服务端用
+        // URLSearchParams 解析，会把 `+` 当成空格 —— `C++.html` 仍会被读成
+        // `C  .html`。这里显式把 `+` 编码成 %2B。
+        components.percentEncodedQuery = components.percentEncodedQuery?
+            .replacingOccurrences(of: "+", with: "%2B")
+        guard let url = components.url else { throw APIError.invalidURL }
+        let data = try await request(url.absoluteString)
         let payload = try decoder.decode(FileContentPayload.self, from: data)
         guard let bytes = Data(base64Encoded: payload.content),
               let text = String(data: bytes, encoding: .utf8) else {
@@ -491,13 +505,14 @@ final class APIClient {
         let note: String
     }
 
-    /// 读取当前账号的升级申请状态。
-    func vipUpgradeRequest() async throws -> VIPUpgradeRequest? {
+    /// 读取当前账号的等级、下一档与申请状态。
+    /// 服务端契约：`{ tier, nextTier, canApply, request }`；nextTier 为 null 表示已到顶。
+    func vipUpgradeRequestStatus() async throws -> VIPRequestStatus {
         let data = try await request("/api/vip-request")
-        return try decoder.decode(VIPRequestPayload.self, from: data).request
+        return try decoder.decode(VIPRequestStatus.self, from: data)
     }
 
-    /// 提交升级申请；重复提交时后端返回原记录，不会生成重复工单。
+    /// 提交升级申请；重复提交时后端返回原记录（409 ALREADY_PENDING），不会生成重复工单。
     @discardableResult
     func submitVIPUpgradeRequest(note: String) async throws -> VIPUpgradeRequest {
         let body = try encoder.encode(VIPRequestEnvelope(note: note))

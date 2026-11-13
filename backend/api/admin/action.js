@@ -286,17 +286,20 @@ async function reviewVIPRequest(kv, { userId, approve, note }) {
   const now = nowSeconds();
 
   if (approve === true) {
-    // 与 upgradeVIP 同一套授权逻辑（原地写角色，不换账号、不销毁会话），
-    // 同时清掉游客期项目的 10 分钟过期时间，否则升级后旧链接仍会 410。
+    // 批准后把账号提升到**申请的目标等级**（user→vip→svip→ultra），而不是固定 vip。
+    // 原地写角色，不换账号、不销毁会话；同时清掉游客期项目的过期时间，
+    // 否则升级后旧链接仍会 410。
+    const requested = TIERS.includes(record.targetTier) ? record.targetTier : 'vip';
     let linksRenewed = 0;
-    if (!isVIPUser(user)) {
-      user.role = 'vip';
-      user.vipSince = now;
+    if (TIERS.indexOf(requested) > TIERS.indexOf(tierOf(user))) {
+      user.role = requested;
+      user.vipSince = user.vipSince || now;
       delete user.isTest;
       await kvPut(kv, keys.user(userId), user);
       linksRenewed = await clearGuestLinkExpiry(kv, userId);
     }
     record.status = 'approved';
+    record.targetTier = requested;
     record.linksRenewed = linksRenewed;
   } else {
     record.status = 'rejected';
@@ -309,7 +312,7 @@ async function reviewVIPRequest(kv, { userId, approve, note }) {
     approved: approve === true,
     userId,
     linksRenewed: record.linksRenewed ?? 0,
-    role: isVIPUser(user) ? 'vip' : 'user',
+    role: tierOf(user),
     accountKind: user.userId?.startsWith('guest_')
       ? (isVIPUser(user) ? 'guest-vip' : 'guest')
       : (isVIPUser(user) ? 'vip' : 'user'),

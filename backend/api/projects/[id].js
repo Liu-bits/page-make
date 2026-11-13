@@ -7,7 +7,7 @@ import { appendLog, keys, kvGet, kvPut } from '../../lib/kv.js';
 import { STATUS, isBackendKind, normalizeKind } from '../../lib/state.js';
 import { analyzeHtml } from '../../lib/diagnostics.js';
 import { rewriteLocalRefs, rewriteCssRefs } from '../../lib/paths.js';
-import { canUseBackend } from '../../lib/tiers.js';
+import { canUseBackend, tierOf } from '../../lib/tiers.js';
 import { deployBackendApp, stop as stopBackendApp } from '../../lib/backend-runtime.js';
 
 export async function onRequest(context) {
@@ -52,16 +52,19 @@ export async function onRequest(context) {
     const files = await readSiteFiles(kv, project.id);
     if (files.size === 0) return fail('NO_ENTRY', 400);
 
-    // 发布时允许切换部署形态（纯前端 ↔ npm ↔ pnpm）。
-    // 切到后端必须同时满足：VIP 及以上 + 项目里有 package.json。
-    if (body?.kind !== undefined) {
-      if (!['static', 'npm', 'pnpm', 'js'].includes(body.kind)) return fail('INVALID_KIND', 400);
-      if (body.kind !== 'static' && !canUseBackend(result.user)) {
-        return fail('BACKEND_REQUIRES_VIP', 403);
-      }
-      project.kind = body.kind;
+    // 发布时允许切换部署形态（纯前端 ↔ npm ↔ pnpm ↔ js）。
+    // 切到后端必须同时满足：VIP 及以上 + 项目里有 package.json（js 形态除外）。
+    if (body?.kind !== undefined && !['static', 'npm', 'pnpm', 'js'].includes(body.kind)) {
+      return fail('INVALID_KIND', 400);
     }
-    const kind = normalizeKind(project.kind);
+    // 注意：VIP 校验必须按**最终生效的 kind** 判断，不能只在「显式传 kind」时判断。
+    // 否则 VIP 建的 npm 项目在被降级后，只要 publish 不带 kind 就能继续占用
+    // 常驻进程（backend-runtime 内部不做权限校验）。
+    const kind = body?.kind !== undefined ? normalizeKind(body.kind) : normalizeKind(project.kind);
+    if (isBackendKind(kind) && !canUseBackend(result.user)) {
+      return fail('BACKEND_REQUIRES_VIP', 403);
+    }
+    if (body?.kind !== undefined) project.kind = kind;
 
     if (isBackendKind(kind)) {
       if (kind !== 'js' && !files.has('package.json')) return fail('MISSING_PACKAGE_JSON', 400);
@@ -80,7 +83,9 @@ export async function onRequest(context) {
             kv,
             projectId: project.id,
             kind,
-            tier: project.tier || 'vip',
+            // 超时/并发配额按**当前**账号等级取，不能用项目记录里的陈旧 tier
+            // （降级后仍用 svip/ultra 的超时会绕过限制）。
+            tier: tierOf(result.user),
           });
           // 部署期间项目可能被删除；不能拿部署前的内存对象把记录“复活”。
           const latest = await kvGet(kv, keys.project(project.id));
@@ -96,14 +101,18 @@ export async function onRequest(context) {
           await appendLog(kv, { projectId: project.id, step: 'publish_backend', result: 'ok', kind });
         } catch (error) {
           await stopBackendApp(project.id);
-          project.status = STATUS.FAILED;
-          project.errorCode = error?.code || 'RUNTIME_UNAVAILABLE';
-          await kvPut(kv, keys.project(project.id), project);
+          // 与成功分支同样的守卫：部署期间项目可能已被删除，不能把旧快照写回去
+          // 复活它（会留下永久孤儿记录，且回写的是部署前的 files/size）。
+          const latest = await kvGet(kv, keys.project(project.id));
+          if (!latest) return;
+          latest.status = STATUS.FAILED;
+          latest.errorCode = error?.code || 'RUNTIME_UNAVAILABLE';
+          await syncProjectFiles(kv, latest);
           await appendLog(kv, {
             projectId: project.id,
             step: 'publish_backend',
             result: 'failed',
-            errorCode: project.errorCode,
+            errorCode: latest.errorCode,
           });
         }
       })();

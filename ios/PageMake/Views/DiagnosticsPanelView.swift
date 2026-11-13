@@ -64,6 +64,8 @@ struct DiagnosticsPanelView: View {
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(PageMakeBackground())
             .navigationTitle(L10n.string("diagnostics_panel"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

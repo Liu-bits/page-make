@@ -354,9 +354,27 @@ await test('粘贴：../a.css?v=1 → 引用与存储同时归一', async () => 
   assert(body.project.files.map((f) => f.path).includes('style.css'), '应存 style.css');
   const html = await (await fetch(`${BASE}/p/${body.project.id}`)).text();
   assert(!html.includes('href="../'), `HTML 引用不得残留 ../，实际：${html.slice(0, 200)}`);
-  // normalizeRelPath 会剥掉查询串/锚点（统一归一语义），服务端取文件本就忽略查询串
-  assert(html.includes('href="style.css"'), '查询串应被剥掉并归一为 style.css');
+  // 路径归一，但**查询串必须保留**：它是用户的缓存版本参数，抹掉会改变语义
+  // （此前 normalizeRelPath 的剥查询串被直接当成新 URL 写回，属真实 bug）。
+  assert(html.includes('href="style.css?v=1"'), `应归一为 style.css 且保留 ?v=1，实际：${html.slice(0, 200)}`);
   assertEqual((await fetch(`${BASE}/p/${body.project.id}/style.css?v=1`)).status, 200, 'style.css?v=1 应 200');
+});
+
+// ③-b2b 锚点与查询串必须原样保留：改写的是路径，不是整个 URL
+await test('粘贴：站内锚点 #team 与 ?v= 不被抹掉', async () => {
+  const { status, body } = await paste(sharedToken, {
+    name: 'anchor-keep',
+    html: '<html><head><link rel="stylesheet" href="style.css?v=7"></head><body>'
+      + '<a href="../about.html#team">关于</a><img src="./img/a.png#frag"></body></html>',
+    css: 'a { background: url(../img/bg.png?v=9); }',
+  });
+  assertEqual(status, 200, '粘贴应成功');
+  const html = await (await fetch(`${BASE}/p/${body.project.id}`)).text();
+  assert(html.includes('href="about.html#team"'), `站内锚点应保留，实际：${html.slice(0, 300)}`);
+  assert(html.includes('href="style.css?v=7"'), `查询串应保留，实际：${html.slice(0, 300)}`);
+  assert(html.includes('src="img/a.png#frag"'), `图片锚点应保留，实际：${html.slice(0, 300)}`);
+  const css = await (await fetch(`${BASE}/p/${body.project.id}/style.css`)).text();
+  assert(css.includes('url(img/bg.png?v=9)'), `CSS 查询串应保留，实际：${css}`);
 });
 
 // ③-b3 外链与 data URI 不得被改写（用户的远程引用必须原样保留）

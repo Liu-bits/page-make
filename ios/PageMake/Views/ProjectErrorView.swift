@@ -41,7 +41,7 @@ struct ProjectErrorView: View {
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
-                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                        .glassPanel(radius: 12)
                     }
 
                     Button(L10n.string("copy_report")) {

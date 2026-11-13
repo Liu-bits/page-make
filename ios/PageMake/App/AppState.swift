@@ -13,6 +13,8 @@ final class AppState: ObservableObject {
     @Published var projectsLoadError: String?
     /// 当前游客的 VIP 升级申请状态；nil = 尚未提交或读取失败。
     @Published var vipUpgradeRequest: VIPUpgradeRequest?
+    /// 服务端下发的等级快照（当前等级 / 下一档 / 是否可申请）。
+    @Published var vipUpgradeStatus: VIPRequestStatus?
 
     private let auth = AuthService()
     private let googleAuth = GoogleAuthService()
@@ -114,6 +116,7 @@ final class AppState: ObservableObject {
         isRefreshingRole = false
         banInfo = nil
         vipUpgradeRequest = nil
+        vipUpgradeStatus = nil
     }
 
     /// 删除账号：服务端清除全部项目与用户记录；成功后清空本地会话
@@ -183,7 +186,13 @@ final class AppState: ObservableObject {
 
     /// 加载用量统计
     func loadStats() async {
-        stats = try? await api.stats()
+        guard let expected = session, !expected.isExpired else { return }
+        let stats = try? await api.stats()
+        // 请求期间可能已退出/切换账号：旧响应绝不能写进新账号的界面。
+        guard let current = session,
+              current.userId == expected.userId,
+              current.token == expected.token else { return }
+        self.stats = stats
         await refreshAccountRole()
         if session?.role != .ultra {
             await refreshVIPUpgradeRequest()
@@ -194,8 +203,14 @@ final class AppState: ObservableObject {
 
     /// 创建空白项目（项目模式）；成功返回项目并同步列表，失败返回 nil（错误写入 authError）
     func createExplorerProject(name: String, kind: ProjectKind = .staticSite) async -> Project? {
+        let expected = session
         do {
             let project = try await api.createExplorerProject(name: name, kind: kind)
+            // 请求期间可能已退出/换号：旧响应不能写进新账号的列表，
+            // 也不能把旧账号的项目交给调用方去跳转（后续读写必然 401/404）。
+            guard let current = session,
+                  current.userId == expected?.userId,
+                  current.token == expected?.token else { return nil }
             upsertProject(project)
             await loadProjects()
             return project
@@ -240,6 +255,15 @@ final class AppState: ObservableObject {
             expiresAt: response.expiresAt,
             quota: response.quota
         )
+        // 换号（含游客重置身份）时先清空上一个账号的列表与申请状态，
+        // 避免新账号登录后短暂看到别人的项目，也避免旧申请状态串号。
+        if session?.userId != newSession.userId {
+            projects = []
+            stats = nil
+            vipUpgradeRequest = nil
+            vipUpgradeStatus = nil
+            projectsLoadError = nil
+        }
         session = newSession
         api.setToken(response.token)
         stats = nil
@@ -259,38 +283,60 @@ final class AppState: ObservableObject {
         // Ultra 已到顶：丢弃旧申请状态；其余等级后台加载一次最新审核结果。
         if session?.role == .ultra {
             vipUpgradeRequest = nil
+            vipUpgradeStatus = nil
         } else {
             await refreshVIPUpgradeRequest()
         }
     }
 
-    /// 读取升级申请状态。Ultra 不需要请求；其余等级按当前等级展示对应下一档申请。
+    /// 读取升级申请状态。Ultra 不需要请求；其余等级按服务端下发的
+    /// `tier / nextTier / canApply` 展示对应下一档申请。
     func refreshVIPUpgradeRequest() async {
         guard let current = session, current.role != .ultra else {
             vipUpgradeRequest = nil
+            vipUpgradeStatus = nil
             return
         }
         let expected = current
-        guard let request = try? await api.vipUpgradeRequest() else { return }
+        guard let status = try? await api.vipUpgradeRequestStatus() else { return }
         guard let latest = session,
               latest.userId == expected.userId,
-              latest.token == expected.token,
-              latest.role != .ultra else { return }
-        vipUpgradeRequest = request
+              latest.token == expected.token else { return }
+        // 服务端已到顶（tier == ultra）时整张升级卡都不显示，本地也不保留状态。
+        guard status.tier != .ultra else {
+            vipUpgradeStatus = nil
+            vipUpgradeRequest = nil
+            return
+        }
+        vipUpgradeStatus = status
+        vipUpgradeRequest = status.request
     }
 
     /// 提交升级申请（user→VIP→SVIP→Ultra 递进）；返回错误文案（nil = 成功）。
+    /// 只能申请服务端下发的 nextTier；重复提交（409 ALREADY_PENDING）按成功处理，
+    /// 因为服务端会返回原记录，用户看到的就是「审核中」。
     func submitVIPUpgradeRequest(note: String) async -> String? {
         guard let current = session, current.role != .ultra else {
             return L10n.string("error_already_max_tier")
         }
         do {
             vipUpgradeRequest = try await api.submitVIPUpgradeRequest(note: note)
+            await refreshVIPUpgradeRequest()
             return nil
         } catch let error as APIError {
             if case .banned(let ban) = error {
                 banInfo = ban
                 return nil
+            }
+            if case .http(_, let code) = error {
+                if code == "ALREADY_PENDING" {
+                    // 服务端返回原记录：拉一次最新状态即可展示「审核中」。
+                    await refreshVIPUpgradeRequest()
+                    return nil
+                }
+                if code == "NO_NEXT_TIER" {
+                    return L10n.string("error_already_max_tier")
+                }
             }
             return error.errorDescription
         } catch {
@@ -326,7 +372,7 @@ final class AppState: ObservableObject {
     // MARK: - 项目
 
     func loadProjects(isInitialRestore: Bool = false) async {
-        guard isLoggedIn else { return }
+        guard let expected = session, !expected.isExpired else { return }
         if isInitialRestore, isRestoringProjects, isLoadingProjects {
             // 冷启动时 restoreSession 和 ProjectListView.onAppear 会先后触发；
             // 同一份列表没必要并发请求两次（尤其会放大限速/网关抖动）。
@@ -340,12 +386,17 @@ final class AppState: ObservableObject {
         }
         do {
             let result = try await api.listProjects()
+            // 请求期间可能退出或换号（游客重置身份 / Apple 切 Google）：
+            // 旧账号的列表绝不能覆盖新账号，否则会出现「登出后仍看到上一个账号的项目」。
+            guard let current = session,
+                  current.userId == expected.userId,
+                  current.token == expected.token else { return }
             projects = result.projects.sorted { ($0.createdAt) > ($1.createdAt) }
             projectsLoadError = nil
             // /api/projects 已返回同一份权威角色快照，直接应用，避免再请求 /api/stats。
             // 若项目列表与设置页同时刷新，角色更新也不会额外放大网关抖动。
-            if let account = result.account, let requestedSession = session {
-                applyAccountSnapshot(account, matching: requestedSession)
+            if let account = result.account {
+                applyAccountSnapshot(account, matching: current)
             } else {
                 await refreshAccountRole()
             }

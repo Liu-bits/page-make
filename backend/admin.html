@@ -3,306 +3,653 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>Page-make 管理后台</title>
 <style>
-  * { box-sizing: border-box; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  [hidden] { display: none !important; }
+
   :root {
-    --bg: #f6f7fb;
+    --bg: #f4f6fa;
+    --glow-1: rgba(63, 99, 232, .10);
+    --glow-2: rgba(124, 58, 237, .06);
     --surface: #ffffff;
-    --surface-2: #f8fafc;
-    --text: #0f172a;
-    --text-2: #475569;
-    --text-3: #94a3b8;
-    --border: #e2e8f0;
-    --accent: #2563eb;
-    --accent-2: #7c3aed;
-    --danger: #dc2626;
-    --ok: #16a34a;
-    --warn: #d97706;
-    --radius: 14px;
-    --shadow: 0 1px 3px rgba(15,23,42,.08), 0 8px 24px rgba(15,23,42,.04);
+    --surface-2: #f7f9fc;
+    --surface-3: #eef1f7;
+    --text: #14171d;
+    --text-2: #5b6472;
+    --text-3: #8b94a3;
+    --border: #e5e9f0;
+    --border-strong: #d5dbe6;
+    --accent: #3f63e8;
+    --accent-ink: #ffffff;
+    --accent-soft: rgba(63, 99, 232, .10);
+    --danger: #c94141;
+    --danger-soft: rgba(201, 65, 65, .10);
+    --ok: #2b8a62;
+    --ok-soft: rgba(43, 138, 98, .12);
+    --warn: #a1711a;
+    --warn-soft: rgba(161, 113, 26, .13);
+    --violet: #7a4fd0;
+    --violet-soft: rgba(122, 79, 208, .12);
+    --toolbar-bg: rgba(255, 255, 255, .76);
+    --radius: 16px;
+    --radius-sm: 10px;
+    --shadow-sm: 0 1px 2px rgba(16, 24, 40, .05);
+    --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 12px 32px rgba(16, 24, 40, .06);
+    --shadow-lg: 0 24px 64px rgba(16, 24, 40, .22);
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1015;
+      --glow-1: rgba(107, 140, 255, .10);
+      --glow-2: rgba(160, 120, 255, .07);
+      --surface: #15181e;
+      --surface-2: #1a1e25;
+      --surface-3: #21262f;
+      --text: #e9ecf2;
+      --text-2: #a7aebc;
+      --text-3: #78808f;
+      --border: #262b34;
+      --border-strong: #333a46;
+      --accent: #8ba4ff;
+      --accent-ink: #0d1015;
+      --accent-soft: rgba(139, 164, 255, .14);
+      --danger: #ff8f8f;
+      --danger-soft: rgba(255, 143, 143, .13);
+      --ok: #6ecfa4;
+      --ok-soft: rgba(110, 207, 164, .13);
+      --warn: #e0b45f;
+      --warn-soft: rgba(224, 180, 95, .14);
+      --violet: #b79cff;
+      --violet-soft: rgba(183, 156, 255, .14);
+      --toolbar-bg: rgba(21, 24, 30, .74);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 12px 32px rgba(0, 0, 0, .35);
+      --shadow-lg: 0 24px 64px rgba(0, 0, 0, .6);
+    }
+  }
+
+  html, body { min-height: 100%; }
   body {
-    font-family: -apple-system, "PingFang SC", system-ui, sans-serif;
-    background:
-      radial-gradient(1200px 500px at 85% -10%, rgba(124,58,237,.08), transparent 60%),
-      radial-gradient(900px 400px at -10% 0%, rgba(37,99,235,.10), transparent 55%),
-      var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
     color: var(--text);
-    padding: 16px;
+    background:
+      radial-gradient(1100px 460px at 88% -12%, var(--glow-1), transparent 62%),
+      radial-gradient(820px 380px at -8% -4%, var(--glow-2), transparent 58%),
+      var(--bg);
+    -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 1040px; margin: 0 auto; }
-  h1 { font-size: 24px; margin: 8px 0 16px; letter-spacing: -.02em; }
-  h2 { font-size: 17px; margin: 28px 0 10px; color: var(--text-2); }
-  .card {
-    background: var(--surface);
+  .app { max-width: 1200px; margin: 0 auto; padding: 20px 18px 96px; }
+  h1, h2, h3, h4 { font-weight: 650; letter-spacing: -.01em; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  .muted { color: var(--text-3); }
+  .sub { color: var(--text-3); font-size: 12px; }
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  /* ---------- 登录 ---------- */
+  .login { min-height: calc(100vh - 120px); display: grid; place-items: center; }
+  .login-card {
+    width: min(390px, 100%); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 20px;
+    padding: 28px 26px; box-shadow: var(--shadow);
+  }
+  .login-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .logo {
+    width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center;
+    background: linear-gradient(150deg, var(--accent), var(--violet));
+    color: #fff; font-weight: 700; font-size: 13px; letter-spacing: .02em;
+  }
+  .login h1 { font-size: 19px; }
+  .login .hint { color: var(--text-3); font-size: 12.5px; margin: 8px 0 18px; }
+  .inline-msg { margin-top: 12px; font-size: 13px; color: var(--danger); }
+
+  /* ---------- 顶栏 ---------- */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand h1 { font-size: 20px; }
+  .brand .sub { margin-top: 1px; }
+  .top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  .banner {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 11px 14px; margin-bottom: 14px; font-size: 13px;
+    border-radius: var(--radius-sm);
+    background: var(--warn-soft); color: var(--warn);
+    border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  }
+  .banner code { font-family: var(--mono); background: var(--surface); padding: 1px 5px; border-radius: 5px; }
+
+  /* ---------- 工具栏 ---------- */
+  .toolbar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+    padding: 12px; margin-bottom: 14px;
+    background: var(--toolbar-bg);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    backdrop-filter: blur(14px) saturate(140%);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 18px;
-    box-shadow: var(--shadow);
-    margin-bottom: 14px;
+    box-shadow: var(--shadow-sm);
   }
-  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
-  .stat {
-    text-align: center; padding: 14px 4px;
-    background: var(--surface-2); border-radius: 12px;
-    border: 1px solid var(--border);
+  .search { position: relative; flex: 1 1 260px; min-width: 200px; }
+  .search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-3); pointer-events: none; }
+  .search input {
+    width: 100%; height: 38px; padding: 0 34px 0 34px;
+    font-size: 13.5px; color: var(--text);
+    background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: 11px; outline: none; transition: border-color .15s, box-shadow .15s;
   }
-  .stat b { display: block; font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
-  .stat span { font-size: 12px; color: var(--text-3); }
-  input, select {
-    padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
-    font-size: 15px; width: 100%; background: #fff; color: var(--text);
+  .search input::placeholder { color: var(--text-3); }
+  .search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .search .clear {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    width: 24px; height: 24px; border: 0; border-radius: 7px; cursor: pointer;
+    background: var(--surface-3); color: var(--text-2); font-size: 14px; line-height: 1;
   }
-  input:focus, select:focus { outline: 2px solid rgba(37,99,235,.35); outline-offset: 1px; border-color: var(--accent); }
-  button {
-    padding: 10px 16px; border: 0; border-radius: 10px; font-size: 14px;
-    cursor: pointer; background: var(--accent); color: #fff;
-    transition: transform .12s ease, filter .12s ease;
+  .search .clear:hover { color: var(--text); }
+
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    font-size: 12.5px; font-weight: 550; color: var(--text-2);
+    background: transparent; border: 1px solid var(--border-strong);
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background .15s, color .15s, border-color .15s;
   }
-  button:hover { filter: brightness(1.06); }
-  button:active { transform: scale(.98); }
-  button.gray { background: #64748b; }
-  button.red { background: var(--danger); }
-  button.green { background: var(--ok); }
-  button.gold { background: var(--warn); }
-  button.sm { padding: 6px 10px; font-size: 12px; }
-  select.sm {
-    padding: 5px 8px; font-size: 12px; border-radius: 8px;
-    border: 1px solid var(--border); background: #fff; vertical-align: middle;
+  .chip:hover { background: var(--surface-3); color: var(--text); }
+  .chip.on { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent); }
+  .chip .n { font-variant-numeric: tabular-nums; opacity: .72; font-size: 11.5px; }
+
+  .metrics { display: flex; align-items: stretch; gap: 2px; margin-left: auto; }
+  .metric { padding: 2px 12px; text-align: right; border-left: 1px solid var(--border); }
+  .metric:first-child { border-left: 0; }
+  .metric b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .metric span { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+
+  /* ---------- 表格 ---------- */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
   }
-  .row { display: flex; gap: 8px; margin-top: 10px; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); word-break: break-all; }
-  th { color: var(--text-3); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-  tbody tr:hover { background: var(--surface-2); }
-  td button + button { margin-left: 4px; }
-  .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-  .tag.ok { background: #dcfce7; color: #15803d; }
-  .tag.banned { background: #fee2e2; color: #b91c1c; }
-  .tag.guest { background: #e0e7ff; color: #4338ca; }
-  .tag.vip { background: #fef3c7; color: #92400e; }
-  .tag.guest-vip { background: #ede9fe; color: #6d28d9; }
-  .tag.svip { background: #e0f2fe; color: #0369a1; }
-  .tag.ultra { background: #fae8ff; color: #a21caf; }
-  .muted { color: var(--text-3); font-size: 12px; }
-  .msg {
-    padding: 10px 12px; border-radius: 10px; margin: 10px 0; font-size: 14px;
-    display: none; border: 1px solid transparent;
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  .accounts { min-width: 1140px; }
+  .accounts thead th {
+    text-align: left; white-space: nowrap;
+    padding: 11px 14px; font-size: 11.5px; font-weight: 600;
+    letter-spacing: .05em; color: var(--text-3);
+    background: var(--surface-2); border-bottom: 1px solid var(--border);
   }
-  .msg.err { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
-  .msg.ok { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
-  @media (max-width: 640px) { .stats { grid-template-columns: repeat(3, 1fr); } }
+  .accounts td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .accounts tbody tr:last-child td { border-bottom: 0; }
+  .acct-row:hover td { background: var(--surface-2); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .col-expand { width: 38px; }
+  .col-actions { width: 220px; }
+  .accounts th:nth-child(2) { min-width: 220px; }
+  .accounts th:nth-child(3) { width: 100px; }
+  .accounts th:nth-child(4) { width: 100px; }
+  .accounts th:nth-child(5) { width: 140px; }
+  .accounts th:nth-child(6) { width: 84px; }
+  .accounts th:nth-child(7) { width: 100px; }
+  .accounts th:nth-child(8) { width: 140px; }
+  .acct-row .row-actions { flex-wrap: nowrap; }
+
+  .expand-btn {
+    width: 24px; height: 24px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--border-strong); background: var(--surface);
+    color: var(--text-3); display: grid; place-items: center; padding: 0;
+  }
+  .expand-btn:hover { color: var(--text); background: var(--surface-3); }
+  .expand-btn .chev { display: block; font-size: 15px; line-height: 1; transition: transform .18s ease; }
+  .expand-btn.open { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--accent-soft); }
+  .expand-btn.open .chev { transform: rotate(90deg); }
+
+  .acct-main { font-weight: 550; font-size: 13.5px; overflow-wrap: anywhere; }
+  .acct-sub { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); overflow-wrap: anywhere; margin-top: 1px; }
+  .cell-stack { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+  .tag-row { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+
+  .tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+    background: var(--surface-3); color: var(--text-2);
+  }
+  .tag.ok { background: var(--ok-soft); color: var(--ok); }
+  .tag.danger { background: var(--danger-soft); color: var(--danger); }
+  .tag.warn { background: var(--warn-soft); color: var(--warn); }
+  .tag.accent { background: var(--accent-soft); color: var(--accent); }
+  .tag.violet { background: var(--violet-soft); color: var(--violet); }
+  .tag.dot::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+
+  /* ---------- 展开区 ---------- */
+  .detail-row > td { padding: 0; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+  .detail { padding: 16px 18px 18px; display: grid; gap: 14px; }
+  .detail-block {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 13px 14px;
+  }
+  .detail-block > h4 {
+    font-size: 12px; font-weight: 650; letter-spacing: .04em;
+    color: var(--text-3); text-transform: uppercase; margin-bottom: 10px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .detail-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 18px; }
+  .info-item span { display: block; font-size: 11px; color: var(--text-3); margin-bottom: 2px; }
+  .info-item b { font-weight: 550; font-size: 12.5px; word-break: break-all; }
+  .quote {
+    font-size: 13px; color: var(--text); white-space: pre-wrap; word-break: break-word;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-left: 3px solid var(--border-strong);
+    border-radius: 8px; padding: 9px 11px; margin-bottom: 10px;
+  }
+  .row-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+
+  .mini { min-width: 0; }
+  .mini th {
+    text-align: left; font-size: 11px; font-weight: 600; color: var(--text-3);
+    padding: 0 10px 7px 0; white-space: nowrap;
+  }
+  .mini td { padding: 7px 10px 7px 0; font-size: 12.5px; border-top: 1px solid var(--border); vertical-align: middle; }
+  .mini tr:first-child td { border-top: 0; }
+  .mini .name { font-weight: 550; overflow-wrap: anywhere; }
+  .mini th:last-child, .mini td:last-child { width: 132px; }
+  .mini .row-actions { flex-wrap: nowrap; }
+  .empty-line { font-size: 12.5px; color: var(--text-3); padding: 4px 0; }
+
+  /* ---------- 控件 ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 34px; padding: 0 13px; border-radius: 10px; cursor: pointer;
+    font-family: inherit; font-size: 13px; font-weight: 550;
+    border: 1px solid transparent; background: var(--surface-3); color: var(--text);
+    text-decoration: none;
+    transition: background .15s, color .15s, border-color .15s, opacity .15s;
+  }
+  .btn:hover { background: var(--border); text-decoration: none; }
+  .btn:disabled { opacity: .55; cursor: default; }
+  .btn.sm { height: 28px; padding: 0 9px; font-size: 12px; border-radius: 8px; }
+  .btn.ghost { background: transparent; border-color: var(--border-strong); color: var(--text-2); }
+  .btn.ghost:hover { background: var(--surface-3); color: var(--text); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); }
+  .btn.primary:hover { filter: brightness(1.06); background: var(--accent); }
+  .btn.danger { background: var(--danger-soft); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 26%, transparent); }
+  .btn.danger:hover { background: color-mix(in srgb, var(--danger) 18%, transparent); }
+  .btn.danger-solid { background: var(--danger); color: #fff; }
+  .btn.block { width: 100%; }
+  .btn .badge {
+    min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+    background: var(--surface-3); color: var(--text-2);
+    font-size: 11px; font-weight: 650; display: grid; place-items: center;
+    font-variant-numeric: tabular-nums;
+  }
+  .btn .badge.hot { background: var(--warn-soft); color: var(--warn); }
+
+  select.select {
+    height: 28px; padding: 0 8px; border-radius: 8px;
+    font-family: inherit; font-size: 12px; color: var(--text);
+    background: var(--surface); border: 1px solid var(--border-strong);
+    cursor: pointer;
+  }
+  .input {
+    width: 100%; padding: 9px 11px; font-family: inherit; font-size: 13.5px;
+    color: var(--text); background: var(--surface);
+    border: 1px solid var(--border-strong); border-radius: 10px; outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  textarea.input { resize: vertical; min-height: 62px; }
+  .field { display: block; margin-top: 12px; }
+  .field-label { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 5px; }
+  .field-hint { display: block; font-size: 11.5px; color: var(--text-3); margin-top: 5px; }
+  .field.invalid .input { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+
+  .table-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 14px; border-top: 1px solid var(--border);
+    background: var(--surface-2); font-size: 12px; color: var(--text-3);
+  }
+  .empty-state { padding: 46px 20px; text-align: center; color: var(--text-3); font-size: 13px; }
+
+  /* ---------- 抽屉 / 弹窗 / 提示 ---------- */
+  .scrim {
+    position: fixed; inset: 0; z-index: 40;
+    background: rgba(10, 12, 16, .38);
+    opacity: 0; pointer-events: none; transition: opacity .2s ease;
+  }
+  .scrim.open { opacity: 1; pointer-events: auto; }
+
+  .drawer {
+    position: fixed; left: 50%; bottom: 0; z-index: 45;
+    width: min(760px, 100%); max-height: 66vh;
+    transform: translate(-50%, 102%);
+    transition: transform .24s cubic-bezier(.32, .72, 0, 1);
+    display: flex; flex-direction: column;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 18px 18px 0 0; box-shadow: var(--shadow-lg);
+  }
+  .drawer.open { transform: translate(-50%, 0); }
+  .drawer-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 12px 18px; border-bottom: 1px solid var(--border);
+  }
+  .drawer-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .drawer-tab {
+    height: 30px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+    font-family: inherit; font-size: 12.5px; font-weight: 550;
+    color: var(--text-2); background: transparent;
+    border: 1px solid var(--border-strong);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .drawer-tab:hover { background: var(--surface-3); color: var(--text); }
+  .drawer-tab.on { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent); }
+  .drawer-panel { overflow-y: auto; padding: 12px 18px 18px; max-height: calc(66vh - 86px); }
+  table.queue { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.queue th {
+    text-align: left; font-size: 11px; font-weight: 600; color: var(--text-3);
+    padding: 0 10px 8px 0; white-space: nowrap;
+  }
+  table.queue td { padding: 10px 10px 10px 0; border-top: 1px solid var(--border); vertical-align: top; }
+  table.queue td.wrap { max-width: 280px; white-space: pre-wrap; word-break: break-word; }
+  .feed-item { padding: 13px 0; border-bottom: 1px solid var(--border); }
+  .feed-item:last-child { border-bottom: 0; }
+  .feed-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .feed-head .grow { flex: 1; }
+  .feed-msg { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+  .feed-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+
+  .modal {
+    position: fixed; inset: 0; z-index: 60;
+    display: grid; place-items: center; padding: 18px;
+    background: rgba(10, 12, 16, .45);
+    -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  }
+  .modal-card {
+    width: min(470px, 100%); max-height: 88vh; overflow-y: auto;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 18px; padding: 22px; box-shadow: var(--shadow-lg);
+    animation: pop .16s ease-out;
+  }
+  @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(.99); } to { opacity: 1; transform: none; } }
+  .modal-card h2 { font-size: 16px; }
+  .modal-msg { margin-top: 8px; font-size: 13px; color: var(--text-2); white-space: pre-line; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+
+  .toast {
+    position: fixed; top: 18px; left: 50%; transform: translate(-50%, -14px);
+    z-index: 80; max-width: min(560px, 92vw);
+    padding: 10px 16px; border-radius: 11px;
+    font-size: 13px; font-weight: 550;
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border-strong); box-shadow: var(--shadow);
+    opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+  .toast.err { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 34%, transparent); }
+  .toast.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 34%, transparent); }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (max-width: 900px) {
+    .metrics {
+      width: 100%; margin-left: 0; display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+    }
+    .metric { padding: 0; text-align: left; border-left: 0; min-width: 0; }
+    .metric span { white-space: normal; }
+    .detail-cols { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 620px) {
+    .app { padding: 14px 12px 88px; }
+    .brand h1 { font-size: 18px; }
+    .accounts td, .accounts thead th { padding: 10px 11px; }
+    .toolbar { border-radius: 14px; }
+    .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <!-- 登录 -->
-  <div id="loginView" class="card" style="max-width:380px;margin:60px auto;">
-    <h1>Page-make 管理后台</h1>
-    <p class="muted" style="margin-bottom:12px">首次部署的随机初始密码见容器启动日志；登录后请立即修改</p>
-    <input id="pwd" type="password" placeholder="管理员密码" onkeydown="if(event.key==='Enter')login()">
-    <div class="row"><button style="width:100%" onclick="login()">登录</button></div>
-    <div id="loginMsg" class="msg err"></div>
-  </div>
+<div class="app">
+  <!-- ============ 登录 ============ -->
+  <section id="loginView" class="login">
+    <form class="login-card" id="loginForm" autocomplete="on">
+      <div class="login-brand">
+        <span class="logo">PM</span>
+        <h1>Page-make 管理后台</h1>
+      </div>
+      <p class="hint">首次部署的随机初始密码见容器启动日志；登录后请立即修改。</p>
+      <input id="pwd" class="input" type="password" placeholder="管理员密码" autocomplete="current-password">
+      <div class="row-actions">
+        <button id="loginBtn" class="btn primary block" type="submit">登录</button>
+      </div>
+      <p id="loginMsg" class="inline-msg" hidden></p>
+    </form>
+  </section>
 
-  <!-- 主界面 -->
-  <div id="mainView" style="display:none">
-    <!-- 旧部署默认密码警示横幅：后台公网可达，仍在用 123456 等于门户大开 -->
-    <div id="pwdBanner" class="card" style="display:none;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;margin-bottom:12px">
-      <strong>安全提醒：</strong>您正在使用出厂默认密码 <code>123456</code>，后台地址公网可达，任何人猜到即可查看全部用户数据。
-      <button class="sm" style="margin-left:8px" onclick="changePwd()">立即修改</button>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <h1>Page-make 管理后台</h1>
-      <div>
-        <button class="gray" onclick="changePwd()">改密码</button>
-        <button class="gray" onclick="logout()">退出</button>
+  <!-- ============ 主界面 ============ -->
+  <section id="mainView" hidden>
+    <div class="topbar">
+      <div class="brand">
+        <span class="logo">PM</span>
+        <div>
+          <h1>账号管理</h1>
+          <p class="sub">等级 / 封禁 / 项目 / VIP 审核集中在一张表里</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button id="vipQueueBtn" class="btn ghost" type="button">待审 VIP <span class="badge" id="vipBadge">0</span></button>
+        <button id="feedbackBtn" class="btn ghost" type="button">反馈 <span class="badge" id="feedbackBadge">0</span></button>
+        <button id="refreshBtn" class="btn ghost" type="button">刷新</button>
+        <button id="pwdBtn" class="btn ghost" type="button">改密码</button>
+        <button id="logoutBtn" class="btn ghost" type="button">退出</button>
       </div>
     </div>
-    <div id="msg" class="msg"></div>
 
-    <div class="card"><div class="stats" id="stats"></div></div>
-
-    <h2>VIP 升级申请</h2>
-    <div class="card" style="overflow-x:auto">
-      <p class="muted">用户在 App 内提交申请后，可在这里审核。批准会原地升级现有账号，保留 userId、项目与当前会话。</p>
-      <table id="vipRequestTable" style="margin-top:10px">
-        <thead><tr><th>账号</th><th>类型</th><th>说明</th><th>申请时间</th><th>操作</th></tr></thead>
-        <tbody></tbody>
-      </table>
+    <div id="pwdBanner" class="banner" hidden>
+      <strong>安全提醒</strong>
+      <span>当前仍在使用出厂默认密码，后台公网可达，请立即修改。</span>
+      <button class="btn sm ghost" id="bannerPwdBtn" type="button">立即修改</button>
     </div>
 
-    <h2>付费等级（VIP / SVIP / Ultra）</h2>
+    <div class="toolbar">
+      <div class="search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.6-3.6"></path>
+        </svg>
+        <input id="search" type="search" placeholder="搜索账号 / 邮箱 / 等级 / 类型（按 / 聚焦）" aria-label="搜索账号">
+        <button id="clearSearch" class="clear" type="button" title="清除搜索" hidden>×</button>
+      </div>
+      <div class="chips" id="chips" role="group" aria-label="快捷筛选"></div>
+      <div class="metrics" id="metrics"></div>
+    </div>
+
     <div class="card">
-      <p class="muted">等级从低到高为普通 / VIP / SVIP / Ultra。可直接在账户表下拉切换；
-        userId、项目、会话均保持不变。纯前端：普通 300KB / VIP 1MB / SVIP 10MB / Ultra 无上限；
-        后端（npm / pnpm / js）：普通不可用，VIP 1MB / SVIP 10MB / Ultra 无上限。</p>
-      <table id="vipTable" style="margin-top:10px">
-        <thead><tr><th>账号</th><th>等级</th><th>类型</th><th>项目</th><th>升级时间</th><th>操作</th></tr></thead>
-        <tbody></tbody>
-      </table>
+      <div class="table-scroll">
+        <table class="accounts">
+          <thead>
+            <tr>
+              <th class="col-expand"><span class="visually-hidden">展开</span></th>
+              <th>账号</th>
+              <th>类型</th>
+              <th>等级</th>
+              <th>状态</th>
+              <th class="num">项目</th>
+              <th class="num">占用</th>
+              <th>创建时间</th>
+              <th class="col-actions">操作</th>
+            </tr>
+          </thead>
+          <tbody id="accountBody"></tbody>
+        </table>
+      </div>
+      <div id="emptyState" class="empty-state" hidden>没有匹配的账号</div>
+      <div class="table-foot">
+        <span id="resultCount">—</span>
+        <span id="updatedAt"></span>
+      </div>
     </div>
+  </section>
+</div>
 
-    <h2>账户（封号 / 解封 / 删除）</h2>
-    <div class="card" style="overflow-x:auto">
-      <table id="userTable">
-        <thead><tr><th>账户</th><th>状态</th><th>项目</th><th>封禁信息</th><th>操作</th></tr></thead>
-        <tbody></tbody>
-      </table>
+<!-- ============ 处理中心抽屉：待审 VIP + 反馈 ============ -->
+<div id="scrim" class="scrim"></div>
+<aside id="drawer" class="drawer" aria-label="处理中心" aria-hidden="true">
+  <div class="drawer-head">
+    <div class="drawer-tabs" role="tablist" aria-label="处理中心分区">
+      <button id="tabVip" class="drawer-tab on" type="button" role="tab" aria-selected="true">待审 VIP <span class="sub" id="vipQueueCount"></span></button>
+      <button id="tabFeedback" class="drawer-tab" type="button" role="tab" aria-selected="false">反馈 / 举报 <span class="sub" id="drawerCount"></span></button>
     </div>
+    <button id="drawerClose" class="btn sm ghost" type="button">收起</button>
+  </div>
+  <div class="drawer-panel" id="vipPanel">
+    <table class="queue" id="vipRequestTable">
+      <thead><tr><th>账号</th><th>类型</th><th>说明</th><th>申请时间</th><th>操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="drawer-panel" id="drawerBody" hidden></div>
+</aside>
 
-    <h2>项目（可强制删除）</h2>
-    <div class="card" style="overflow-x:auto">
-      <table id="projectTable">
-        <thead><tr><th>名称</th><th>状态</th><th>来源</th><th>大小</th><th>操作</th></tr></thead>
-        <tbody></tbody>
-      </table>
+<!-- ============ 弹窗 ============ -->
+<div id="modal" class="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <h2 id="modalTitle"></h2>
+    <p id="modalMsg" class="modal-msg" hidden></p>
+    <div id="modalFields"></div>
+    <div class="modal-actions">
+      <button id="modalCancel" class="btn ghost" type="button">取消</button>
+      <button id="modalOk" class="btn primary" type="button">确定</button>
     </div>
-
-    <h2>反馈 / 举报</h2>
-    <div class="card" id="feedbackList"></div>
   </div>
 </div>
 
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
 <script>
+'use strict';
+
+/* ============================== 常量 ============================== */
 const API = {
   login: '/api/admin/login',
   overview: '/api/admin/overview',
   action: '/api/admin/action',
 };
+
+const TIERS = ['user', 'vip', 'svip', 'ultra'];
+const TIER_LABEL = { user: '普通', vip: 'VIP', svip: 'SVIP', ultra: 'Ultra' };
+const TIER_TAG = { user: 'tag', vip: 'tag warn', svip: 'tag accent', ultra: 'tag violet' };
+const TIER_HINT = {
+  user: '恢复普通账号：只能建纯前端站点（总量 300KB），游客账号链接恢复 7 天空闲过期。',
+  vip: 'VIP：可建 npm/pnpm/js 后端项目，源码上限 1MB，链接不再设过期。',
+  svip: 'SVIP：后端源码上限 10MB，可建更多后端项目。',
+  ultra: 'Ultra：不限制项目大小与后端进程数（平台磁盘仍是硬边界）。',
+};
+const PROVIDER_LABEL = { guest: '游客', google: 'Google', apple: 'Apple', unknown: '未知' };
+const PROVIDER_TAG = { guest: 'tag accent', google: 'tag ok', apple: 'tag', unknown: 'tag' };
+const KIND_LABEL = { static: '纯前端', npm: 'npm', pnpm: 'pnpm', js: 'js' };
+const PROJECT_STATUS = {
+  ready: ['已发布', 'ok'],
+  processing: ['构建中', 'warn'],
+  uploading: ['上传中', 'warn'],
+  failed: ['失败', 'danger'],
+  expired: ['已过期', 'warn'],
+  banned: ['已下架', 'danger'],
+};
+const BAN_FALLBACK = {
+  1: { days: 1, label: '初次轻微违规' },
+  2: { days: 7, label: '重复轻微或侵权' },
+  3: { days: 30, label: '诈骗、钓鱼' },
+  4: { days: null, label: '色情、暴恐、恶意软件（永久）' },
+};
+const FILTERS = [
+  { id: 'all', label: '全部' },
+  { id: 'pending', label: '待审 VIP' },
+  { id: 'banned', label: '已封禁' },
+  { id: 'backend', label: '后端项目用户' },
+];
+const ERROR_TEXT = {
+  WRONG_PASSWORD: '密码错误',
+  TOO_MANY_ATTEMPTS: '尝试太频繁，请稍后再试',
+  UNAUTHORIZED: '登录已过期，请重新登录',
+  BAD_REQUEST: '参数不完整',
+  NOT_FOUND: '记录不存在，可能已被删除',
+  ALREADY_VIP: '该账号已经是 VIP 及以上等级',
+  NOT_VIP_USER: '该账号不是付费等级',
+  TIER_UNCHANGED: '该账号已经是这个等级',
+  INVALID_TIER: '等级参数非法',
+  VIP_REQUEST_ALREADY_REVIEWED: '该申请已被处理过',
+  STORAGE_ERROR: '存储服务异常，请稍后重试',
+  WEAK_PASSWORD: '密码太短（至少 8 位）',
+  WEAK_PASSWORD_COMMON: '这是常见弱口令，请换一个',
+  WEAK_PASSWORD_PATTERN: '不能是连续或重复字符（如 12345678 / aaaaaaaa）',
+  WEAK_PASSWORD_SIMPLE: '需同时包含字母和数字/符号',
+};
+
+/* ============================== 状态 ============================== */
+const state = {
+  data: null,
+  query: '',
+  filter: 'all',
+  expanded: new Set(),
+  notes: {},
+  drawerTab: 'vip',
+  loading: false,
+};
 let token = sessionStorage.getItem('adminToken') || '';
+let toastTimer = 0;
 
-function show(el, on) { el.style.display = on ? '' : 'none'; }
-function msg(text, isErr) {
-  const m = document.getElementById('msg');
-  m.textContent = text; m.className = 'msg ' + (isErr ? 'err' : 'ok');
-  setTimeout(() => { m.className = 'msg'; }, 4000);
-}
-function fmtSize(n) { return n > 1048576 ? (n/1048576).toFixed(1)+'MB' : n > 1024 ? (n/1024).toFixed(1)+'KB' : n+'B'; }
-function fmtTime(ts) { return ts ? new Date(ts*1000).toLocaleString() : '—'; }
-function fmtNumber(n) {
-  const value = Number(n);
-  return Number.isFinite(value) && value >= 0 ? String(Math.trunc(value)) : '0';
-}
-
-async function api(url, body) {
-  const res = await fetch(url, {
-    method: body ? 'POST' : 'GET',
-    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = await res.json().catch(() => ({}));
-  if (res.status === 401) { logout(); throw new Error('登录已过期'); }
-  if (!json.ok) throw new Error(json.error || ('HTTP ' + res.status));
-  return json;
-}
-
-async function login() {
-  const pwd = document.getElementById('pwd').value;
-  try {
-    const r = await fetch(API.login, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({password: pwd}) });
-    const j = await r.json();
-    if (!j.ok) throw new Error(j.error === 'WRONG_PASSWORD' ? '密码错误' : j.error === 'TOO_MANY_ATTEMPTS' ? '尝试太频繁，稍后再试' : j.error);
-    token = j.token; sessionStorage.setItem('adminToken', token);
-    // 仍是默认密码则显示强制改密横幅
-    if (j.mustChangePassword) document.getElementById('pwdBanner').style.display = 'block';
-    enter();
-  } catch (e) {
-    const m = document.getElementById('loginMsg');
-    m.textContent = e.message; m.style.display = 'block';
+/* ============================== 小工具 ============================== */
+function h(tag, props, ...kids) {
+  const node = document.createElement(tag);
+  if (props) {
+    for (const [key, value] of Object.entries(props)) {
+      if (value === null || value === undefined || value === false) continue;
+      if (key === 'class') node.className = value;
+      else if (key === 'text') node.textContent = String(value);
+      else if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2).toLowerCase(), value);
+      else if (key === 'value') node.value = value;
+      else if (value === true) node.setAttribute(key, '');
+      else node.setAttribute(key, String(value));
+    }
   }
+  for (const kid of kids.flat(4)) {
+    if (kid === null || kid === undefined || kid === false || kid === '') continue;
+    node.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return node;
 }
 
-function logout() { token = ''; sessionStorage.removeItem('adminToken'); show(document.getElementById('loginView'), true); show(document.getElementById('mainView'), false); }
+const $ = (id) => document.getElementById(id);
 
-function enter() { show(document.getElementById('loginView'), false); show(document.getElementById('mainView'), true); load(); }
-
-async function load() {
-  try {
-    const data = await api(API.overview);
-    render(data);
-  } catch (e) { msg(e.message, true); }
-}
-
-function render(d) {
-  document.getElementById('stats').innerHTML = [
-    ['账户', d.stats.userCount], ['游客', d.stats.guestCount], ['VIP', d.stats.vipCount || 0],
-    ['SVIP', d.stats.svipCount || 0], ['Ultra', d.stats.ultraCount || 0],
-    ['后端项目', d.stats.backendProjectCount || 0],
-    ['待审', d.stats.vipRequestCount || 0], ['项目', d.stats.projectCount], ['反馈', d.stats.feedbackCount],
-  ].map(([l, v]) => `<div class="stat"><b>${escapeHtml(v)}</b><span>${escapeHtml(l)}</span></div>`).join('');
-
-  const pendingRequests = (d.vipRequests || []).filter((r) => r.status === 'pending');
-  document.querySelector('#vipRequestTable tbody').innerHTML = pendingRequests.map((r) =>
-    `<tr><td>${escapeHtml(r.email || r.userId)}</td><td>${escapeHtml(kindLabel(r.accountKind))}</td>
-     <td>${escapeHtml(r.note || '—')}</td><td>${escapeHtml(fmtTime(r.createdAt))}</td>
-     <td><button class="sm green" data-user-id="${escapeHtml(r.userId)}" onclick="reviewVIP(this.dataset.userId, true)">批准</button>
-     <button class="sm red" data-user-id="${escapeHtml(r.userId)}" onclick="reviewVIP(this.dataset.userId, false)">驳回</button></td></tr>`
-  ).join('') || '<tr><td colspan="5" class="muted">暂无待审核申请</td></tr>';
-
-  const vipUsers = d.users.filter(u => (u.tier || u.role) !== 'user');
-  document.querySelector('#vipTable tbody').innerHTML = vipUsers.map(u =>
-    `<tr><td>${escapeHtml(u.email || u.userId)}</td><td>${escapeHtml(tierLabel(u.tier || u.role))}</td><td>${escapeHtml(kindLabel(u.accountKind))}</td>
-     <td>${fmtNumber(u.projectCount)}</td><td>${escapeHtml(fmtTime(u.vipSince))}</td>
-     <td><button class="sm gray" data-user-id="${escapeHtml(u.userId)}" onclick="downgradeVIP(this.dataset.userId)">降为普通</button>
-     <button class="sm red" data-user-id="${escapeHtml(u.userId)}" onclick="deleteVIPUser(this.dataset.userId)">删除</button></td></tr>`
-  ).join('') || '<tr><td colspan="6" class="muted">暂无付费等级用户</td></tr>';
-
-  document.querySelector('#userTable tbody').innerHTML = d.users.map(u => {
-    const statusTag = u.status === 'banned'
-      ? `<span class="tag banned">已封禁 L${fmtNumber(u.banLevel)}</span>`
-      : `<span class="tag ok">正常</span>`;
-    const guestTag = String(u.accountKind || '').startsWith('guest')
-      ? ' <span class="tag guest">游客</span>' : '';
-    const userTier = u.tier || u.role || 'user';
-    const vipTag = userTier !== 'user'
-      ? ` <span class="tag ${String(u.accountKind || '').startsWith('guest') ? 'guest-vip' : 'vip'}">${escapeHtml(tierLabel(userTier))}</span>` : '';
-    const banInfo = u.status === 'banned'
-      ? `${escapeHtml(u.banReason || '')}<br><span class="muted">${u.banUntil ? '至 ' + escapeHtml(fmtTime(u.banUntil)) : '永久'}</span>`
-      : '<span class="muted">—</span>';
-    const vipAction = userTier !== 'user'
-      ? `<button class="sm gray" data-user-id="${escapeHtml(u.userId)}" onclick="downgradeVIP(this.dataset.userId)">降为普通</button>`
-      : `<button class="sm gold" data-user-id="${escapeHtml(u.userId)}" onclick="upgradeVIP(this.dataset.userId)">升级 VIP</button>`;
-    const tierSelect = `<select class="sm" data-user-id="${escapeHtml(u.userId)}" onchange="setTier(this.dataset.userId, this.value)">
-        ${['user', 'vip', 'svip', 'ultra'].map((t) => `<option value="${t}"${t === userTier ? ' selected' : ''}>${tierLabel(t)}</option>`).join('')}
-      </select>`;
-    const action = u.status === 'banned'
-      ? `<button class="sm green" data-user-id="${escapeHtml(u.userId)}" onclick="unban(this.dataset.userId)">解封</button>
-         ${vipAction}
-         ${tierSelect}
-         <button class="sm red" data-user-id="${escapeHtml(u.userId)}" onclick="deleteUser(this.dataset.userId)">删除账号</button>`
-      : `<button class="sm red" data-user-id="${escapeHtml(u.userId)}" onclick="banPrompt(this.dataset.userId)">封号</button>
-         ${vipAction}
-         ${tierSelect}
-         <button class="sm gray" data-user-id="${escapeHtml(u.userId)}" onclick="deleteUser(this.dataset.userId)">删除账号</button>`;
-    return `<tr><td>${escapeHtml(u.email || u.userId)}${guestTag}${vipTag}<br><span class="muted">创建 ${fmtTime(u.createdAt)}</span></td>
-      <td>${statusTag}</td><td>${fmtNumber(u.projectCount)}</td><td>${banInfo}</td><td>${action}</td></tr>`;
-  }).join('') || '<tr><td colspan="5" class="muted">暂无账户</td></tr>';
-
-  document.querySelector('#projectTable tbody').innerHTML = d.projects.map(p =>
-    `<tr><td>${escapeHtml(p.name || p.id)}</td><td>${escapeHtml(p.status)}</td><td>${escapeHtml(p.sourceType || '—')}</td>
-     <td>${escapeHtml(fmtSize(Number(p.size) || 0))} / ${fmtNumber(p.fileCount)} 文件</td>
-     <td><button class="sm red" data-project-id="${escapeHtml(p.id)}" onclick="delProject(this.dataset.projectId)">删除</button></td></tr>`
-  ).join('') || '<tr><td colspan="5" class="muted">暂无项目</td></tr>';
-
-  document.getElementById('feedbackList').innerHTML = d.feedback.map(f =>
-    `<div style="border-bottom:1px solid #e2e8f0;padding:10px 0">
-      <div style="display:flex;justify-content:space-between">
-        <b style="font-size:13px">${f.type === 'report' ? '⚠️ 举报' : '💬 反馈'}</b>
-        <span class="muted">${escapeHtml(fmtTime(f.createdAt))} · ${escapeHtml(f.userId || '未登录')}</span>
-      </div>
-      <div style="margin:6px 0;font-size:14px">${escapeHtml(f.message)}</div>
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <span class="muted">${f.projectId ? '项目 ' + escapeHtml(f.projectId) : ''} ${f.errorCode ? '· 错误码 ' + escapeHtml(f.errorCode) : ''}</span>
-        <button class="sm gray" data-feedback-id="${escapeHtml(f.id)}" onclick="delFeedback(this.dataset.feedbackId)">已处理，删除</button>
-      </div>
-    </div>`
-  ).join('') || '<p class="muted">暂无反馈</p>';
-}
-
-function escapeHtml(t) {
-  return String(t)
+/**
+ * HTML 转义。
+ *
+ * 账号表与待审队列表用模板字符串渲染（便于 data-* 传参 + 事件委托，避免把
+ * userId / projectId 拼进 onclick），所以每个插入的字符串都必须先过这里；
+ * 属性值统一用双引号包裹，单引号与反引号也一并转义。
+ * 不变量：模板里只允许出现 escapeHtml(...) / 数字格式化 / 开发者字面量。
+ */
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
     .replace(/&/g,'&amp;')
     .replace(/</g,'&lt;')
     .replace(/>/g,'&gt;')
@@ -311,145 +658,785 @@ function escapeHtml(t) {
     .replace(/`/g,'&#96;');
 }
 
-function banPrompt(userId) {
-  const reason = prompt('封号原因（必填，会展示给用户）：');
-  if (!reason) return;
-  const level = prompt('封禁等级 1-4：\n1=轻微 1 天\n2=重复 7 天\n3=诈骗 30 天\n4=永久', '1');
-  if (!level) return;
-  const days = level === '4' ? null : level;
-  if (!confirm(`确认封禁 ${userId}？`)) return;
-  api(API.action, { action: 'ban', userId, level: Number(level), reason, days })
-    .then(() => { msg('已封禁'); load(); })
-    .catch(e => msg(e.message, true));
+/** 标签片段；cls 只接受开发者字面量，不接收服务端数据 */
+function tagHtml(text, cls) {
+  return `<span class="${cls || 'tag'}">${escapeHtml(text)}</span>`;
 }
 
-function unban(userId) {
-  api(API.action, { action: 'unban', userId })
-    .then(() => { msg('已解封，项目已恢复'); load(); })
-    .catch(e => msg(e.message, true));
+function fmtTime(ts) {
+  if (!ts) return '—';
+  const n = Number(ts);
+  if (!Number.isFinite(n) || n <= 0) return '—';
+  const d = new Date(n * 1000);
+  const pad = (v) => String(v).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function kindLabel(kind) {
-  return {
-    guest: '游客', user: '普通账号',
-    'guest-vip': '游客 VIP', vip: 'VIP',
-    'guest-svip': '游客 SVIP', svip: 'SVIP',
-    'guest-ultra': '游客 Ultra', ultra: 'Ultra',
-  }[kind] || kind || '未知';
+function fmtBytes(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return '0 B';
+  if (v < 1024) return `${Math.round(v)} B`;
+  if (v < 1024 * 1024) return `${(v / 1024).toFixed(1)} KB`;
+  if (v < 1024 * 1024 * 1024) return `${(v / 1024 / 1024).toFixed(1)} MB`;
+  return `${(v / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
-function tierLabel(tier) {
-  return { user: '普通', vip: 'VIP', svip: 'SVIP', ultra: 'Ultra' }[tier] || tier || '普通';
+function fmtCount(n) {
+  const v = Number(n);
+  return Number.isFinite(v) && v >= 0 ? String(Math.trunc(v)) : '0';
 }
 
-// 等级切换：VIP 可建后端项目（源码 ≤1MB），SVIP ≤10MB，Ultra 无上限
-function setTier(userId, tier) {
-  const hint = {
-    user: '恢复普通账号：只能建纯前端站点（≤300KB）',
-    vip: 'VIP：可建 npm/pnpm/js 后端项目，源码上限 1MB',
-    svip: 'SVIP：后端源码上限 10MB，安装依赖最长 10 分钟，启动等待 5 分钟',
-    ultra: 'Ultra：不限制项目大小、依赖安装时长与后端进程数',
-  }[tier] || '';
-  if (!confirm(`将账号 ${userId} 的等级设为 ${tierLabel(tier)}？\n${hint}\n账号、项目与当前会话都会保留。`)) {
-    load();
+function tierLabel(tier) { return TIER_LABEL[tier] || tier || '普通'; }
+function providerLabel(p) { return PROVIDER_LABEL[p] || p || '未知'; }
+function kindLabel(kind) { return KIND_LABEL[kind] || kind || '纯前端'; }
+
+function displayName(u) { return u.email || u.userId || '未知账号'; }
+
+function errorText(code) {
+  if (!code) return '操作失败';
+  return ERROR_TEXT[code] || code;
+}
+
+function toast(text, isErr) {
+  const el = $('toast');
+  el.textContent = text;
+  el.className = 'toast show ' + (isErr ? 'err' : 'ok');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = 'toast'; }, 3800);
+}
+
+/* ============================== 请求 ============================== */
+async function api(url, body) {
+  const res = await fetch(url, {
+    method: body ? 'POST' : 'GET',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    logout();
+    throw new Error('登录已过期，请重新登录');
+  }
+  if (!json.ok) throw new Error(json.error || ('HTTP ' + res.status));
+  return json;
+}
+
+async function runAction(payload, okText) {
+  try {
+    const data = await api(API.action, payload);
+    toast(typeof okText === 'function' ? okText(data) : okText, false);
+    await load();
+    return data;
+  } catch (error) {
+    toast(errorText(error.message), true);
+    await load();
+    return null;
+  }
+}
+
+/* ============================== 登录 / 退出 ============================== */
+function showLogin(message) {
+  $('mainView').hidden = true;
+  $('loginView').hidden = false;
+  const el = $('loginMsg');
+  if (message) { el.textContent = message; el.hidden = false; } else { el.hidden = true; }
+  $('pwd').focus();
+}
+
+function enter() {
+  $('loginView').hidden = true;
+  $('mainView').hidden = false;
+  load();
+}
+
+function logout() {
+  token = '';
+  sessionStorage.removeItem('adminToken');
+  state.data = null;
+  closeDrawer();
+  showLogin('');
+}
+
+$('loginForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const password = $('pwd').value;
+  const btn = $('loginBtn');
+  if (!password) { showLogin('请输入管理员密码'); return; }
+  btn.disabled = true;
+  try {
+    const res = await fetch(API.login, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!json.ok) throw new Error(json.error || ('HTTP ' + res.status));
+    token = json.token;
+    sessionStorage.setItem('adminToken', token);
+    $('pwd').value = '';
+    $('loginMsg').hidden = true;
+    $('pwdBanner').hidden = !json.mustChangePassword;
+    enter();
+  } catch (error) {
+    showLogin(errorText(error.message));
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('logoutBtn').addEventListener('click', logout);
+$('refreshBtn').addEventListener('click', () => load(true));
+$('pwdBtn').addEventListener('click', () => openChangePassword());
+$('bannerPwdBtn').addEventListener('click', () => openChangePassword());
+
+/* ============================== 数据加载 ============================== */
+async function load(manual) {
+  if (state.loading) return;
+  state.loading = true;
+  $('refreshBtn').disabled = true;
+  try {
+    const data = await api(API.overview);
+    state.data = data;
+    renderAll();
+    if (manual) toast('已刷新', false);
+  } catch (error) {
+    if (token) toast(errorText(error.message), true);
+  } finally {
+    state.loading = false;
+    $('refreshBtn').disabled = false;
+  }
+}
+
+function renderAll() {
+  renderMetrics();
+  renderChips();
+  renderAccounts();
+  renderDrawer();
+  const pendingVip = state.data?.stats?.vipRequestCount ?? 0;
+  const feedbackCount = state.data?.stats?.feedbackCount ?? 0;
+  $('vipBadge').textContent = fmtCount(pendingVip);
+  $('vipBadge').className = 'badge' + (pendingVip > 0 ? ' hot' : '');
+  $('feedbackBadge').textContent = fmtCount(feedbackCount);
+  $('feedbackBadge').className = 'badge' + (feedbackCount > 0 ? ' hot' : '');
+  $('updatedAt').textContent = '更新于 ' + new Date().toLocaleTimeString();
+}
+
+/* ============================== 顶部指标 / 快捷筛选 ============================== */
+function renderMetrics() {
+  const s = state.data?.stats || {};
+  const items = [
+    { label: '账号总数', value: fmtCount(s.userCount), hint: `游客 ${fmtCount(s.guestCount)} · Apple ${fmtCount(s.appleCount)} · Google ${fmtCount(s.googleCount)}` },
+    { label: '待审 VIP', value: fmtCount(s.vipRequestCount), hint: '需人工处理的升级申请' },
+    { label: '已封禁', value: fmtCount(s.bannedCount), hint: `累计封禁 ${fmtCount(s.bannedTotal)} · 已到期 ${fmtCount(s.banExpiredCount)}` },
+    { label: '项目', value: fmtCount(s.projectCount), hint: `后端 ${fmtCount(s.backendProjectCount)} · 占用 ${fmtBytes(s.totalBytes)}` },
+  ];
+  const box = $('metrics');
+  box.replaceChildren(...items.map((item) => h('div', { class: 'metric', title: item.hint },
+    h('b', null, item.value),
+    h('span', null, item.label),
+  )));
+}
+
+function chipCount(id) {
+  const users = state.data?.users || [];
+  if (id === 'pending') return users.filter((u) => u.vipRequest?.status === 'pending').length;
+  if (id === 'banned') return users.filter((u) => u.banned).length;
+  if (id === 'backend') return users.filter((u) => u.hasBackendProject).length;
+  return users.length;
+}
+
+function renderChips() {
+  const box = $('chips');
+  box.replaceChildren(...FILTERS.map((f) => h('button', {
+    class: 'chip' + (state.filter === f.id ? ' on' : ''),
+    type: 'button',
+    'aria-pressed': state.filter === f.id ? 'true' : 'false',
+    onclick: () => { state.filter = f.id; renderChips(); renderAccounts(); },
+  }, f.label, h('span', { class: 'n' }, fmtCount(chipCount(f.id))))));
+}
+
+/* ============== 账号表（模板字符串 + 全字段转义 + data-* 事件委托） ============== */
+function matchesFilter(u) {
+  if (state.filter === 'pending' && u.vipRequest?.status !== 'pending') return false;
+  if (state.filter === 'banned' && !u.banned) return false;
+  if (state.filter === 'backend' && !u.hasBackendProject) return false;
+  const q = state.query.trim().toLowerCase();
+  if (!q) return true;
+  const haystack = [
+    u.userId,
+    u.email,
+    tierLabel(u.tier),
+    u.tier,
+    providerLabel(u.provider),
+    u.accountKind,
+    u.banned ? '已封禁 封禁' : '正常',
+    u.vipRequest?.status === 'pending' ? '待审' : '',
+  ].filter(Boolean).join(' ').toLowerCase();
+  return haystack.includes(q);
+}
+
+function renderAccounts() {
+  const body = $('accountBody');
+  const all = state.data?.users || [];
+  const users = all.filter(matchesFilter);
+  // 所有插值都过 escapeHtml（见函数注释），模板里没有裸的服务端字符串
+  body.innerHTML = users.map((u) =>
+    accountRowHtml(u) + (state.expanded.has(u.userId) ? detailRowHtml(u) : ''),
+  ).join('');
+  $('emptyState').hidden = users.length > 0;
+  $('resultCount').textContent = `显示 ${users.length} / ${all.length} 个账号`;
+}
+
+function accountRowHtml(u) {
+  const open = state.expanded.has(u.userId);
+  const uid = escapeHtml(u.userId);
+  const name = escapeHtml(u.email || u.userId || '未知账号');
+  const sub = escapeHtml(u.email ? u.userId : providerLabel(u.provider));
+  const tier = u.tier || 'user';
+  const tierOptions = TIERS.map((t) =>
+    `<option value="${t}"${t === tier ? ' selected' : ''}>${escapeHtml(tierLabel(t))}</option>`,
+  ).join('');
+  const banButton = u.status === 'banned'
+    ? `<button class="btn sm" type="button" data-act="unban" data-user-id="${uid}">解封</button>`
+    : `<button class="btn sm danger" type="button" data-act="ban" data-user-id="${uid}">封禁</button>`;
+  const quotaTitle = u.quotaBytes === null ? '该等级无业务上限' : `该等级配额 ${fmtBytes(u.quotaBytes)}`;
+
+  return `<tr class="acct-row" data-user-id="${uid}">
+  <td>
+    <button class="expand-btn${open ? ' open' : ''}" type="button" data-act="expand" data-user-id="${uid}"
+      aria-expanded="${open ? 'true' : 'false'}" title="${open ? '收起详情' : '展开详情 / 项目 / VIP 审核'}">
+      <span class="chev">›</span>
+    </button>
+  </td>
+  <td>
+    <div class="tag-row">
+      <span class="acct-main">${name}</span>
+      ${u.vipRequest?.status === 'pending' ? tagHtml('待审 VIP', 'tag warn dot') : ''}
+      ${u.legacyIsTest ? tagHtml('历史测试', 'tag') : ''}
+    </div>
+    <div class="acct-sub">${sub}</div>
+  </td>
+  <td><div class="tag-row">${tagHtml(providerLabel(u.provider), PROVIDER_TAG[u.provider] || 'tag')}</div></td>
+  <td><div class="tag-row">${tagHtml(tierLabel(tier), TIER_TAG[tier] || 'tag')}</div></td>
+  <td>${statusCellHtml(u)}</td>
+  <td class="num">${fmtCount(u.projectCount)}${u.backendProjectCount > 0 ? `<div class="sub">含 ${fmtCount(u.backendProjectCount)} 后端</div>` : ''}</td>
+  <td class="num" title="${escapeHtml(quotaTitle)}">${fmtBytes(u.bytes)}</td>
+  <td><span class="sub">${fmtTime(u.createdAt)}</span></td>
+  <td>
+    <div class="row-actions" style="margin-top:0">
+      <select class="select" data-act="tier" data-user-id="${uid}" aria-label="调整等级">${tierOptions}</select>
+      ${banButton}
+      <button class="btn sm ghost" type="button" data-act="delete-user" data-user-id="${uid}">删除</button>
+    </div>
+  </td>
+</tr>`;
+}
+
+function statusCellHtml(u) {
+  if (u.banned) {
+    return `<div class="cell-stack">${tagHtml(`已封禁 L${fmtCount(u.banLevel || 1)}`, 'tag danger')}
+      <span class="sub">${u.banUntil ? '至 ' + fmtTime(u.banUntil) : '永久'}</span></div>`;
+  }
+  if (u.status === 'banned') {
+    return `<div class="cell-stack">${tagHtml('封禁已到期', 'tag warn')}<span class="sub">可正常登录</span></div>`;
+  }
+  return `<div class="cell-stack">${tagHtml('正常', 'tag ok')}</div>`;
+}
+
+function detailRowHtml(u) {
+  const projects = (state.data?.projects || []).filter((p) => p.userId === u.userId);
+  const info = `<div class="detail-block">
+    <h4>账号信息</h4>
+    <div class="info-grid">
+      ${infoItemHtml('账号 ID', u.userId, true)}
+      ${infoItemHtml('邮箱', u.email || '—')}
+      ${infoItemHtml('来源', providerLabel(u.provider))}
+      ${infoItemHtml('等级', tierLabel(u.tier))}
+      ${infoItemHtml('等级配额', u.quotaBytes === null ? '无上限' : fmtBytes(u.quotaBytes))}
+      ${infoItemHtml('项目 / 占用', `${fmtCount(u.projectCount)} 个 · ${fmtBytes(u.bytes)}`)}
+      ${infoItemHtml('创建时间', fmtTime(u.createdAt))}
+      ${infoItemHtml('最后登录', fmtTime(u.lastLoginAt))}
+      ${infoItemHtml('封禁次数', fmtCount(u.banCount))}
+      ${infoItemHtml('升级时间', u.vipSince ? fmtTime(u.vipSince) : '—')}
+      ${u.status === 'banned' ? infoItemHtml('封禁原因', u.banReason || '—') : ''}
+    </div>
+  </div>`;
+  const vip = vipRequestHtml(u);
+  return `<tr class="detail-row"><td colspan="9"><div class="detail">
+    ${vip ? `<div class="detail-cols">${info}${vip}</div>` : info}
+    ${projectsBlockHtml(projects)}
+  </div></td></tr>`;
+}
+
+function infoItemHtml(label, value, mono) {
+  const text = value === null || value === undefined || value === '' ? '—' : String(value);
+  return `<div class="info-item"><span>${escapeHtml(label)}</span><b${mono ? ' class="mono"' : ''}>${escapeHtml(text)}</b></div>`;
+}
+
+function vipRequestHtml(u) {
+  const req = u.vipRequest;
+  if (!req) return '';
+  const pending = req.status === 'pending';
+  const statusTag = pending
+    ? tagHtml('待审', 'tag warn')
+    : req.status === 'approved' ? tagHtml('已通过', 'tag ok') : tagHtml('已驳回', 'tag danger');
+
+  let inner = `<h4>VIP 升级申请 ${statusTag}<span class="sub">提交于 ${fmtTime(req.createdAt)}</span></h4>`;
+  if (req.note) inner += `<p class="quote">${escapeHtml(req.note)}</p>`;
+  if (!pending && req.reviewNote) inner += `<p class="quote">审核备注：${escapeHtml(req.reviewNote)}</p>`;
+  if (!pending && req.reviewedAt) {
+    const renewed = req.linksRenewed ? ` · 解除 ${fmtCount(req.linksRenewed)} 个项目的链接限制` : '';
+    inner += `<p class="sub">审核于 ${fmtTime(req.reviewedAt)}${renewed}</p>`;
+  }
+  if (pending) {
+    const uid = escapeHtml(u.userId);
+    const note = state.notes[u.userId] || '';
+    inner += `<textarea class="input" rows="2" maxlength="200" data-note-user="${uid}"
+        placeholder="审核备注（可选，仅管理员可见）" aria-label="审核备注">${escapeHtml(note)}</textarea>
+      <div class="row-actions">
+        <button class="btn sm primary" type="button" data-act="review" data-approve="1" data-user-id="${uid}">通过并升级</button>
+        <button class="btn sm danger" type="button" data-act="review" data-approve="0" data-user-id="${uid}">驳回</button>
+      </div>`;
+  }
+  return `<div class="detail-block">${inner}</div>`;
+}
+
+function projectsBlockHtml(projects) {
+  if (!projects.length) {
+    return `<div class="detail-block"><h4>项目 0</h4><p class="empty-line">该账号暂无项目</p></div>`;
+  }
+  const rows = projects.map((p) => {
+    const status = PROJECT_STATUS[p.status] || [p.status || '未知', ''];
+    return `<tr>
+      <td class="name">${escapeHtml(p.name || p.id)}</td>
+      <td>${tagHtml(kindLabel(p.kind), p.kind === 'static' ? 'tag' : 'tag accent')}</td>
+      <td>${tagHtml(status[0], status[1] ? 'tag ' + status[1] : 'tag')}</td>
+      <td class="num">${fmtBytes(p.size)} / ${fmtCount(p.fileCount)} 文件</td>
+      <td class="sub">${fmtTime(p.createdAt)}</td>
+      <td>
+        <div class="row-actions" style="margin-top:0">
+          <a class="btn sm ghost" href="/p/${escapeHtml(encodeURIComponent(p.id))}" target="_blank" rel="noreferrer noopener">打开</a>
+          <button class="btn sm danger" type="button" data-act="delete-project" data-project-id="${escapeHtml(p.id)}">删除</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="detail-block">
+    <h4>项目 ${fmtCount(projects.length)}</h4>
+    <div class="table-scroll">
+      <table class="mini">
+        <thead><tr><th>名称</th><th>类型</th><th>状态</th><th class="num">大小</th><th>创建</th><th>操作</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+/* ---- 账号表事件委托：一律从 data-* 取参数，不拼 onclick ---- */
+$('accountBody').addEventListener('click', (event) => {
+  const el = event.target.closest('[data-act]');
+  if (!el) return;
+  const act = el.dataset.act;
+  const users = state.data?.users || [];
+  const user = el.dataset.userId ? users.find((u) => u.userId === el.dataset.userId) : null;
+
+  if (act === 'expand') {
+    const userId = el.dataset.userId;
+    if (state.expanded.has(userId)) state.expanded.delete(userId);
+    else state.expanded.add(userId);
+    renderAccounts();
     return;
   }
-  api(API.action, { action: 'setTier', userId, tier })
-    .then((d) => {
-      const extra = d.linksRenewed ? `，${d.linksRenewed} 个旧项目的链接限制已解除` : '';
-      const limited = d.linksLimited ? `，${d.linksLimited} 个项目的链接恢复 7 天空闲过期` : '';
-      msg(`已设为 ${tierLabel(d.tier)}，用户无需重新登录${extra}${limited}`);
-      load();
-    })
-    .catch(e => msg(e.message === 'TIER_UNCHANGED' ? '该账号已经是这个等级' : e.message, true));
+  if (act === 'ban' && user) { onBan(user); return; }
+  if (act === 'unban' && user) { onUnban(user); return; }
+  if (act === 'delete-user' && user) { onDeleteUser(user); return; }
+  if (act === 'review' && user) { onReviewVIP(user, el.dataset.approve === '1'); return; }
+  if (act === 'delete-project') {
+    const project = (state.data?.projects || []).find((p) => p.id === el.dataset.projectId);
+    if (project) onDeleteProject(project);
+  }
+});
+
+$('accountBody').addEventListener('change', (event) => {
+  const select = event.target.closest('select[data-act="tier"]');
+  if (!select) return;
+  const user = (state.data?.users || []).find((u) => u.userId === select.dataset.userId);
+  if (user) onTierChange(user, select.value);
+});
+
+// 审核备注随输入写回 state：整表重渲染（展开/收起/刷新）后不丢
+$('accountBody').addEventListener('input', (event) => {
+  const area = event.target.closest('textarea[data-note-user]');
+  if (area) state.notes[area.dataset.noteUser] = area.value;
+});
+
+/* ============================== 操作：等级 / 封禁 / 删除 ============================== */
+async function onTierChange(u, tier) {
+  if (!TIERS.includes(tier) || tier === (u.tier || 'user')) return;
+  const result = await openModal({
+    title: `调整 ${displayName(u)} 的等级`,
+    message: `${TIER_HINT[tier] || ''}\n账号、项目与当前会话都会保留，用户无需重新登录。`,
+    confirmText: `设为 ${tierLabel(tier)}`,
+  });
+  if (!result) { renderAccounts(); return; }
+
+  // 普通 → VIP 走专用的 upgradeVIP（与 App 内申请审批同一套语义），
+  // 其余切换（含降级、SVIP/Ultra）走 setTier，避免 ALREADY_VIP 之类的前置校验打架。
+  const payload = tier === 'vip' && (u.tier || 'user') === 'user'
+    ? { action: 'upgradeVIP', userId: u.userId }
+    : { action: 'setTier', userId: u.userId, tier };
+
+  await runAction(payload, (data) => {
+    const extra = data.linksRenewed ? `，已解除 ${fmtCount(data.linksRenewed)} 个项目的链接限制` : '';
+    const limited = data.linksLimited ? `，${fmtCount(data.linksLimited)} 个项目的链接恢复 7 天空闲过期` : '';
+    return `已设为 ${tierLabel(data.tier || tier)}${extra}${limited}`;
+  });
 }
 
-function upgradeVIP(userId) {
-  if (!confirm('将账号 ' + userId + ' 升级为 VIP？\n账号、项目与当前会话都会保留。')) return;
-  api(API.action, { action: 'upgradeVIP', userId })
-    .then((d) => {
-      const extra = d.linksRenewed ? `，${d.linksRenewed} 个旧项目的链接限制已解除` : '';
-      msg('已升级为 VIP，用户无需重新登录' + extra);
-      load();
-    })
-    .catch(e => msg(e.message === 'ALREADY_VIP' ? '该账号已经是 VIP' : e.message, true));
+function banLevels() {
+  const raw = state.data?.stats?.banLevels || {};
+  return [1, 2, 3, 4].map((level) => {
+    const record = raw['L' + level] || BAN_FALLBACK[level];
+    return { level, days: record.days ?? null, label: record.label || '' };
+  });
 }
 
-function downgradeVIP(userId) {
-  if (!confirm('将账号 ' + userId + ' 降为普通等级？\n账号与项目会保留。')) return;
-  api(API.action, { action: 'downgradeVIP', userId })
-    .then((d) => {
-      const extra = d.linksLimited ? `，${d.linksLimited} 个项目的链接已恢复 7 天空闲过期` : '';
-      msg('已降为普通等级' + extra);
-      load();
-    })
-    .catch(e => msg(e.message, true));
+function daysLabel(days) {
+  return days ? `${days} 天` : '永久';
 }
 
-function reviewVIP(userId, approve) {
-  const label = approve ? '批准' : '驳回';
-  if (!confirm(`${label}账号 ${userId} 的 VIP 申请？`)) return;
-  const note = approve ? '' : (prompt('驳回原因（可选，仅管理员可见）：') || '');
-  api(API.action, { action: 'reviewVIPRequest', userId, approve, note })
-    .then((d) => {
-      const extra = approve && d.linksRenewed
-        ? `，${d.linksRenewed} 个旧项目的链接限制已解除`
-        : '';
-      msg((approve ? '已批准，用户无需重新登录' : '已驳回') + extra);
-      load();
-    })
-    .catch(e => msg(e.message, true));
+async function onBan(u) {
+  const levels = banLevels();
+  const result = await openModal({
+    title: `封禁 ${displayName(u)}`,
+    message: '封禁后该账号的全部项目立即下架（后端常驻进程同时停止），所有登录入口都会被拦截。\n用户可在 App 内看到原因与期限，并通过反馈申诉。',
+    fields: [
+      {
+        name: 'level',
+        type: 'select',
+        label: '封禁等级',
+        value: '1',
+        options: levels.map((l) => ({ value: String(l.level), label: `L${l.level} · ${l.label}（${daysLabel(l.days)}）` })),
+      },
+      {
+        name: 'reason',
+        type: 'textarea',
+        label: '封禁原因（必填，用户可见）',
+        required: true,
+        maxlength: 200,
+        placeholder: '例如：站点包含钓鱼或诈骗页面',
+      },
+    ],
+    confirmText: '确认封禁',
+    danger: true,
+  });
+  if (!result) return;
+  const level = Number(result.level);
+  const record = levels.find((l) => l.level === level) || levels[0];
+  await runAction(
+    { action: 'ban', userId: u.userId, level, reason: result.reason, days: record.days },
+    `已封禁 L${level}（${daysLabel(record.days)}），项目已下架`,
+  );
 }
 
-function deleteVIPUser(userId) {
-  if (!confirm('删除 VIP 用户 ' + userId + '？其全部项目将一并删除')) return;
-  api(API.action, { action: 'deleteVIPUser', userId })
-    .then(() => { msg('已删除'); load(); })
-    .catch(e => msg(e.message, true));
+async function onUnban(u) {
+  const result = await openModal({
+    title: `解封 ${displayName(u)}`,
+    message: '解封后账号可重新登录，封禁期间下架的项目会恢复上架。\n后端项目需要重新安装依赖并启动，通常要 1-4 分钟。',
+    confirmText: '解封',
+  });
+  if (!result) return;
+  await runAction({ action: 'unban', userId: u.userId }, (data) =>
+    data.backendRestoring ? `已解封，${fmtCount(data.backendRestoring)} 个后端项目正在恢复` : '已解封，项目已恢复');
 }
 
-function deleteUser(userId) {
-  if (!confirm('彻底删除账号 ' + userId + '？\n将删除其全部项目并强制下线，不可恢复！')) return;
-  api(API.action, { action: 'deleteUser', userId })
-    .then(() => { msg('账号已删除'); load(); })
-    .catch(e => msg(e.message, true));
+async function onDeleteUser(u) {
+  const result = await openModal({
+    title: '删除账号',
+    message: `将彻底删除 ${displayName(u)}（${u.userId}）、其全部 ${fmtCount(u.projectCount)} 个项目与文件，并强制下线。\n此操作不可恢复。`,
+    confirmText: '删除账号',
+    danger: true,
+  });
+  if (!result) return;
+  state.expanded.delete(u.userId);
+  await runAction({ action: 'deleteUser', userId: u.userId }, '账号已删除');
 }
 
-function delProject(id) {
-  if (!confirm('彻底删除项目 ' + id + '？不可恢复')) return;
-  api(API.action, { action: 'deleteProject', projectId: id })
-    .then(() => { msg('已删除'); load(); })
-    .catch(e => msg(e.message, true));
+async function onDeleteProject(p) {
+  const result = await openModal({
+    title: '删除项目',
+    message: `将删除项目「${p.name || p.id}」及其全部文件，公开链接立即失效。\n此操作不可恢复。`,
+    confirmText: '删除项目',
+    danger: true,
+  });
+  if (!result) return;
+  await runAction({ action: 'deleteProject', projectId: p.id }, '项目已删除');
 }
 
-function delFeedback(id) {
-  api(API.action, { action: 'deleteFeedback', id })
-    .then(() => load())
-    .catch(e => msg(e.message, true));
+async function onReviewVIP(u, approve) {
+  const note = (state.notes[u.userId] || '').trim();
+  const result = await openModal({
+    title: approve ? `批准 ${displayName(u)} 的 VIP 申请` : `驳回 ${displayName(u)} 的 VIP 申请`,
+    message: approve
+      ? '批准后原地升级为 VIP：userId、项目与当前会话全部保留，游客期的链接限制同步解除。'
+      : '驳回后用户可重新提交申请，驳回原因仅管理员可见。',
+    confirmText: approve ? '通过并升级' : '驳回',
+    danger: !approve,
+  });
+  if (!result) return;
+  await runAction(
+    { action: 'reviewVIPRequest', userId: u.userId, approve: approve === true, note },
+    (data) => {
+      if (approve) {
+        const extra = data.linksRenewed ? `，已解除 ${fmtCount(data.linksRenewed)} 个项目的链接限制` : '';
+        return `已批准并升级为 VIP${extra}`;
+      }
+      return '已驳回该申请';
+    },
+  );
+  delete state.notes[u.userId];
 }
 
-function changePwd() {
-  const p = prompt('新的管理员密码（至少 8 位，需含字母 + 数字或符号，不能用 12345678 / aaaaaaaa 这类弱口令）：');
-  if (!p) return;
-  api(API.action, { action: 'setPassword', newPassword: p })
-    .then(() => {
-      document.getElementById('pwdBanner').style.display = 'none';
-      msg('密码已修改，下次登录生效');
-    })
-    .catch(e => msg(weakPwdHint(e.message), true));
+/* ============================== 处理中心抽屉：待审 VIP 队列 + 反馈 ============================== */
+function renderDrawer() {
+  renderVipQueue();
+  renderFeedback();
 }
 
-// 弱密码错误码 → 人话
-function weakPwdHint(code) {
-  return {
-    WEAK_PASSWORD: '密码太短（至少 8 位）',
-    WEAK_PASSWORD_COMMON: '这是常见弱口令，请换一个',
-    WEAK_PASSWORD_PATTERN: '不能是 aaaaaaa / 12345678 这类连续或重复字符',
-    WEAK_PASSWORD_SIMPLE: '需同时包含字母和数字/符号',
-  }[code] || code;
+/** 待审 VIP 队列（抽屉里按提交时间列出，通过/驳回走事件委托） */
+function renderVipQueue() {
+  const pending = (state.data?.vipRequests || []).filter((r) => r.status === 'pending');
+  $('vipQueueCount').textContent = pending.length ? `${pending.length} 条` : '';
+  const body = document.querySelector('#vipRequestTable tbody');
+  body.innerHTML = pending.map((r) => {
+    const user = (state.data?.users || []).find((u) => u.userId === r.userId);
+    const provider = user?.provider || 'unknown';
+    const uid = escapeHtml(r.userId);
+    return `<tr>
+      <td>
+        <div class="acct-main">${escapeHtml(r.email || r.userId)}</div>
+        <div class="acct-sub">${escapeHtml(r.userId)}</div>
+      </td>
+      <td>${tagHtml(providerLabel(provider), PROVIDER_TAG[provider] || 'tag')}</td>
+      <td class="wrap">${escapeHtml(r.note || '—')}</td>
+      <td class="sub">${fmtTime(r.createdAt)}</td>
+      <td>
+        <div class="row-actions" style="margin-top:0">
+          <button class="btn sm primary" type="button" data-act="review" data-approve="1" data-user-id="${uid}">通过</button>
+          <button class="btn sm danger" type="button" data-act="review" data-approve="0" data-user-id="${uid}">驳回</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="5" class="empty-line">暂无待审申请</td></tr>';
 }
 
+function renderFeedback() {
+  const list = state.data?.feedback || [];
+  const body = $('drawerBody');
+  body.replaceChildren();
+  $('drawerCount').textContent = list.length ? `共 ${list.length} 条` : '';
+  if (!list.length) {
+    body.append(h('p', { class: 'empty-line', style: 'padding:16px 0' }, '暂无反馈'));
+    return;
+  }
+  for (const f of list) {
+    const isReport = f.type === 'report';
+    const meta = [
+      f.projectId ? '项目 ' + f.projectId : '',
+      f.errorCode ? '错误码 ' + f.errorCode : '',
+    ].filter(Boolean).join(' · ');
+    body.append(h('div', { class: 'feed-item' },
+      h('div', { class: 'feed-head' },
+        h('span', { class: isReport ? 'tag danger' : 'tag accent' }, isReport ? '举报' : '反馈'),
+        h('span', { class: 'grow' }),
+        h('span', { class: 'sub' }, fmtTime(f.createdAt)),
+      ),
+      h('div', { class: 'feed-msg' }, f.message || '（空内容）'),
+      h('div', { class: 'feed-foot' },
+        h('span', { class: 'sub' }, [f.userId ? '来自 ' + f.userId : '未登录', meta].filter(Boolean).join(' · ')),
+        h('button', {
+          class: 'btn sm ghost',
+          type: 'button',
+          onclick: () => onDeleteFeedback(f),
+        }, '已处理，删除'),
+      ),
+    ));
+  }
+}
+
+async function onDeleteFeedback(f) {
+  await runAction({ action: 'deleteFeedback', id: f.id }, '反馈已删除');
+}
+
+function syncDrawerTabs() {
+  const vip = state.drawerTab !== 'feedback';
+  $('tabVip').classList.toggle('on', vip);
+  $('tabFeedback').classList.toggle('on', !vip);
+  $('tabVip').setAttribute('aria-selected', vip ? 'true' : 'false');
+  $('tabFeedback').setAttribute('aria-selected', vip ? 'false' : 'true');
+  $('vipPanel').hidden = !vip;
+  $('drawerBody').hidden = vip;
+}
+
+function openDrawer(tab) {
+  state.drawerTab = tab || 'vip';
+  syncDrawerTabs();
+  $('drawer').classList.add('open');
+  $('drawer').setAttribute('aria-hidden', 'false');
+  $('scrim').classList.add('open');
+}
+function closeDrawer() {
+  $('drawer').classList.remove('open');
+  $('drawer').setAttribute('aria-hidden', 'true');
+  $('scrim').classList.remove('open');
+}
+
+$('vipQueueBtn').addEventListener('click', () => openDrawer('vip'));
+$('feedbackBtn').addEventListener('click', () => openDrawer('feedback'));
+$('tabVip').addEventListener('click', () => { state.drawerTab = 'vip'; syncDrawerTabs(); });
+$('tabFeedback').addEventListener('click', () => { state.drawerTab = 'feedback'; syncDrawerTabs(); });
+$('drawerClose').addEventListener('click', closeDrawer);
+$('scrim').addEventListener('click', closeDrawer);
+
+$('vipPanel').addEventListener('click', (event) => {
+  const btn = event.target.closest('[data-act="review"]');
+  if (!btn) return;
+  const user = (state.data?.users || []).find((u) => u.userId === btn.dataset.userId);
+  if (user) onReviewVIP(user, btn.dataset.approve === '1');
+});
+
+/* ============================== 弹窗 ============================== */
+let modalResolve = null;
+
+function openModal({ title, message, fields = [], confirmText = '确定', danger = false }) {
+  return new Promise((resolve) => {
+    modalResolve = resolve;
+    $('modalTitle').textContent = title || '';
+    const msgEl = $('modalMsg');
+    msgEl.textContent = message || '';
+    msgEl.hidden = !message;
+
+    const controls = {};
+    const fieldNodes = [];
+    for (const field of fields) {
+      let control;
+      if (field.type === 'select') {
+        control = h('select', { class: 'input' },
+          ...field.options.map((opt) => h('option', { value: opt.value }, opt.label)));
+        control.value = field.value ?? field.options[0]?.value ?? '';
+      } else if (field.type === 'textarea') {
+        control = h('textarea', { class: 'input', rows: '3', placeholder: field.placeholder || '' });
+        if (field.maxlength) control.maxLength = field.maxlength;
+        control.value = field.value || '';
+      } else {
+        control = h('input', { class: 'input', type: field.type || 'text', placeholder: field.placeholder || '' });
+        if (field.maxlength) control.maxLength = field.maxlength;
+        control.value = field.value || '';
+      }
+      control.dataset.field = field.name;
+      controls[field.name] = { control, field };
+      const wrap = h('label', { class: 'field' },
+        h('span', { class: 'field-label' }, field.label || field.name),
+        control,
+        field.hint ? h('span', { class: 'field-hint' }, field.hint) : null,
+      );
+      fieldNodes.push(wrap);
+    }
+    $('modalFields').replaceChildren(...fieldNodes);
+
+    const okBtn = $('modalOk');
+    okBtn.textContent = confirmText;
+    okBtn.className = 'btn ' + (danger ? 'danger-solid' : 'primary');
+
+    const finish = (value) => {
+      $('modal').hidden = true;
+      const fn = modalResolve;
+      modalResolve = null;
+      if (fn) fn(value);
+    };
+
+    okBtn.onclick = () => {
+      const values = {};
+      let firstInvalid = null;
+      for (const [name, { control, field }] of Object.entries(controls)) {
+        const value = String(control.value ?? '').trim();
+        const wrap = control.closest('.field');
+        if (wrap) wrap.classList.remove('invalid');
+        if (field.required && !value) {
+          if (wrap) wrap.classList.add('invalid');
+          if (!firstInvalid) firstInvalid = control;
+        }
+        values[name] = value;
+      }
+      if (firstInvalid) { firstInvalid.focus(); return; }
+      finish(values);
+    };
+    $('modalCancel').onclick = () => finish(null);
+
+    $('modal').hidden = false;
+    const first = Object.values(controls)[0]?.control;
+    (first || okBtn).focus();
+    if (first && first.tagName === 'INPUT') first.select?.();
+  });
+}
+
+$('modal').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && event.target.tagName !== 'TEXTAREA') {
+    event.preventDefault();
+    $('modalOk').click();
+  }
+});
+
+/* ============================== 改密码 ============================== */
+async function openChangePassword() {
+  const result = await openModal({
+    title: '修改管理员密码',
+    message: '至少 8 位，需同时包含字母和数字/符号；不能使用常见弱口令或连续重复字符。',
+    fields: [{ name: 'password', type: 'password', label: '新密码', required: true, placeholder: '输入新的管理员密码' }],
+    confirmText: '保存',
+  });
+  if (!result) return;
+  try {
+    await api(API.action, { action: 'setPassword', newPassword: result.password });
+    $('pwdBanner').hidden = true;
+    toast('密码已修改，下次登录生效', false);
+  } catch (error) {
+    toast(errorText(error.message), true);
+  }
+}
+
+/* ============================== 搜索 ============================== */
+$('search').addEventListener('input', (event) => {
+  state.query = event.target.value;
+  $('clearSearch').hidden = !state.query;
+  renderAccounts();
+});
+$('clearSearch').addEventListener('click', () => {
+  state.query = '';
+  $('search').value = '';
+  $('clearSearch').hidden = true;
+  renderAccounts();
+  $('search').focus();
+});
+
+/* ============================== 键盘 ============================== */
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    if (!$('modal').hidden) { $('modalCancel').click(); return; }
+    if ($('drawer').classList.contains('open')) { closeDrawer(); return; }
+  }
+  const target = event.target;
+  const typing = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT');
+  if (event.key === '/' && !typing) {
+    event.preventDefault();
+    $('search').focus();
+  }
+});
+
+/* ============================== 启动 ============================== */
 if (token) enter();
+else showLogin('');
 </script>
 </body>
 </html>

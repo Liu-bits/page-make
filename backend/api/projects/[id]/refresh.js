@@ -8,7 +8,7 @@ import { appendLog, nowSeconds, kvGet, kvPut, keys } from '../../../lib/kv.js';
 import { ok, fail } from '../../../lib/responses.js';
 import { STATUS, GUEST_LINK_IDLE_SECONDS, isBackendKind, normalizeKind } from '../../../lib/state.js';
 import { isGuestLimited } from '../../../lib/session.js';
-import { canUseBackend } from '../../../lib/tiers.js';
+import { canUseBackend, tierOf } from '../../../lib/tiers.js';
 
 export async function onRequest(context) {
   const { request, params } = context;
@@ -31,7 +31,10 @@ export async function onRequest(context) {
         await stopBackendApp(project.id);
         return fail('BACKEND_REQUIRES_VIP', 403);
       }
-      if (!files.has('package.json')) return fail('MISSING_PACKAGE_JSON', 400);
+      // js 形态（单文件 Node 脚本）没有 package.json 是正常状态，
+      // 与 projects/[id].js 的 publish 判定保持一致；漏掉这个例外会让
+      // js 项目永远刷新失败（400 MISSING_PACKAGE_JSON）。
+      if (kind !== 'js' && !files.has('package.json')) return fail('MISSING_PACKAGE_JSON', 400);
 
       project.kind = kind;
       project.entryPath = null;
@@ -46,7 +49,8 @@ export async function onRequest(context) {
             kv,
             projectId: project.id,
             kind,
-            tier: project.tier || 'vip',
+            // 超时/并发配额按当前账号等级取，不用项目记录里的陈旧 tier
+            tier: tierOf(user),
           });
           // 刷新期间项目可能被删除；只更新仍然存在的记录。
           const latest = await kvGet(kv, keys.project(project.id));
@@ -124,10 +128,28 @@ export async function onRequest(context) {
 
     return ok({ project });
   } catch (error) {
-    project.status = STATUS.FAILED;
-    project.errorCode = error.code || 'STORAGE_ERROR';
-    try { await kvPut(kv, keys.project(project.id), project); } catch { /* 持久化失败不掩盖原始错误 */ }
+    // 项目可能在刷新期间被删除：写回前必须确认记录还在，否则会把已删除的项目
+    // “复活”（列表/统计里凭空多出一个孤儿记录），且回写的是部署前的旧快照。
+    let latest = null;
+    try {
+      latest = await kvGet(kv, keys.project(project.id));
+    } catch {
+      // 读失败按「已不存在」处理，绝不写回
+    }
+    if (latest) {
+      latest.status = STATUS.FAILED;
+      latest.errorCode = error.code || 'STORAGE_ERROR';
+      try {
+        await kvPut(kv, keys.project(project.id), latest);
+      } catch {
+        // 持久化失败不掩盖原始错误
+      }
+    }
     await appendLog(kv, { projectId: project.id, step: 'refresh', result: 'failed', errorCode: error.code, duration: Date.now() - started });
-    return fail(error.code || 'STORAGE_ERROR', 500, { message: error.message });
+    // 客户端错误用 4xx（参数/配额/形态问题不是服务端故障），只有存储/运行时才是 500
+    const code = error.code || 'STORAGE_ERROR';
+    const clientError = ['TOO_LARGE', 'NO_ENTRY', 'INVALID_PROVIDER', 'INVALID_KIND', 'BAD_ZIP', 'MISSING_PACKAGE_JSON', 'BACKEND_REQUIRES_VIP'];
+    const status = code === 'TOO_LARGE' ? 413 : (clientError.includes(code) ? 400 : 500);
+    return fail(code, status, { message: error.message });
   }
 }

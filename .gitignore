@@ -13,7 +13,7 @@ DerivedData/
 node_modules/
 *.log
 
-# ===== 密钥（绝不提交，全部走 GitHub Secrets / EdgeOne 控制台）=====
+# ===== 密钥（绝不提交，全部走 GitHub Secrets / 平台控制台）=====
 .env
 .env.local
 .env.*.local
@@ -21,7 +21,9 @@ node_modules/
 
 # ===== 本地日志导出 =====
 pagemake-logs-*.txt
-.workbuddy-ai/
+
+# 本地 agent 数据（记忆 + 文件索引），不进版本库
+.agent/
 *.ipa
 
 # 本地 IPA 验证临时目录

@@ -19,6 +19,12 @@ struct PreviewView: View {
     @State private var showQR = false
     @State private var isExporting = false
     @State private var exportURL: URL?
+    /// 轮询窗口耗尽（约 3 分钟）仍未就绪：展示「仍在处理中」+ 手动刷新。
+    @State private var pollTimedOut = false
+    /// 当前在跑的 /status 轮询任务。同一时刻只允许一条：
+    /// 手动刷新会先取消上一条，否则 `.task(id:)` 与刷新各起一条，
+    /// 重复打 /status（限速 + 网关抖动都被放大）。
+    @State private var pollTask: Task<Void, Never>?
 
     init(project: Project) {
         self.project = project
@@ -34,7 +40,6 @@ struct PreviewView: View {
         VStack(spacing: 0) {
             toolbarBar
             webArea
-            Divider()
             bottomBar
         }
         .navigationTitle(current.name)
@@ -81,8 +86,18 @@ struct PreviewView: View {
             if isRefreshing {
                 ProgressView()
                     .padding()
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .glassPanel(radius: 12)
             }
+        }
+        // processing 项目不能只放一个转圈：后台安装/构建可能持续十几分钟，
+        // 用户会以为卡死。这里主动轮询 /status，就绪后自动加载，超时给出刷新入口。
+        // 轮询统一走 startPolling()，保证同一时刻只有一条在跑。
+        .task(id: current.id) {
+            startPolling()
+        }
+        .onDisappear {
+            pollTask?.cancel()
+            pollTask = nil
         }
     }
 
@@ -91,9 +106,10 @@ struct PreviewView: View {
     private var toolbarBar: some View {
         HStack(spacing: 16) {
             Image(systemName: "link")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondaryLabel)
             Text(current.publicURL?.absoluteString ?? "—")
                 .font(.footnote)
+                .foregroundStyle(Theme.label)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
@@ -138,7 +154,7 @@ struct PreviewView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14))
+        .glassPanel(radius: 14)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
     }
@@ -149,6 +165,10 @@ struct PreviewView: View {
         ZStack {
             if isExpired {
                 expiredPlaceholder
+            } else if current.status == .failed {
+                failedPlaceholder
+            } else if current.status == .processing || current.status == .uploading {
+                processingPlaceholder
             } else if let url = current.publicURL {
                 WebView(url: url, reloadToken: reloadToken, onRuntimeError: handleRuntimeError)
             } else {
@@ -156,6 +176,57 @@ struct PreviewView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// 后台仍在安装/构建：轮询中显示进度，超时后给出「仍在处理中」与手动刷新。
+    private var processingPlaceholder: some View {
+        VStack(spacing: 16) {
+            if pollTimedOut {
+                Image(systemName: "clock.badge.questionmark")
+                    .font(.system(size: 44))
+                    .foregroundStyle(Theme.premium)
+                Text(L10n.string("preview_still_processing"))
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                Text(L10n.string("preview_still_processing_hint"))
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondaryLabel)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                Button(L10n.string("refresh")) {
+                    Task { await refresh() }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .padding(.horizontal, 48)
+            } else {
+                ProgressView()
+                Text(L10n.string("processing"))
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondaryLabel)
+                Text(L10n.string("preview_processing_hint"))
+                    .font(.caption)
+                    .foregroundStyle(Theme.tertiaryLabel)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+        }
+    }
+
+    private var failedPlaceholder: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 44))
+                .foregroundStyle(Theme.highlight)
+            Text(PlainLanguage.message(forErrorCode: current.errorCode ?? ""))
+                .font(.headline)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Button(L10n.string("refresh")) {
+                Task { await refresh() }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .padding(.horizontal, 48)
+        }
     }
 
     private var expiredPlaceholder: some View {
@@ -176,23 +247,28 @@ struct PreviewView: View {
     // MARK: - 底部操作栏
 
     private var bottomBar: some View {
-        HStack(spacing: 0) {
-            bottomButton(icon: issueCount > 0 ? "exclamationmark.triangle.fill" : "checkmark.shield",
-                         label: L10n.string("diagnostics_panel"),
-                         badge: issueCount > 0 ? "\(issueCount)" : nil) {
-                showDiagnostics = true
+        GlassEffectContainer(spacing: 12) {
+            HStack(spacing: 0) {
+                bottomButton(icon: issueCount > 0 ? "exclamationmark.triangle.fill" : "checkmark.shield",
+                             label: L10n.string("diagnostics_panel"),
+                             badge: issueCount > 0 ? "\(issueCount)" : nil) {
+                    showDiagnostics = true
+                }
+                bottomButton(icon: "arrow.clockwise", label: L10n.string("refresh_link")) {
+                    Task { await refresh() }
+                }
+                bottomButton(icon: "folder", label: L10n.string("file_list")) {
+                    showManage = true
+                }
+                bottomButton(icon: "trash", label: L10n.string("delete_project")) {
+                    showDeleteConfirm = true
+                }
             }
-            bottomButton(icon: "arrow.clockwise", label: L10n.string("refresh_link")) {
-                Task { await refresh() }
-            }
-            bottomButton(icon: "folder", label: L10n.string("file_list")) {
-                showManage = true
-            }
-            bottomButton(icon: "trash", label: L10n.string("delete_project")) {
-                showDeleteConfirm = true
-            }
+            .padding(.vertical, 6)
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.barRadius, style: .continuous))
         }
-        .padding(.vertical, 6)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 6)
     }
 
     private func bottomButton(icon: String, label: String, badge: String? = nil, action: @escaping () -> Void) -> some View {
@@ -204,10 +280,10 @@ struct PreviewView: View {
                     if let badge {
                         Text(badge)
                             .font(.system(size: 9).bold())
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Theme.background)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
-                            .background(Color.red, in: Capsule())
+                            .background(Theme.highlight, in: Capsule())
                             .offset(x: 10, y: -6)
                     }
                 }
@@ -215,7 +291,7 @@ struct PreviewView: View {
                     .font(.system(size: 10))
             }
             .frame(maxWidth: .infinity)
-            .foregroundStyle(.primary)
+            .foregroundStyle(Theme.label)
         }
     }
 
@@ -236,19 +312,60 @@ struct PreviewView: View {
         isRefreshing = true
         defer { isRefreshing = false }
         do {
-            var updated = try await APIClient.shared.refreshLink(current.id)
-            if updated.status == .processing {
-                updated = try await APIClient.shared.waitForProjectReady(current.id)
-            }
+            let updated = try await APIClient.shared.refreshLink(current.id)
             current = updated
             runtimeErrors = []
             reloadToken = UUID() // 强制 WebView 重新加载（URL 可能不变）
             appState.upsertProject(updated)
+            // 刷新后仍在部署：不要同步等待（后端可能还要十几分钟），
+            // 交给后台轮询，界面继续显示「正在生成链接」。
+            if updated.status == .processing || updated.status == .uploading {
+                pollTimedOut = false
+                startPolling()
+            }
         } catch let error as APIError {
             alertItem = AlertItem(message: error.errorDescription ?? L10n.string("error_generic"))
         } catch {
             alertItem = AlertItem(message: L10n.string("error_generic"))
         }
+    }
+
+    /// 启动轮询前先取消上一条，保证同一时刻只有一条 /status 轮询。
+    private func startPolling() {
+        pollTask?.cancel()
+        pollTask = Task { await pollUntilReady() }
+    }
+
+    /// 轮询 /api/projects/:id/status 直到终态。
+    /// ready → 拉一次完整项目并自动加载网页；failed/expired → 展示对应占位页；
+    /// 90 次 × 2 秒（3 分钟）仍未就绪 → 展示「仍在处理中」+ 手动刷新。
+    private func pollUntilReady() async {
+        guard current.status == .processing || current.status == .uploading else { return }
+        pollTimedOut = false
+
+        let maxAttempts = 90
+        var attempts = 0
+        while !Task.isCancelled && attempts < maxAttempts {
+            attempts += 1
+            try? await Task.sleep(nanoseconds: UInt64(Config.pollIntervalSeconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            guard let response = try? await APIClient.shared.projectStatus(current.id) else { continue }
+
+            switch response.status {
+            case .uploading, .processing:
+                continue
+            case .ready, .failed, .expired:
+                if let project = try? await APIClient.shared.project(current.id) {
+                    current = project
+                    appState.upsertProject(project)
+                }
+                runtimeErrors = []
+                reloadToken = UUID()
+                return
+            }
+        }
+        guard !Task.isCancelled else { return }
+        pollTimedOut = true
     }
 
     private func deleteProject() async {

@@ -261,29 +261,62 @@ enum VIPUpgradeStatus: String, Codable {
 
 struct VIPUpgradeRequest: Decodable, Equatable {
     let status: VIPUpgradeStatus
+    /// 本次申请的目标等级（旧记录没有该字段时为 nil）
+    let requestedTier: AccountRole?
     let note: String
     let createdAt: Date?
     let reviewedAt: Date?
     let reviewNote: String
 
     enum CodingKeys: String, CodingKey {
-        case status, note, createdAt, reviewedAt, reviewNote
+        case status, requestedTier, note, createdAt, reviewedAt, reviewNote
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         status = try c.decode(VIPUpgradeStatus.self, forKey: .status)
+        requestedTier = try? c.decodeIfPresent(AccountRole.self, forKey: .requestedTier)
         note = try c.decodeIfPresent(String.self, forKey: .note) ?? ""
         createdAt = Self.decodeDate(c, .createdAt)
         reviewedAt = Self.decodeDate(c, .reviewedAt)
         reviewNote = try c.decodeIfPresent(String.self, forKey: .reviewNote) ?? ""
     }
 
+    /// 时间字段兼容三种写法：秒级时间戳、毫秒级时间戳、ISO 字符串。
+    /// 服务端早期版本下发秒级 Int，改成 ISO 字符串时客户端不能因此整条解码失败。
     private static func decodeDate(
         _ c: KeyedDecodingContainer<CodingKeys>,
         _ key: CodingKeys
     ) -> Date? {
-        guard let seconds = try? c.decode(Int.self, forKey: key) else { return nil }
-        return Date(timeIntervalSince1970: TimeInterval(seconds))
+        if let seconds = try? c.decode(Int.self, forKey: key) {
+            return Date(timeIntervalSince1970: TimeInterval(seconds))
+        }
+        if let number = try? c.decode(Double.self, forKey: key) {
+            return Date(timeIntervalSince1970: number > 1_000_000_000_000 ? number / 1000 : number)
+        }
+        if let string = try? c.decode(String.self, forKey: key) {
+            return DateParsing.parse(string)
+        }
+        return nil
+    }
+}
+
+/// GET /api/vip-request 的完整响应：当前等级 + 下一档 + 是否可申请 + 最近一次申请。
+struct VIPRequestStatus: Decodable, Equatable {
+    let tier: AccountRole
+    let nextTier: AccountRole?
+    let canApply: Bool
+    let request: VIPUpgradeRequest?
+
+    enum CodingKeys: String, CodingKey {
+        case tier, nextTier, canApply, request
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tier = (try? c.decode(AccountRole.self, forKey: .tier)) ?? .user
+        nextTier = try? c.decodeIfPresent(AccountRole.self, forKey: .nextTier)
+        canApply = (try? c.decodeIfPresent(Bool.self, forKey: .canApply)) ?? false
+        request = try? c.decodeIfPresent(VIPUpgradeRequest.self, forKey: .request)
     }
 }
