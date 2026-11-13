@@ -1,11 +1,14 @@
-# Page-make 主分支（main）—— 只做部署
+# Page-make 主分支（main）—— 部署 + 发布产物
 #
 # 分工：
-#   debug 分支：跑全部测试、iOS 编译、IPA 构建（.github/workflows/debug.yaml）
-#   main  分支：只把已通过的代码部署到 ModelScope 创空间
+#   debug 分支：跑全部测试、iOS 编译验证、IPA 预构建（.github/workflows/debug.yaml）
+#   main  分支：部署到 ModelScope + 产出正式未签名 IPA（发布用）
+#
+# 为什么 main 也要构建 IPA：测试可以只在 debug 跑，但**发布产物必须与线上同源**。
+# 曾经把 IPA 只留在 debug，结果 main 部署完却拿不到对应的安装包。
 #
 # 规则（必须遵守）：
-#   - 不允许直接向 main 推代码，只允许从 debug 合并（见 AGENTS.md §0）
+#   - 不允许直接向 main 推代码，只允许从 debug 合并（见 AGENTS.md §0.1）
 #   - 合并前 debug 上 backend-test / ios-build / ipa 三个 job 必须全绿
 #
 # 需要的 GitHub 配置：
@@ -40,3 +43,59 @@ jobs:
           MODELSCOPE_SPACE: ${{ vars.MODELSCOPE_SPACE }}
           MODELSCOPE_TOKEN: ${{ secrets.MODELSCOPE_TOKEN }}
         run: bash scripts/deploy-modelscope.sh
+
+  # 发布产物：main 每次推送都产出未签名 IPA。
+  # 测试与编译验证在 debug 分支做（debug.yaml），这里只负责把已验证的代码
+  # 打成可下载的安装包 —— 否则 main 只部署、拿不到与线上同源的 IPA。
+  # 与 deploy 并行，互不阻塞。
+  ipa:
+    name: "构建未签名 IPA"
+    runs-on: xcode-27
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 生成 Xcode 工程
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: 编译归档（真机 · 不签名）
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project PageMake.xcodeproj \
+            -scheme PageMake \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/PageMake.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: ad-hoc 签名并打包 IPA
+        run: |
+          mkdir -p Payload
+          cp -R "$RUNNER_TEMP/PageMake.xcarchive/Products/Applications/PageMake.app" Payload/
+          codesign --force --sign - --entitlements ios/PageMake/PageMake.entitlements "Payload/PageMake.app"
+          echo "已 ad-hoc 签名（含 Sign in with Apple entitlement）"
+          if [ ! -f "Payload/PageMake.app/archived-expanded-entitlements.xcent" ]; then
+            cp ios/PageMake/PageMake.entitlements "Payload/PageMake.app/archived-expanded-entitlements.xcent"
+            echo "已手动注入 archived-expanded-entitlements.xcent"
+          fi
+          zip -qr PageMake-unsigned.ipa Payload
+          rm -rf Payload
+          echo "IPA 大小：$(du -h PageMake-unsigned.ipa | cut -f1)"
+
+      - name: 上传 IPA 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: PageMake-unsigned-ipa
+          path: PageMake-unsigned.ipa
+          retention-days: 14
+

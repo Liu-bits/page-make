@@ -17,8 +17,10 @@
 2. **提交顺序（debug → main，禁止直接推 main）**：
    改代码 → 本地全量测试全绿 → `git commit`（中文详细 message）→
    `git push origin debug`（偶发 502/schannel 中断，重试 1-2 次即成功）→
-   等 debug 的 CI 三个 job 全绿（backend-test / ios-build / ipa）→
-   下载 IPA artifact 替换本地 `E:/Page-make/PageMake-unsigned.ipa` →
+   等 debug 的 CI 三个 job 全绿（backend-test / ios-build / ipa，前两个是门禁）→
+   `git checkout main && git merge debug && git push origin main`（触发部署）→
+   等 main 的 `ipa` job 完成 → 下载 **main 的** IPA artifact 替换本地
+   `E:/Page-make/PageMake-unsigned.ipa` →
    `git checkout main && git merge debug && git push origin main`（触发部署）→
    通知用户去 ModelScope 控制台确认部署。
 3. **本地 IPA 是旧版属正常**，最新版永远以 CI artifact（`PageMake-unsigned-ipa`）为准。
@@ -54,7 +56,7 @@
 | 分支 | 职责 | CI 工作流 |
 |---|---|---|
 | `debug` | 所有开发与验证 | `.github/workflows/debug.yaml`：后端全部测试 + iOS 编译/单测 + 未签名 IPA |
-| `main` | 只存生产代码 | `.github/workflows/page-make.yaml`：**只做部署**，不跑测试 |
+| `main` | 只存生产代码 | `.github/workflows/page-make.yaml`：**部署 + 构建发布用 IPA**，不跑测试 |
 
 硬性规则：
 
@@ -306,7 +308,7 @@ E:/Page-make/
 | 工作流 | 触发 | 内容 |
 |---|---|---|
 | debug.yaml | push/PR to **debug**、tag v* | 三 job：backend-test（Node22 跑 172 项 + 本地化/死键/重复声明扫描 + Docker 构建）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天） |
-| page-make.yaml | push to **main** | **只一个 deploy job**：scripts/deploy-modelscope.sh。测试/编译全部在 debug，见 §0.1 |
+| page-make.yaml | push to **main** | 两个 job 并行：`deploy`（scripts/deploy-modelscope.sh）+ `ipa`（正式未签名安装包，与线上同源）。测试仍在 debug，见 §0.1 |
 | keepalive.yaml | 每 10 分钟 | 探 `${PAGEMAKE_URL}/healthz`，**必须带 UA**（`-A "PageMake-Keepalive/1.0"`），并回显 /api/config 的 jwks 诊断 |
 | jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子并提交（境内拉不到 Google，只能靠 runner） |
 
