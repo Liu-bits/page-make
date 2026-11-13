@@ -518,7 +518,12 @@ async function deployBackendAppNow({ kv, projectId, kind, tier = 'vip' }) {
     throw Object.assign(new Error('MISSING_PACKAGE_JSON'), { code: 'MISSING_PACKAGE_JSON' });
   }
 
-  const installed = await installDeps(kind, srcDir, tier);
+  // 没有 package.json 就没有依赖可装。js 形态正是这种情况：以前这里照样跑
+  // `npm install`，在空目录里会以非 0 退出 → 部署直接 INSTALL_FAILED
+  // （Linux CI 上必现；本地 Windows 的 npm 恰好返回 0，所以一直没暴露）。
+  const installed = pkg
+    ? await installDeps(kind, srcDir, tier)
+    : { code: 0, skipped: true, stdout: '', stderr: '', timedOut: false };
   if (installed.code !== 0) {
     throw Object.assign(new Error(installed.timedOut ? 'INSTALL_TIMEOUT' : 'INSTALL_FAILED'), {
       code: installed.timedOut ? 'INSTALL_TIMEOUT' : 'INSTALL_FAILED',
