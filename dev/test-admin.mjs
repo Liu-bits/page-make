@@ -745,6 +745,31 @@ await test('Ultra 已到顶：不显示申请入口，POST 返回 NO_NEXT_TIER',
   assertEqual(res.body.error, 'NO_NEXT_TIER', '错误码应为 NO_NEXT_TIER');
 });
 
+await test('删除无效 VIP 申请：账号已不存在时清理脏工单', async () => {
+  const guest = await guestLogin('vip-request-orphan');
+  await json(fetch(`${BASE}/api/vip-request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Pagemake-Token': guest.token },
+    body: JSON.stringify({ note: '账号会被删掉' }),
+  }));
+
+  // 直接删掉用户记录，模拟「申请还在、账号已不存在」
+  fs.rmSync(path.join(dataDir, `user_${encodeKey(guest.userId)}`), { force: true });
+
+  const del = await adminAction(adminToken, { action: 'deleteVIPRequest', userId: guest.userId });
+  assertEqual(del.status, 200, `删除脏申请应成功，实际 ${del.status} ${JSON.stringify(del.body)}`);
+  assertEqual(del.body.deleted, true, '应标记已删除');
+
+  const ov = await overview(adminToken);
+  assert(
+    !ov.body.vipRequests.some((r) => r.userId === guest.userId),
+    '该申请不应再出现在待审列表里'
+  );
+
+  const again = await adminAction(adminToken, { action: 'deleteVIPRequest', userId: guest.userId });
+  assertEqual(again.status, 404, '重复删除应返回 404');
+});
+
 await test('后台批准 VIP 申请：原游客会话立即获得 VIP 权益', async () => {
   const guest = await guestLogin('vip-request-approve');
   const first = await paste(guest.token, { name: 'before', html: '<h1>before</h1>' });

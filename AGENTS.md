@@ -280,7 +280,7 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 172 项 + 静态检查，提交前必须全绿）
+## 5. 测试体系（共 173 项 + 静态检查，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
@@ -289,7 +289,7 @@ E:/Page-make/
 | `node dev/check-handler-imports.mjs` | 1 | 静态扫「被调用但未 import/未定义」的标识符（ESM 惰性绑定让这类错误只在运行时炸成 500；已接入 CI） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 26 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
-| `node dev/test-admin.mjs` | 30 | 后台（密码安全、VIP/SVIP/Ultra 等级切换、配额同步、封禁下架/解封、删号、邮箱密码入口删除、VIP 升级申请全链路） |
+| `node dev/test-admin.mjs` | 31 | 后台（密码安全、VIP/SVIP/Ultra 等级切换、配额同步、封禁下架/解封、删号、邮箱密码入口删除、VIP 升级申请全链路） |
 | `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 339 键） |
 | `node scripts/check-dead-strings.mjs` | 1 | 死文案键扫描：查无 Swift 引用的本地化键。对 `status_/account_/template_/project_kind_/ban_level_` 前缀插值引用的键单列为「动态引用，需人工确认」，不计入死键。**注意：本脚本只打印、从不 `exit 1`，是提示性检查，不是门禁** |
 | `node scripts/check-swift-decls.mjs` | 1 | Swift 同作用域属性包装器重复声明扫描（替代本地缺失的 `-typecheck`；已接入 CI backend-test job） |
@@ -307,7 +307,7 @@ E:/Page-make/
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
-| debug.yaml | push/PR to **debug**、tag v* | 三 job：backend-test（Node22 跑 172 项 + 本地化/死键/重复声明扫描 + Docker 构建）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天） |
+| debug.yaml | push/PR to **debug**、tag v* | 三 job：backend-test（Node22 跑 173 项 + 本地化/死键/重复声明扫描 + Docker 构建）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天） |
 | page-make.yaml | push to **main** | 两个 job 并行：`deploy`（scripts/deploy-modelscope.sh）+ `ipa`（正式未签名安装包，与线上同源）。测试仍在 debug，见 §0.1 |
 | keepalive.yaml | 每 10 分钟 | 探 `${PAGEMAKE_URL}/healthz`，**必须带 UA**（`-A "PageMake-Keepalive/1.0"`），并回显 /api/config 的 jwks 诊断 |
 | jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子并提交（境内拉不到 Google，只能靠 runner） |
@@ -500,7 +500,7 @@ push debug → debug CI 三 job 全绿 → 合并 main → main 的 deploy job �
   `rg "<case 名>" ios/` 与 `node scripts/check-dead-strings.mjs` 都要跑。
 - **`swiftc -parse` 只查语法，查不出重复声明**：`-parse` 不建符号表，
   `invalid redeclaration of 'xxx'` 这类语义错误本地全绿、CI 才炸（exit 65），
-  而且 iOS job 一失败，ipa 和 deploy 跟着失败/跳过，后端 172 项全绿也白搭。
+  而且 iOS job 一失败，ipa 和 deploy 跟着失败/跳过，后端 173 项全绿也白搭。
   2026-10-25 实测踩到：给 SettingsView 加刷新按钮时重复声明了
   `@State private var showVIPApplication`（上一轮已加过一份）。
   缓解手段：Windows 工具链没有 iOS SDK，`-typecheck` 会直接

@@ -556,6 +556,8 @@ const API = {
 
 const TIERS = ['user', 'vip', 'svip', 'ultra'];
 const TIER_LABEL = { user: '普通', vip: 'VIP', svip: 'SVIP', ultra: 'Ultra' };
+/** 下一档等级（申请只允许逐级递进；ultra 没有下一档） */
+const TIER_NEXT = { user: 'vip', vip: 'svip', svip: 'ultra', ultra: null };
 const TIER_TAG = { user: 'tag', vip: 'tag warn', svip: 'tag accent', ultra: 'tag violet' };
 const TIER_HINT = {
   user: '恢复普通账号：只能建纯前端站点（总量 300KB），游客账号链接恢复 7 天空闲过期。',
@@ -1051,7 +1053,7 @@ $('accountBody').addEventListener('click', (event) => {
   if (act === 'ban' && user) { onBan(user); return; }
   if (act === 'unban' && user) { onUnban(user); return; }
   if (act === 'delete-user' && user) { onDeleteUser(user); return; }
-  if (act === 'review' && user) { onReviewVIP(user, el.dataset.approve === '1'); return; }
+  if (act === 'review') { handleReviewClick(el); return; }
   if (act === 'delete-project') {
     const project = (state.data?.projects || []).find((p) => p.id === el.dataset.projectId);
     if (project) onDeleteProject(project);
@@ -1176,12 +1178,17 @@ async function onDeleteProject(p) {
 
 async function onReviewVIP(u, approve) {
   const note = (state.notes[u.userId] || '').trim();
+  // 目标等级取申请记录里的 requestedTier（老记录只有 targetTier），
+  // 都没有时按当前等级推算下一档 —— 文案不能写死「VIP」。
+  const req = u.vipRequest;
+  const targetTier = req?.requestedTier || req?.targetTier || TIER_NEXT[u.tier || 'user'] || 'vip';
+  const targetLabel = tierLabel(targetTier);
   const result = await openModal({
-    title: approve ? `批准 ${displayName(u)} 的 VIP 申请` : `驳回 ${displayName(u)} 的 VIP 申请`,
+    title: approve ? `批准 ${displayName(u)} 的升级申请` : `驳回 ${displayName(u)} 的升级申请`,
     message: approve
-      ? '批准后原地升级为 VIP：userId、项目与当前会话全部保留，游客期的链接限制同步解除。'
+      ? `批准后原地升级为 ${targetLabel}：userId、项目与当前会话全部保留，游客期的链接限制同步解除。`
       : '驳回后用户可重新提交申请，驳回原因仅管理员可见。',
-    confirmText: approve ? '通过并升级' : '驳回',
+    confirmText: approve ? `通过并升级为 ${targetLabel}` : '驳回',
     danger: !approve,
   });
   if (!result) return;
@@ -1190,7 +1197,7 @@ async function onReviewVIP(u, approve) {
     (data) => {
       if (approve) {
         const extra = data.linksRenewed ? `，已解除 ${fmtCount(data.linksRenewed)} 个项目的链接限制` : '';
-        return `已批准并升级为 VIP${extra}`;
+        return `已批准并升级为 ${tierLabel(data.role || targetTier)}${extra}`;
       }
       return '已驳回该申请';
     },
@@ -1301,10 +1308,26 @@ $('scrim').addEventListener('click', closeDrawer);
 
 $('vipPanel').addEventListener('click', (event) => {
   const btn = event.target.closest('[data-act="review"]');
-  if (!btn) return;
-  const user = (state.data?.users || []).find((u) => u.userId === btn.dataset.userId);
-  if (user) onReviewVIP(user, btn.dataset.approve === '1');
+  if (btn) handleReviewClick(btn);
 });
+
+/**
+ * 审核按钮统一入口。
+ *
+ * 账号可能查不到：overview 只返回前 500 个账号，账号被删或数据异常时也查不到。
+ * 这种情况既不能批准也不能驳回，直接把这条脏申请删掉并明确提示，
+ * 不能让按钮「点了没反应」。
+ */
+async function handleReviewClick(btn) {
+  const userId = btn.dataset.userId;
+  const approve = btn.dataset.approve === '1';
+  const user = (state.data?.users || []).find((u) => u.userId === userId);
+  if (!user) {
+    await runAction({ action: 'deleteVIPRequest', userId }, '该账号不存在，已删除该申请');
+    return;
+  }
+  await onReviewVIP(user, approve);
+}
 
 /* ============================== 弹窗 ============================== */
 let modalResolve = null;

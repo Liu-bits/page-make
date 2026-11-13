@@ -15,7 +15,7 @@
 //   reviewVIPRequest  { userId, approve, note? }     审核游客 VIP 升级申请
 //   purgePasswordUsers {}                             删除历史邮箱密码账号及其数据与会话
 // 合规：封号必须带原因（用户端可见），解封后项目自动恢复上架；用户可通过 App 内反馈申诉
-import { kvGet, kvPut, kvDel, kvListAll, keys, nowSeconds } from '../../lib/kv.js';
+import { kvGet, kvPut, kvDel, kvListAll, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { decodeKey } from '../../lib/base64.js';
 import { ok, fail } from '../../lib/responses.js';
 import { requireAdmin, changeAdminPassword } from '../../lib/admin.js';
@@ -319,6 +319,22 @@ async function reviewVIPRequest(kv, { userId, approve, note }) {
   });
 }
 
+/**
+ * 删除一条 VIP 升级申请（清理无效工单）。
+ *
+ * 使用场景：申请对应的账号已经不存在（被删除 / 数据异常），后台既无法批准
+ * 也无法驳回，只能把这条脏记录清掉，否则它会一直挂在「待审」里。
+ */
+async function deleteVIPRequest(kv, { userId }) {
+  if (typeof userId !== 'string' || !userId) return fail('BAD_REQUEST', 400);
+  const key = keys.vipRequest(userId);
+  const record = await kvGet(kv, key);
+  if (!record) return fail('NOT_FOUND', 404);
+  await kvDel(kv, key);
+  await appendLog(kv, { step: 'delete_vip_request', result: 'ok' });
+  return ok({ deleted: true, userId, status: record.status });
+}
+
 /** 删除项目（管理员强制下架清理） */
 async function deleteProjectAdmin(kv, { projectId }) {
   const project = await kvGet(kv, keys.project(projectId));
@@ -363,6 +379,8 @@ export async function onRequest(context) {
       return deleteUserFromAdmin(kv, { ...body, requireVIP: true });
     case 'reviewVIPRequest':
       return reviewVIPRequest(kv, body);
+    case 'deleteVIPRequest':
+      return deleteVIPRequest(kv, body);
     case 'purgePasswordUsers':
       return ok({ deleted: await purgePasswordUsers(kv) });
     case 'deleteFeedback': {
