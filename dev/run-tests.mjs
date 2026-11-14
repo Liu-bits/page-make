@@ -13,6 +13,7 @@ import { decodeJwt } from '../backend/lib/apple-auth.js';
 import { createJwksLoader } from '../backend/lib/jwks.js';
 import { processUpload } from '../backend/lib/process.js';
 import { rewriteLocalRefs, rewriteCssRefs, injectPublicBase, injectProxyShim } from '../backend/lib/paths.js';
+import { hit as hitVisit, flush as flushVisits, read as readVisits } from '../backend/lib/visitstats.js';
 import {
   STATUS, ERR, PROVIDERS, SESSION_TTL_SECONDS,
   MAX_TOTAL_BYTES, CHUNK_BYTES, BAN_LEVELS,
@@ -868,6 +869,68 @@ await test('代理改写三步组合：大 HTML 保持线性（防 ReDoS 回归�
   assert(cost < 1000, `约 260KB HTML 三步改写应在 1s 内完成，实际 ${cost}ms`);
   assert(out.includes(`<base href="${PROXY_PREFIX}/">`), '组合后应包含 base');
   assert(out.includes('data-pagemake-proxy-shim'), '组合后应包含 shim');
+});
+
+console.log('\n[17] 站点访问统计（visitstats：内存聚合 / 落盘合并 / 剪枝 / 项目隔离）');
+
+await test('visitstats：hit → flush → read 往返，按天记录', async () => {
+  const kv = createMockKV();
+  const pid = 'a'.repeat(32);
+  hitVisit(pid);
+  hitVisit(pid);
+  hitVisit(pid);
+  // flush 前读：合并视图应包含未落盘增量（App 看到的数字实时）
+  const live = await readVisits(kv, pid);
+  assertEqual(live.total, 3, '未落盘也应通过合并视图读到增量');
+  assert(live.today >= 3, `今日计数应包含增量，实际 ${live.today}`);
+  assertEqual(live.flushed, undefined, 'read 不应带 flush 字段');
+
+  await flushVisits(kv);
+  const stored = await readVisits(kv, pid);
+  assertEqual(stored.total, 3, '落盘后总数不变');
+  assertEqual(stored.today, 3, '落盘后今日计数不变');
+  // 再访问一轮：flush 前后不丢不重
+  hitVisit(pid);
+  const again = await readVisits(kv, pid);
+  assertEqual(again.total, 4, '新增量应与已落盘部分相加');
+  await flushVisits(kv);
+  assertEqual((await readVisits(kv, pid)).total, 4, 'flush 后总数仍正确');
+});
+
+await test('visitstats：项目之间隔离', async () => {
+  const kv = createMockKV();
+  const pidA = 'b'.repeat(32);
+  const pidB = 'c'.repeat(32);
+  hitVisit(pidA);
+  hitVisit(pidA);
+  hitVisit(pidB);
+  const a = await readVisits(kv, pidA);
+  const b = await readVisits(kv, pidB);
+  assertEqual(a.total, 2, '项目 A 只计自己的访问');
+  assertEqual(b.total, 1, '项目 B 只计自己的访问');
+});
+
+await test('visitstats：flush 剪掉 7 天前的明细，总数保留', async () => {
+  const kv = createMockKV();
+  const pid = 'd'.repeat(32);
+  // 手工预置一条带 10 天前明细的已落盘记录（绕过 hit 的当日逻辑）。
+  // key 必须与 keys.visitStats 一致（encodeKey hex 编码），否则 flush 会另建新记录
+  const old = new Date(Date.now() - 10 * 24 * 3600 * 1000);
+  const pad = (v) => String(v).padStart(2, '0');
+  const oldDay = `${old.getFullYear()}-${pad(old.getMonth() + 1)}-${pad(old.getDate())}`;
+  const today = new Date();
+  const todayDay = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+  await kv.put(`stat_${encodeKey(pid)}`, JSON.stringify({
+    total: 100,
+    days: { [oldDay]: 60, [todayDay]: 40 },
+    updatedAt: 1,
+  }));
+  hitVisit(pid);
+  await flushVisits(kv);
+  const merged = await readVisits(kv, pid);
+  assertEqual(merged.total, 101, '剪枝只删明细不删总数');
+  assert(merged.days[oldDay] === undefined, '超出 7 天窗口的明细应被剪掉');
+  assertEqual(merged.days[todayDay], 41, '窗口内明细保留并与增量合并');
 });
 
 console.log(`\n结果：${passed} 通过，${failed} 失败\n`);

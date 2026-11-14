@@ -10,12 +10,23 @@ struct ManageFilesView: View {
     @State private var current: Project
     @State private var showAddFile = false
     @State private var pendingDelete: String?
+    @State private var editingFile: ProjectFile?
     @State private var alertItem: AlertItem?
+
+    /// 可在应用内直接编辑内容的文本类型（与 AddFileSheet 的 html/css/js 一致并放宽常用文本）
+    private static let editableExtensions: Set<String> = [
+        "html", "htm", "css", "js", "mjs", "cjs", "json", "md", "txt",
+        "ts", "tsx", "jsx", "xml", "yml", "yaml", "csv", "svg",
+    ]
 
     init(project: Project, onChanged: @escaping (Project) -> Void) {
         self.project = project
         self.onChanged = onChanged
         _current = State(initialValue: project)
+    }
+
+    private func isEditable(_ path: String) -> Bool {
+        Self.editableExtensions.contains((path as NSString).pathExtension.lowercased())
     }
 
     var body: some View {
@@ -31,6 +42,10 @@ struct ManageFilesView: View {
                     }
                     LabeledContent(L10n.string("file_count_label"), value: L10n.format("file_count", current.fileCount))
                     LabeledContent(L10n.string("total_size"), value: ByteCountFormatter.string(fromByteCount: current.size, countStyle: .file))
+                    if let stats = current.visitStats {
+                        LabeledContent(L10n.string("visit_total_label"), value: L10n.format("visit_total_value", stats.total))
+                        LabeledContent(L10n.string("visit_today_label"), value: L10n.format("visit_today_value", stats.today))
+                    }
                 }
 
                 Section {
@@ -47,6 +62,17 @@ struct ManageFilesView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
+                            // 内容编辑下放：普通用户也能改 HTML/CSS 文本（此前只有
+                            // SVIP 的项目模式才有编辑器）。仅文本类型显示编辑入口。
+                            if isEditable(file.path) {
+                                Button {
+                                    editingFile = file
+                                } label: {
+                                    Image(systemName: "pencil")
+                                }
+                                .buttonStyle(.borderless)
+                                .accessibilityLabel(L10n.string("explorer_edit"))
+                            }
                             Button(role: .destructive) {
                                 pendingDelete = file.path
                             } label: {
@@ -79,6 +105,12 @@ struct ManageFilesView: View {
             }
             .sheet(isPresented: $showAddFile) {
                 AddFileSheet(project: current) { updated in
+                    current = updated
+                    onChanged(updated)
+                }
+            }
+            .sheet(item: $editingFile) { file in
+                FileEditorView(projectId: current.id, path: file.path) { updated in
                     current = updated
                     onChanged(updated)
                 }

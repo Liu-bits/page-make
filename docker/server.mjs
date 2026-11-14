@@ -445,4 +445,13 @@ server.listen(PORT, '0.0.0.0', () => {
   };
   setTimeout(runCleanup, 30_000).unref();
   setInterval(runCleanup, 6 * 3600 * 1000).unref();
+
+  // 站点访问计数落盘：/p/<id> 入口命中只做内存 +1（见 backend/lib/visitstats.js），
+  // 每 30s 合并写一次 KV，避免匿名高频入口把 KV 操作放大。unref() 不阻止进程退出。
+  const runVisitFlush = () => {
+    import(pathToFileURL(path.join(ROOT, 'backend/lib/visitstats.js')).href)
+      .then((m) => m.flush(kv))
+      .catch((error) => console.error('[visitstats] 落盘失败', error));
+  };
+  setInterval(runVisitFlush, 30_000).unref();
 });

@@ -151,6 +151,8 @@ export async function deleteProjectGuarded(kv, userId, projectId) {
     const keyList = await kvListAll(kv, keys.sitePrefix(projectId));
     for (const key of keyList) await kvDel(kv, key);
     await kvDel(kv, keys.siteMeta(projectId));
+    // 访问统计与项目记录同生命周期：项目没了，stat_ 记录不留孤儿
+    await kvDel(kv, keys.visitStats(projectId));
     await kvDel(kv, keys.project(projectId));
     await kvDel(kv, keys.userProject(userId, projectId));
     return true;

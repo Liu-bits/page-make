@@ -1983,6 +1983,62 @@ await test('服务重启后数据仍在（磁盘 KV 持久化）', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// 站点访问统计：入口页命中计数 → 项目详情实时可见 → 项目删除后 stat_ 记录清理
+await test('站点访问统计：入口命中计数 / 项目隔离 / 删除清理', async () => {
+  const stAuth = { 'X-Test-User': 'dev-visit-stats' };
+  seedUser(dataDir, 'dev-visit-stats', 'svip');
+
+  const pasteOne = async (name) => {
+    const res = await (await fetch(`${BASE}/api/projects/paste`, {
+      method: 'POST',
+      headers: { ...stAuth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        html: `<!doctype html><html><head><title>${name}</title></head><body><p>${name}</p></body></html>`,
+        css: 'body{margin:0}',
+      }),
+    })).json();
+    assert(res.ok, `粘贴建站应成功：${JSON.stringify(res)}`);
+    return res.project.id;
+  };
+  const idA = await pasteOne('visit-a');
+  const idB = await pasteOne('visit-b');
+
+  // 命中 A 入口 2 次；B 不访问。入口 404 的子路径不应计数（走 [[default]] 不入口）
+  for (let i = 0; i < 2; i++) {
+    const page = await fetch(`${BASE}/p/${idA}`);
+    assertEqual(page.status, 200, '入口页应 200');
+    await page.text();
+  }
+  const detail = await (await fetch(`${BASE}/api/projects/${idA}`, { headers: stAuth })).json();
+  assert(detail.ok, '详情接口应成功');
+  assertEqual(detail.visitStats.total, 2, `入口命中应计数 2 次，实际 ${JSON.stringify(detail.visitStats)}`);
+  assert(detail.visitStats.today >= 2, '今日计数应包含全部命中');
+  assert(detail.visitStats.days && Object.keys(detail.visitStats.days).length >= 1, '应有按天明细');
+
+  // 项目隔离：B 未被访问，计数为 0
+  const detailB = await (await fetch(`${BASE}/api/projects/${idB}`, { headers: stAuth })).json();
+  assertEqual(detailB.visitStats.total, 0, '未访问的项目计数应为 0');
+
+  // 删除 A 后 stat_ 记录应一并清理，不留孤儿统计
+  const del = await fetch(`${BASE}/api/projects/${idA}`, {
+    method: 'POST',
+    headers: { ...stAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete' }),
+  });
+  assertEqual(del.status, 200, '删除项目应成功');
+  const statFile = path.join(dataDir, `stat_${encodeKey(idA)}`);
+  assert(!fs.existsSync(statFile), `删除项目后 stat_ 记录应被清理：${statFile}`);
+
+  // 清理 B，避免影响后续用例的统计断言（本项目无）
+  await fetch(`${BASE}/api/projects/${idB}`, {
+    method: 'POST',
+    headers: { ...stAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete' }),
+  });
+});
+
+// ---------------------------------------------------------------------------
 console.log(`\n结果：${passed} 通过，${failed} 失败\n`);
 
 killProcessTree(server);

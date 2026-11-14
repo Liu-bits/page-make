@@ -32,6 +32,9 @@ export const keys = {
   siteFile: (projectId, path) => `site_${encodeKey(projectId)}_${encodeKey(path)}`,
   sitePrefix: (projectId) => `site_${encodeKey(projectId)}_`,
   siteMeta: (projectId) => `meta_${encodeKey(projectId)}`,
+  // 站点访问统计（backend/lib/visitstats.js）：与项目记录分离，避免统计写入
+  // 与业务锁争抢；项目删除时随 deleteProjectGuarded 一起清理
+  visitStats: (projectId) => `stat_${encodeKey(projectId)}`,
   log: (id) => `log_${encodeKey(id)}`,
   feedback: (id) => `feedback_${encodeKey(id)}`,
   vipRequest: (userId) => `vipreq_${encodeKey(userId)}`,

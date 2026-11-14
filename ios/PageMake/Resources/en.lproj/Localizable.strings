@@ -408,3 +408,10 @@
 "vip_request_pending_tier_short" = "Requested: %@";
 "vip_request_no_next_tier" = "You are already at the highest tier";
 "vip_request_not_available" = "This account cannot request an upgrade right now";
+
+// MARK: - Visit stats / file content editing
+"visit_summary_format" = "%lld total · %lld today";
+"visit_total_label" = "Total visits";
+"visit_total_value" = "%lld";
+"visit_today_label" = "Visits today";
+"visit_today_value" = "%lld";

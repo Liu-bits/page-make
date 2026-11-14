@@ -5,6 +5,7 @@ import { contentTypeFor, htmlPage } from '../lib/responses.js';
 import { STATUS, isBackendKind, normalizeKind } from '../lib/state.js';
 import { injectPublicBase, rewriteLocalRefs } from '../lib/paths.js';
 import { mutateProject } from '../lib/project.js';
+import { hit as hitVisitStats } from '../lib/visitstats.js';
 import { proxy } from '../lib/backend-runtime.js';
 
 const ID_RE = /^[a-f0-9]{32}$/;
@@ -31,6 +32,10 @@ export async function onRequest(context) {
   if (project.expiresAt && nowSeconds() > project.expiresAt) {
     return htmlPage(410, 'expired', request);
   }
+
+  // 站点访问计数：入口页命中（封禁 / 失败 / 过期不计；子资源走 [[default]] 不计）。
+  // 只做内存 +1（见 backend/lib/visitstats.js），不阻塞本次响应。
+  hitVisitStats(id);
 
   // 后端项目（npm / pnpm）：整站反向代理到项目自己的 Node 进程。
   // 必须在静态文件分支之前判断，否则会去 KV 找 index.html 而 404。

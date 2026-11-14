@@ -2,6 +2,7 @@
 // POST /api/projects/:id — action: delete（删除）/ rename（重命名）/ publish（生成公开链接）
 // DELETE /api/projects/:id — 删除项目（兼容；ModelScope 网关拦截 DELETE，客户端走 POST）
 import { getOwnedProject, deleteProjectRecords, syncProjectFilesLocked, readSiteFiles, projectPublicUrl } from '../../lib/project.js';
+import { read as readVisitStats } from '../../lib/visitstats.js';
 import { ok, fail } from '../../lib/responses.js';
 import { appendLog, keys } from '../../lib/kv.js';
 import { STATUS, isBackendKind, normalizeKind } from '../../lib/state.js';
@@ -17,7 +18,14 @@ export async function onRequest(context) {
   const { project, kv, user } = result;
 
   if (request.method === 'GET') {
-    return ok({ project });
+    // 访问统计合并视图（KV 已落盘 + 内存未落盘增量，实时），读失败不阻塞详情
+    let visitStats = { total: 0, today: 0, days: {} };
+    try {
+      visitStats = await readVisitStats(kv, project.id);
+    } catch {
+      // 统计读取失败按 0 处理
+    }
+    return ok({ project, visitStats });
   }
 
   // POST + action 支持（网关拦截 DELETE）

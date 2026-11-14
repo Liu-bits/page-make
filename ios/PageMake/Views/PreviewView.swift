@@ -39,6 +39,9 @@ struct PreviewView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbarBar
+            if current.visitStats != nil {
+                visitStatsBar
+            }
             webArea
             bottomBar
         }
@@ -95,6 +98,10 @@ struct PreviewView: View {
         .task(id: current.id) {
             startPolling()
         }
+        // 静默拉一次项目详情：访问统计等最新数据无需手动刷新即可见；失败保持现状
+        .task {
+            await refreshQuietly()
+        }
         .onDisappear {
             pollTask?.cancel()
             pollTask = nil
@@ -102,6 +109,24 @@ struct PreviewView: View {
     }
 
     // MARK: - 顶部工具栏
+
+    /// 访问统计条：入口页命中计数（后端内存聚合 + 定期落 KV），随静默刷新更新
+    private var visitStatsBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "eye")
+                .font(.caption2)
+            Text(L10n.format(
+                "visit_summary_format",
+                current.visitStats?.total ?? 0,
+                current.visitStats?.today ?? 0
+            ))
+            .font(.caption)
+        }
+        .foregroundStyle(Theme.secondaryLabel)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 4)
+    }
 
     private var toolbarBar: some View {
         HStack(spacing: 16) {
@@ -339,6 +364,13 @@ struct PreviewView: View {
     /// 轮询 /api/projects/:id/status 直到终态。
     /// ready → 拉一次完整项目并自动加载网页；failed/expired → 展示对应占位页；
     /// 90 次 × 2 秒（3 分钟）仍未就绪 → 展示「仍在处理中」+ 手动刷新。
+    /// 静默拉一次项目详情：访问统计等最新数据无需手动刷新即可见；失败保持现状
+    private func refreshQuietly() async {
+        if let project = try? await APIClient.shared.project(current.id) {
+            current = project
+        }
+    }
+
     private func pollUntilReady() async {
         guard current.status == .processing || current.status == .uploading else { return }
         pollTimedOut = false

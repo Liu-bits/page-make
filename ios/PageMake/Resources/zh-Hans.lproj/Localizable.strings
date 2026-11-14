@@ -408,3 +408,10 @@
 "vip_request_pending_tier_short" = "已申请：%@";
 "vip_request_no_next_tier" = "已是最高等级，无需再申请";
 "vip_request_not_available" = "当前账号暂不可申请升级";
+
+// MARK: - 站点访问统计 / 文件内容编辑
+"visit_summary_format" = "累计 %lld 次 · 今日 %lld";
+"visit_total_label" = "累计访问";
+"visit_total_value" = "%lld 次";
+"visit_today_label" = "今日访问";
+"visit_today_value" = "%lld 次";

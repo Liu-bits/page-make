@@ -154,6 +154,7 @@ E:/Page-make/
 │   │   ├── project.js       #     项目 CRUD + syncProjectFiles + deploySite(local 分支)
 │   │   ├── process.js       #     ZIP 处理 + 上传管线（过滤 PHP）
 │   │   ├── diagnostics.js   #     静态诊断（HTML 引用资源缺失检测）
+│   │   ├── visitstats.js    #     站点访问统计（内存聚合 + 定期落 KV，纯聚合计数）
 │   │   ├── zip.js / base64.js / responses.js / admin.js
 │   │   └── deploy/          #     edgeone / cloudflare（兼容旧客户端保留，当前只用 local）
 │   ├── p/                   #   公开页路由：/p/<projectId>（含 [[default]] 宽容回退）
@@ -249,6 +250,11 @@ E:/Page-make/
   `server.mjs` 对「未匹配路由 + Referer 来自某应用页」的 GET/HEAD 兜底 302 回应用内
   同名路径（兜 `location.href` 逃逸）。安全边界：非 UTF-8 charset、压缩响应、HEAD、
   204/205/304 一律跳过改写
+- **站点访问统计**（2026-11-14）：`/p/<id>` 入口命中（封禁/过期/失败不计；子资源不进
+  `[[default]]` 不计）→ `lib/visitstats.js` 内存 +1，server.mjs 每 30s 合并落盘
+  `stat_<id>`（days 只留 7 天明细）；详情接口 `GET /api/projects/:id` 附 `visitStats`
+  合并视图（含未落盘增量，实时）。**统计不挂在项目记录上**（避免与业务锁争抢与
+  KV 写放大）；项目删除时 deleteProjectGuarded 一并清理 stat_ key
 - 导出备份：`GET /api/projects/:id/export`，VIP 及以上可下载项目源码 ZIP（排除安装产物）
 - 账号等级：`user < vip < svip < ultra`，后台 `setTier` 原地调整 userId / 会话 / 项目
 - 入口选择统一：index.html → 任意 html（publish/findEntry/上传管线一致）
@@ -270,8 +276,14 @@ E:/Page-make/
 - Liquid Glass（iOS 26+ 原生 API：GlassEffectContainer / .glassEffect / .glassProminent）
 - 项目列表搜索 + 排序（最新/最旧/名称/大小）+ 滑动重命名
 - 二维码分享（CoreImage CIFilter.qrCodeGenerator + ShareLink）
+- 站点访问统计（2026-11-14）：预览页顶部统计条（累计/今日），管理文件页项目信息区两行；
+  数据来自项目详情接口 visitStats 字段（内存聚合 + 30s 落 KV，纯计数不含 IP/UA），
+  进入预览页静默拉详情更新
+- 文件内容编辑下放（2026-11-14）：管理文件页文本文件（html/css/js/md/json 等 17 类
+  扩展名）带编辑按钮，复用项目模式的 FileEditorView（载入/保存/未保存确认全套）；
+  普通用户即可改内容，不再依赖 SVIP 项目模式
 - WebView 预览（reloadToken、轮询 150 次上限、runtimeErrors 去重上限 50）
-- 中英本地化（各 339 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
+- 中英本地化（各 358 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
 - 设置页 VIP 升级卡（皇冠图标 + 申请状态 + 申请/查看进度）；项目模式顶部固定构建栏
 - 隐私政策/用户协议 App 内展示（Documents 双语文档，文件名后缀区分语言）
 
@@ -293,17 +305,17 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 178 项 + 静态检查，提交前必须全绿）
+## 5. 测试体系（共 182 项 + 静态检查，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
-| `node dev/run-tests.mjs` | 57 | 单元测试（含 JWKS 三级加载、动态 ZIP 解压配额、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容、密码强度、MIME、等级配额、ZIP 写入器、代理前缀改写线性/幂等/注入位置） |
-| `node dev/test-server.mjs` | 56 | 容器冒烟（真实 HTTP 全流程；含等级上传配额、压缩包小于配额但解压后超限、普通用户后端拒绝、npm 后端全链路反向代理、后端代理改写 e2e（Location 五形态 / Set-Cookie Path / HTML 注入 / Referer 兜底 / gbk+gzip 跳过）、导出备份、ZIP PHP 过滤、Explorer 全流程、限流、删号 KV 残留、Apple/Google 合法 token 登录） |
+| `node dev/run-tests.mjs` | 60 | 单元测试（含 JWKS 三级加载、动态 ZIP 解压配额、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容、密码强度、MIME、等级配额、ZIP 写入器、代理前缀改写线性/幂等/注入位置、访问统计聚合/剪枝/隔离） |
+| `node dev/test-server.mjs` | 57 | 容器冒烟（真实 HTTP 全流程；含等级上传配额、压缩包小于配额但解压后超限、普通用户后端拒绝、npm 后端全链路反向代理、后端代理改写 e2e（Location 五形态 / Set-Cookie Path / HTML 注入 / Referer 兜底 / gbk+gzip 跳过）、站点访问统计（入口计数/项目隔离/删除清理 stat_）、导出备份、ZIP PHP 过滤、Explorer 全流程、限流、删号 KV 残留、Apple/Google 合法 token 登录） |
 | `node dev/check-handler-imports.mjs` | 1 | 静态扫「被调用但未 import/未定义」的标识符（ESM 惰性绑定让这类错误只在运行时炸成 500；已接入 CI） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 26 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
 | `node dev/test-admin.mjs` | 31 | 后台（密码安全、VIP/SVIP/Ultra 等级切换、配额同步、封禁下架/解封、删号、邮箱密码入口删除、VIP 升级申请全链路） |
-| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 339 键） |
+| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 358 键） |
 | `node scripts/check-dead-strings.mjs` | 1 | 死文案键扫描：查无 Swift 引用的本地化键。对 `status_/account_/template_/project_kind_/ban_level_` 前缀插值引用的键单列为「动态引用，需人工确认」，不计入死键。**注意：本脚本只打印、从不 `exit 1`，是提示性检查，不是门禁** |
 | `node scripts/check-swift-decls.mjs` | 1 | Swift 同作用域属性包装器重复声明扫描（替代本地缺失的 `-typecheck`；已接入 CI backend-test job） |
 
