@@ -259,7 +259,7 @@ struct ManageFilesView: View {
         defer { snapshotBusy = false }
         do {
             let result = try await APIClient.shared.snapshotAction(projectId: current.id, action: "restore")
-            if let updated = try? await APIClient.shared.project(projectId: current.id) {
+            if let updated = try? await APIClient.shared.project(current.id) {
                 current = updated
                 onChanged(updated)
             }

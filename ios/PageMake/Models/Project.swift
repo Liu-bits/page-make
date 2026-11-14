@@ -282,6 +282,15 @@ struct SnapshotInfo: Codable, Equatable {
     let size: Int64
     let createdAt: Date?
 
+    /// 自定义 Decodable 后逐成员构造器不可用；快照创建后本地乐观更新需要它
+    init(projectId: String?, entryPath: String?, fileCount: Int, size: Int64, createdAt: Date?) {
+        self.projectId = projectId
+        self.entryPath = entryPath
+        self.fileCount = fileCount
+        self.size = size
+        self.createdAt = createdAt
+    }
+
     enum CodingKeys: String, CodingKey {
         case projectId, entryPath, fileCount, size, createdAt
     }
