@@ -189,7 +189,7 @@ struct FilePickerView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Text(L10n.string("project_name_field"))
-                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .font(.system(.caption, weight: .bold))
                     .foregroundStyle(Theme.secondaryLabel)
                     .textCase(.uppercase)
                     .tracking(0.4)
@@ -198,7 +198,7 @@ struct FilePickerView: View {
                     .foregroundStyle(Theme.highlight)
             }
             TextField(L10n.string("project_name_placeholder"), text: $projectName)
-                .font(.system(.body, design: .rounded, weight: .medium))
+                .font(.system(.body, weight: .medium))
                 .textInputAutocapitalization(.sentences)
                 .autocorrectionDisabled()
                 .submitLabel(.done)
@@ -279,7 +279,7 @@ struct FilePickerView: View {
                 .foregroundStyle(Theme.positive)
             VStack(alignment: .leading, spacing: 2) {
                 Text(L10n.string("deploy_auto_detect"))
-                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .font(.system(.caption, weight: .bold))
                     .foregroundStyle(Theme.label)
                 Text(L10n.string("deploy_auto_detect_hint"))
                     .font(.caption2)
@@ -428,7 +428,7 @@ struct FilePickerView: View {
     private var templatesRow: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.string("templates"))
-                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                .font(.system(.subheadline, weight: .bold))
                 .foregroundStyle(Theme.label)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
@@ -438,7 +438,7 @@ struct FilePickerView: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(L10n.string(tpl.nameKey))
-                                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                                    .font(.system(.subheadline, weight: .bold))
                                     .foregroundStyle(Theme.label)
                                 Text(L10n.string("use_template"))
                                     .font(.caption)
@@ -469,7 +469,7 @@ struct FilePickerView: View {
                     .fill(editorTint(title))
                     .frame(width: 7, height: 7)
                 Text(title)
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .font(.system(.subheadline, weight: .bold))
                     .foregroundStyle(Theme.label)
                 Spacer()
                 Text(L10n.string(isRequired ? "editor_required" : "editor_optional"))
@@ -523,13 +523,13 @@ struct FilePickerView: View {
                     .background(.white.opacity(0.11), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 Spacer()
                 Text(L10n.string(eyebrowKey))
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .font(.system(size: 10, weight: .bold))
                     .tracking(0.8)
                     .textCase(.uppercase)
                     .foregroundStyle(.white.opacity(0.58))
             }
             Text(L10n.string(titleKey))
-                .font(.system(size: 28, weight: .bold, design: .serif))
+                .font(.system(size: 28, weight: .bold))
                 .foregroundStyle(.white)
             Text(detailText ?? L10n.string(detailKey))
                 .font(.subheadline)
@@ -537,15 +537,8 @@ struct FilePickerView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(19)
-        .background(PageMakeTheme.heroGradient, in: RoundedRectangle(cornerRadius: 23, style: .continuous))
-        .overlay(alignment: .topTrailing) {
-            Circle()
-                .fill(tint.opacity(0.26))
-                .frame(width: 110, height: 110)
-                .blur(radius: 28)
-                .offset(x: 28, y: -36)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 23, style: .continuous))
+        .background(PageMakeTheme.heroGradient, in: RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
     }
 
     private var isTooLarge: Bool {

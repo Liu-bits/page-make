@@ -53,27 +53,33 @@ private extension UIColor {
     }
 }
 
-/// Page-make 的视觉基础：纸张暖白 + 墨蓝 + 珊瑚强调色。
-/// 颜色集中在这里，避免各页面各写一套渐变导致风格漂移。
+/// Page-make 的视觉基础（简约高级改版）：冷灰中性面 + 单一靛蓝强调色。
+/// 设计原则：色彩只保留「中性面 + 一个强调色」两档，强调色仅小面积出现；
+/// 层次靠留白与 hairline 边界表达，不靠渐变、网格与彩色光斑。
+/// 历史命名保留（coral / sea / gold），避免跨文件引用改动；值已随改版更新。
 enum PageMakeTheme {
-    static let ink = adaptiveColor(light: 0x141F2E, dark: 0xF2EEE5)
-    static let inkSoft = adaptiveColor(light: 0x47576D, dark: 0xAAB5C2)
-    static let paper = adaptiveColor(light: 0xF6F4EC, dark: 0x0A1017)
-    static let paperWarm = adaptiveColor(light: 0xFBF7EC, dark: 0x111A24)
-    static let surface = adaptiveColor(light: 0xFFFEF9, dark: 0x131D27)
-    static let surfaceSoft = adaptiveColor(light: 0xF7F2E7, dark: 0x18242F)
-    static let border = adaptiveColor(light: 0xE6E0D3, dark: 0x293746)
-    static let shadow = adaptiveColor(light: 0xD5CDBE, dark: 0x000000)
-    static let codeBackground = adaptiveColor(light: 0xFFFFFF, dark: 0x0D151E)
-    static let codeText = adaptiveColor(light: 0x000000, dark: 0xE8EDF3)
-    static let coral = Color(red: 0.91, green: 0.33, blue: 0.25)
-    static let sea = Color(red: 0.08, green: 0.48, blue: 0.50)
-    static let gold = Color(red: 0.84, green: 0.61, blue: 0.20)
+    static let ink = adaptiveColor(light: 0x101114, dark: 0xF4F4F6)
+    static let inkSoft = adaptiveColor(light: 0x6B6F76, dark: 0x9EA1A8)
+    static let paper = adaptiveColor(light: 0xF7F7F8, dark: 0x0B0B0D)
+    static let paperWarm = adaptiveColor(light: 0xF1F1F3, dark: 0x121215)
+    static let surface = adaptiveColor(light: 0xFFFFFF, dark: 0x131316)
+    static let surfaceSoft = adaptiveColor(light: 0xF2F2F4, dark: 0x1A1A1E)
+    static let border = adaptiveColor(light: 0xE3E3E6, dark: 0x27272B)
+    static let shadow = adaptiveColor(light: 0xD9D9DC, dark: 0x000000)
+    static let codeBackground = adaptiveColor(light: 0xFFFFFF, dark: 0x0E0E10)
+    static let codeText = adaptiveColor(light: 0x000000, dark: 0xE9E9EC)
+    /// 强调色：靛蓝。深色模式提亮一档保证对比度
+    static let coral = adaptiveColor(light: 0x4050D8, dark: 0x8C9BF2)
+    static let sea = adaptiveColor(light: 0x2F7D6B, dark: 0x7CC7B4)
+    static let gold = adaptiveColor(light: 0xA07C2C, dark: 0xD9BC77)
+    /// 强调色之上的前景色（实心主按钮文字）：深色模式强调色变浅 → 用深色字
+    static let onAccent = adaptiveColor(light: 0xFFFFFF, dark: 0x101118)
 
+    /// 主视觉渐变：石墨双色，纯中性（简约高级：渐变只做纵深，不做彩色装饰）
     static let heroGradient = LinearGradient(
         colors: [
-            adaptiveColor(light: 0x132231, dark: 0x101B26),
-            adaptiveColor(light: 0x13504F, dark: 0x123F43)
+            adaptiveColor(light: 0x15161A, dark: 0x101113),
+            adaptiveColor(light: 0x24262E, dark: 0x191B21)
         ],
         startPoint: .topLeading,
         endPoint: .bottomTrailing
@@ -94,47 +100,22 @@ struct WorkspaceBottomSpacer: View {
     }
 }
 
-/// 全局背景：系统语义底色 + 柔和光斑，建立“创作工作台”氛围。
-/// 底色交给系统（浅色/深色自动适配），不再写死暖白/墨黑。
+/// 全局背景：纯色底 + 顶部一团极淡的强调色光晕。
+/// 简约高级的关键是克制——去掉网格线与彩色光斑，纵深只靠一团模糊光晕表达。
 struct PageMakeBackground: View {
     var body: some View {
         ZStack {
             Theme.background
             GeometryReader { proxy in
-                Canvas { context, size in
-                    let spacing: CGFloat = 24
-                    var path = Path()
-                    var x: CGFloat = 0
-                    while x <= size.width {
-                        path.move(to: CGPoint(x: x, y: 0))
-                        path.addLine(to: CGPoint(x: x, y: size.height))
-                        x += spacing
-                    }
-                    var y: CGFloat = 0
-                    while y <= size.height {
-                        path.move(to: CGPoint(x: 0, y: y))
-                        path.addLine(to: CGPoint(x: size.width, y: y))
-                        y += spacing
-                    }
-                    context.stroke(path, with: .color(Theme.separator.opacity(0.35)), lineWidth: 0.5)
-                }
-                .frame(width: proxy.size.width, height: proxy.size.height)
+                Circle()
+                    .fill(Theme.highlight.opacity(0.06))
+                    .frame(width: proxy.size.width * 1.3, height: proxy.size.width * 1.3)
+                    .blur(radius: 90)
+                    .offset(
+                        x: proxy.size.width * 0.2,
+                        y: -proxy.size.width * 0.62
+                    )
             }
-            .mask(
-                LinearGradient(colors: [.black.opacity(0.7), .clear], startPoint: .top, endPoint: .bottom)
-            )
-
-            Circle()
-                .fill(Theme.highlight.opacity(0.12))
-                .frame(width: 280, height: 280)
-                .blur(radius: 70)
-                .offset(x: 150, y: -300)
-
-            Circle()
-                .fill(Theme.positive.opacity(0.10))
-                .frame(width: 320, height: 320)
-                .blur(radius: 85)
-                .offset(x: -170, y: 320)
         }
         .ignoresSafeArea()
     }
@@ -213,16 +194,16 @@ struct AlertItem: Identifiable {
     }
 }
 
-/// 项目状态徽章
+/// 项目状态徽章：低调胶囊——语义色只落在文字上，底色几乎不可见
 struct StatusBadge: View {
     let status: ProjectStatus
 
     var body: some View {
         Text(L10n.string(status.titleKey))
-            .font(.caption2.bold())
-            .padding(.horizontal, 8)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 9)
             .padding(.vertical, 4)
-            .background(backgroundColor.opacity(0.15), in: Capsule())
+            .background(backgroundColor.opacity(0.10), in: Capsule())
             .foregroundStyle(backgroundColor)
     }
 
@@ -236,17 +217,40 @@ struct StatusBadge: View {
     }
 }
 
-/// 主要按钮：液态玻璃 + 强调色 tint（prominent 但不使用整块饱和底色）
+/// 主要按钮：实心强调色 + 深浅自适应前景。简约高级的关键是「少即是多」：
+/// 主操作用一块安静的实色承担全部视觉重量，不再堆玻璃和 tint。
 struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(.headline, design: .rounded, weight: .bold))
+            .font(.system(.headline, weight: .semibold))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .foregroundStyle(PageMakeTheme.onAccent)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
+                    .fill(PageMakeTheme.coral)
+            )
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+    }
+}
+
+/// 次要按钮：hairline 描边 + 低调底色，把注意力让给主操作。
+struct SecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(.headline, weight: .semibold))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .foregroundStyle(Theme.label)
-            .glassEffect(
-                .regular.tint(Theme.highlight.opacity(0.42)).interactive(),
-                in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
+                    .fill(Theme.surfaceSoft.opacity(0.7))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
+                    .strokeBorder(Theme.separator.opacity(0.7), lineWidth: 1)
             )
             .opacity(configuration.isPressed ? 0.82 : 1)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
@@ -254,24 +258,9 @@ struct PrimaryButtonStyle: ButtonStyle {
     }
 }
 
-/// 次要按钮：中性玻璃，用于不抢主操作的入口。
-struct SecondaryButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(.headline, design: .rounded, weight: .semibold))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 13)
-            .foregroundStyle(Theme.label)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-            .opacity(configuration.isPressed ? 0.78 : 1)
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
-    }
-}
-
 /// 底部双入口：左侧标准新建/作品工作台，右侧个人设置。
-/// 设置从弹窗改为独立页签，才能稳定承载外观模式等长期偏好。
-/// 视觉上是一整块悬浮玻璃，两个页签各是一枚更小的玻璃胶囊（同屏多玻璃 → 容器合并）。
+/// 简约改版：去掉嵌套玻璃胶囊与强调色 tint——悬浮玻璃条只保留一块，
+/// 选中态用图标填充 + 强调色文字表达，视觉更安静。
 struct MainTabBar: View {
     @Binding var selection: RootView.MainTab
     let onCreateTapped: () -> Void
@@ -281,7 +270,7 @@ struct MainTabBar: View {
             HStack(spacing: 6) {
                 tabButton(
                     tab: .workspace,
-                    icon: "square.grid.2x2.fill",
+                    icon: "square.grid.2x2",
                     selectedIcon: "plus.square.fill",
                     title: L10n.string("tab_create"),
                     action: {
@@ -303,7 +292,7 @@ struct MainTabBar: View {
                     }
                 )
             }
-            .padding(6)
+            .padding(8)
             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.barRadius, style: .continuous))
         }
         .padding(.horizontal, 18)
@@ -324,17 +313,11 @@ struct MainTabBar: View {
                     .font(.system(size: 18, weight: .semibold))
                     .frame(height: 22)
                 Text(title)
-                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .font(.system(size: 10, weight: .semibold))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
-            .foregroundStyle(isSelected ? Theme.label : Theme.secondaryLabel)
-            .glassEffect(
-                isSelected
-                    ? .regular.tint(Theme.highlight.opacity(0.30)).interactive()
-                    : .regular,
-                in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-            )
+            .foregroundStyle(isSelected ? PageMakeTheme.coral : Theme.secondaryLabel)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -315,7 +315,7 @@ struct PreviewView: View {
                     if let badge {
                         Text(badge)
                             .font(.system(size: 9).bold())
-                            .foregroundStyle(Theme.background)
+                            .foregroundStyle(PageMakeTheme.onAccent)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
                             .background(Theme.highlight, in: Capsule())

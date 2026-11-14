@@ -112,7 +112,7 @@ struct ProjectListView: View {
                 PageMakeCard {
                     VStack(alignment: .leading, spacing: 16) {
                         Text(L10n.string("login_choose_title"))
-                            .font(.system(.title3, design: .serif, weight: .bold))
+                            .font(.system(.title3, weight: .bold))
                             .foregroundStyle(Theme.label)
                         Text(L10n.string("login_choose_hint"))
                             .font(.subheadline)
@@ -174,7 +174,7 @@ struct ProjectListView: View {
                         }
 
                         Text(L10n.string("quick_start_title"))
-                            .font(.system(.title2, design: .serif, weight: .bold))
+                            .font(.system(.title2, weight: .bold))
                             .foregroundStyle(Theme.label)
                         Text(L10n.string("quick_start_hint"))
                             .font(.subheadline)
@@ -208,7 +208,7 @@ struct ProjectListView: View {
                 HStack(alignment: .bottom) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(L10n.string("library_title"))
-                            .font(.system(.title2, design: .serif, weight: .bold))
+                            .font(.system(.title2, weight: .bold))
                             .foregroundStyle(Theme.label)
                         Text(L10n.format("library_count", visibleProjects.count))
                             .font(.caption)
@@ -304,7 +304,7 @@ struct ProjectListView: View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
                 Label(L10n.string("studio_badge"), systemImage: "sparkles")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.system(size: 11, weight: .bold))
                     .textCase(.uppercase)
                     .tracking(0.7)
                     .foregroundStyle(.white.opacity(0.84))
@@ -322,7 +322,7 @@ struct ProjectListView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 Text(L10n.string("studio_headline"))
-                    .font(.system(size: 34, weight: .bold, design: .serif))
+                    .font(.system(size: 34, weight: .bold))
                     .tracking(-0.7)
                     .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
@@ -346,34 +346,28 @@ struct ProjectListView: View {
                 HStack(spacing: 11) {
                     Button(action: onCreateTapped) {
                         Label(L10n.string("add_project"), systemImage: "plus")
-                            .font(.system(.subheadline, design: .rounded, weight: .bold))
+                            .font(.system(.subheadline, weight: .semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
-                            .background(Theme.highlight, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                            .foregroundStyle(.white)
+                            .background(PageMakeTheme.onAccent, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                            .foregroundStyle(PageMakeTheme.ink)
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
         .padding(22)
-        .background(PageMakeTheme.heroGradient, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay(alignment: .topTrailing) {
-            Circle()
-                .stroke(.white.opacity(0.07), lineWidth: 34)
-                .frame(width: 190, height: 190)
-                .offset(x: 72, y: -82)
-                .allowsHitTesting(false)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        // 固定黑色阴影：Theme.label 在深色模式下是白色，会变成白色发光
-        .shadow(color: Color.black.opacity(0.18), radius: 24, x: 0, y: 14)
+        .background(PageMakeTheme.heroGradient, in: RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+        // 固定黑色阴影：Theme.label 在深色模式下是白色，会变成白色发光；
+        // 简约改版收敛阴影强度——高级感靠留白与对比，不靠大阴影
+        .shadow(color: Color.black.opacity(0.12), radius: 16, x: 0, y: 8)
     }
 
     private func heroMetric(value: String, label: String) -> some View {
         VStack(spacing: 3) {
             Text(value)
-                .font(.system(.headline, design: .rounded, weight: .bold))
+                .font(.system(.headline, weight: .bold))
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
@@ -429,7 +423,7 @@ struct ProjectListView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(project.name)
-                        .font(.system(.headline, design: .rounded, weight: .bold))
+                        .font(.system(.headline, weight: .bold))
                         .foregroundStyle(Theme.label)
                         .lineLimit(1)
                     Text(L10n.string(projectKindKey(project)))

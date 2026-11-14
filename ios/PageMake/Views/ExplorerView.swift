@@ -285,7 +285,7 @@ struct ExplorerView: View {
                             currentDir = crumb.path
                         } label: {
                             Text(crumb.name)
-                                .font(.system(.footnote, design: .rounded,
+                                .font(.system(.footnote,
                                               weight: index == breadcrumbs.count - 1 ? .semibold : .regular))
                                 .foregroundStyle(index == breadcrumbs.count - 1 ? .primary : .secondary)
                         }
@@ -377,7 +377,7 @@ struct ExplorerView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(entry.name)
-                            .font(.system(.body, design: .rounded))
+                            .font(.system(.body))
                             .lineLimit(1)
                         if !entry.isFolder && isEntry(entry.path) {
                             Text(L10n.string("explorer_entry_badge"))
@@ -476,7 +476,7 @@ struct ExplorerView: View {
                 .font(.system(size: 54))
                 .foregroundStyle(Theme.accent)
             Text(L10n.string("explorer_empty_title"))
-                .font(.system(.title3, design: .rounded, weight: .bold))
+                .font(.system(.title3, weight: .bold))
                 .foregroundStyle(Theme.label)
             Text(L10n.string("explorer_empty_hint"))
                 .font(.subheadline)
@@ -532,7 +532,7 @@ struct ExplorerView: View {
                         Text(current.publicURL == nil
                              ? L10n.string("explorer_not_built")
                              : L10n.string("explorer_built"))
-                            .font(.system(.caption, design: .rounded, weight: .bold))
+                            .font(.system(.caption, weight: .bold))
                             .foregroundStyle(Theme.label)
                     }
                     Text(entrySummary)
@@ -559,7 +559,7 @@ struct ExplorerView: View {
                              : (current.publicURL == nil
                                 ? L10n.string("explorer_build")
                                 : L10n.string("explorer_rebuild")))
-                            .font(.system(.caption, design: .rounded, weight: .bold))
+                            .font(.system(.caption, weight: .bold))
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)

@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// 液态玻璃设计令牌。
+/// 设计令牌（简约高级改版）。
 ///
 /// 约定：
 /// - 颜色一律取系统语义色（`Color(.systemBackground)` / `.label` / …），由系统负责
 ///   浅色、深色与增强对比度，不在页面里写死黑白或大面积饱和色；
-/// - 强调色只做小面积点缀（图标、徽章、玻璃 tint），不做整块底色；
+/// - 层次靠**留白、hairline 边界与字重**表达，不靠彩色渐变、网格与光斑；
+/// - 强调色只做小面积点缀（图标、徽章、实心主按钮），不做整块底色；
 /// - 圆角、间距、卡片内边距统一在这里维护，避免各页面各写一套数值导致风格漂移。
 enum Theme {
     // MARK: - 语义色
@@ -19,30 +20,30 @@ enum Theme {
     static let separator = Color(.separator)
     static let accent = Color.accentColor
 
-    /// 强调色：只用于图标、徽章与玻璃 tint
+    /// 强调色：只用于图标、徽章与实心主按钮
     static let highlight = PageMakeTheme.coral
     static let positive = PageMakeTheme.sea
     static let premium = PageMakeTheme.gold
 
-    // MARK: - 圆角
+    // MARK: - 圆角（收小一档：大圆角偏「玩具感」，中小圆角更利落）
 
-    static let cardRadius: CGFloat = 22
-    static let panelRadius: CGFloat = 18
-    static let controlRadius: CGFloat = 14
-    static let barRadius: CGFloat = 26
+    static let cardRadius: CGFloat = 18
+    static let panelRadius: CGFloat = 14
+    static let controlRadius: CGFloat = 12
+    static let barRadius: CGFloat = 22
 
     // MARK: - 间距
 
     static let screenPadding: CGFloat = 16
-    static let cardPadding: CGFloat = 18
+    static let cardPadding: CGFloat = 16
     static let sectionSpacing: CGFloat = 16
     static let rowSpacing: CGFloat = 12
 
     // MARK: - 玻璃
 
     /// 卡片玻璃 tint：极低透明度的强调色，让玻璃有品牌温度但不变成色块
-    static let cardTint = PageMakeTheme.coral.opacity(0.10)
-    static let premiumTint = PageMakeTheme.gold.opacity(0.16)
+    static let cardTint = PageMakeTheme.coral.opacity(0.08)
+    static let premiumTint = PageMakeTheme.gold.opacity(0.12)
 
     static var cardShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: cardRadius, style: .continuous)

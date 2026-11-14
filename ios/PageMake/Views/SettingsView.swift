@@ -91,7 +91,7 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(appState.isLoggedIn ? L10n.string("account_signed_in") : L10n.string("account_guest"))
-                    .font(.system(.title3, design: .serif, weight: .bold))
+                    .font(.system(.title3, weight: .bold))
                     .foregroundStyle(Theme.label)
                 Text(accountDetail)
                     .font(.footnote)
@@ -99,7 +99,7 @@ struct SettingsView: View {
                     .lineLimit(1)
                 if let role = appState.session?.role, role != .user {
                     Text(L10n.string(currentTier.titleKey))
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .font(.system(size: 10, weight: .bold))
                         .textCase(.uppercase)
                         .tracking(0.6)
                         .foregroundStyle(Theme.premium)
@@ -250,7 +250,7 @@ struct SettingsView: View {
                         ProgressView().tint(Theme.secondaryLabel)
                     } else {
                         Label(L10n.string("vip_request_refresh"), systemImage: "arrow.clockwise")
-                            .font(.system(.caption, design: .rounded, weight: .semibold))
+                            .font(.system(.caption, weight: .semibold))
                             .foregroundStyle(Theme.secondaryLabel)
                     }
                 }
@@ -266,7 +266,7 @@ struct SettingsView: View {
                 .font(.caption2)
                 .foregroundStyle(Theme.tertiaryLabel)
             Text(value)
-                .font(.system(.caption, design: .rounded, weight: .bold))
+                .font(.system(.caption, weight: .bold))
                 .foregroundStyle(tint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -342,7 +342,7 @@ struct SettingsView: View {
                     .font(.system(size: 17, weight: .semibold))
                     .frame(height: 21)
                 Text(L10n.string(mode.titleKey))
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.system(size: 11, weight: .bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
@@ -410,7 +410,7 @@ struct SettingsView: View {
     private func metricTile(value: String, label: String, tint: Color) -> some View {
         VStack(spacing: 5) {
             Text(value)
-                .font(.system(.headline, design: .rounded, weight: .bold))
+                .font(.system(.headline, weight: .bold))
                 .foregroundStyle(Theme.label)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -588,7 +588,7 @@ struct SettingsView: View {
                     appState.signOut()
                 } label: {
                     Label(L10n.string("sign_out"), systemImage: "rectangle.portrait.and.arrow.right")
-                        .font(.system(.subheadline, design: .rounded, weight: .semibold))
+                        .font(.system(.subheadline, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
                         .background(Theme.elevatedBackground, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
@@ -608,7 +608,7 @@ struct SettingsView: View {
                         }
                         Text(L10n.string("delete_account"))
                     }
-                    .font(.system(.subheadline, design: .rounded, weight: .semibold))
+                    .font(.system(.subheadline, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
                     .foregroundStyle(Theme.highlight)
@@ -635,7 +635,7 @@ struct SettingsView: View {
                 .background(tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .font(.system(.subheadline, weight: .bold))
                     .foregroundStyle(Theme.label)
                 Text(subtitle)
                     .font(.caption2)

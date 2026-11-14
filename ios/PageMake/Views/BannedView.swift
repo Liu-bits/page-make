@@ -22,7 +22,7 @@ struct BannedView: View {
                         .padding(.top, 40)
 
                     Text(L10n.string("banned_title"))
-                        .font(.system(.title2, design: .serif, weight: .bold))
+                        .font(.system(.title2, weight: .bold))
                         .foregroundStyle(Theme.label)
 
                     VStack(spacing: 12) {

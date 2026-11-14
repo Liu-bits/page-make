@@ -278,6 +278,12 @@ E:/Page-make/
 
 **iOS 端**
 - Liquid Glass（iOS 26+ 原生 API：GlassEffectContainer / .glassEffect / .glassProminent）
+- **UI 简约高级改版**（2026-11-14，功能与本地化键零改动）：设计令牌与共享组件整体换装——
+  冷灰中性调色板 + 单一靛蓝强调色（`coral` 等历史命名保留、值已改，App tint 一处全局生效）；
+  全局背景去掉网格线与彩色光斑（留白 + 单个极淡光晕）；主按钮改实心强调色 +
+  `onAccent` 深浅自适应文字（暗色对比度），次按钮 hairline 描边；TabBar 去嵌套玻璃胶囊
+  （选中态=填充图标+强调色字）；36 处 serif/rounded 字体统一为系统默认；
+  圆角/阴影/间距全档收敛（card 22→18 等）。**改 UI 只动 Theme/Components 令牌层即可全局生效**
 - 项目列表搜索 + 排序（最新/最旧/名称/大小）+ 滑动重命名
 - 二维码分享（CoreImage CIFilter.qrCodeGenerator + ShareLink）
 - 站点访问统计（2026-11-14）：预览页顶部统计条（累计/今日），管理文件页项目信息区两行；

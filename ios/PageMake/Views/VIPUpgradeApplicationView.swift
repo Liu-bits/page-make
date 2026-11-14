@@ -100,7 +100,7 @@ struct VIPUpgradeApplicationView: View {
         PageMakeCard(tint: Theme.premiumTint) {
             VStack(alignment: .leading, spacing: 12) {
                 Label(L10n.string("vip_request_benefits_title"), systemImage: "crown.fill")
-                    .font(.system(.title3, design: .serif, weight: .bold))
+                    .font(.system(.title3, weight: .bold))
                     .foregroundStyle(Theme.premium)
 
                 HStack(spacing: 10) {
@@ -124,7 +124,7 @@ struct VIPUpgradeApplicationView: View {
                 .font(.caption2)
                 .foregroundStyle(Theme.secondaryLabel)
             Text(value)
-                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                .font(.system(.subheadline, weight: .bold))
                 .foregroundStyle(tint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -148,7 +148,7 @@ struct VIPUpgradeApplicationView: View {
         PageMakeCard {
             VStack(alignment: .leading, spacing: 8) {
                 Text(statusTitle(request))
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .font(.system(.subheadline, weight: .bold))
                     .foregroundStyle(Theme.label)
                 Text(statusDetail(request))
                     .font(.caption)
@@ -166,10 +166,10 @@ struct VIPUpgradeApplicationView: View {
         PageMakeCard {
             VStack(alignment: .leading, spacing: 10) {
                 Text(L10n.string("vip_request_note_label"))
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .font(.system(.subheadline, weight: .bold))
                     .foregroundStyle(Theme.label)
                 TextEditor(text: $note)
-                    .font(.system(.footnote, design: .rounded))
+                    .font(.system(.footnote))
                     .foregroundStyle(Theme.label)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 110)
