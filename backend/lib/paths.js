@@ -114,8 +114,14 @@ export function findLocalAsset(html, tag, attr, ext) {
  *   form[action]  表单提交
  * 早期只归一 link/script，导致 img/iframe/source 等仍 404、内页链接
  * 跳到站点外——与 CSS/JS 断链同一症状但漏了半边，这里补齐。
+ *
+ * @param {string} html 用户 HTML
+ * @param {string} [publicPrefix] 可选公开前缀（/p/<id>）。后端项目反向代理场景传入：
+ *   应用按「部署在站点根目录」写引用，根绝对路径（/api、/style.css）需改写成相对路径
+ *   才能落回 /p/<id>/ 下；而应用自己已拼好公开地址（/p/<id>/api）的引用原样保留。
+ *   纯前端项目不传，行为与历史完全一致。
  */
-export function rewriteLocalRefs(html) {
+export function rewriteLocalRefs(html, publicPrefix) {
   // 手写单向扫描，**保证线性**。
   //
   // 早期实现是「按 13 种标签各跑一次正则」：未闭合标签会让 `[^>]*` 每次扫到
@@ -169,7 +175,7 @@ export function rewriteLocalRefs(html) {
       continue;
     }
 
-    out.push(`<${rawTag}${rewriteTagBody(rawTag, source.slice(j, gt))}>`);
+    out.push(`<${rawTag}${rewriteTagBody(rawTag, source.slice(j, gt), publicPrefix)}>`);
     i = gt + 1;
   }
 
@@ -179,17 +185,35 @@ export function rewriteLocalRefs(html) {
 /**
  * 给公开页面注入项目根 `<base>`。
  *
- * 公开入口是 `/p/<项目ID>`（无尾斜杠），浏览器会把最后一段当成文件名：
+ * 公开入口是 `/p/<项目ID>`（无尾斜杠），浏览器会把它当成文件路径：
  * `<link href="style.css">` 会请求 `/p/style.css`，而不是
  * `/p/<项目ID>/style.css`。注入 `<base href="/p/<项目ID>/">` 后，HTML、CSS、
  * 图片、站内链接以及 JS 里的相对 fetch 都以项目目录为基准解析。
  *
- * 用户显式写了 `<base>` 时不覆盖其意图，只补缺失场景。
+ * 用户显式写了 `<base>` 时：只有「href 为 `/` 或空串」这种按「部署在站点根目录」
+ * 假设写的 base 才替换为项目前缀（不改会把相对引用全部指到宿主根）；
+ * 其他值（CDN 等完整 URL）尊重用户意图不动，`<base target>`（无 href）也不动。
  */
 export function injectPublicBase(html, basePath) {
   const source = String(html ?? '');
   const base = normalizePublicBase(basePath);
-  if (!base || /<base\b/i.test(source)) return source;
+  if (!base) return source;
+
+  // 用户自写 base：抓第一个 base 开标签（HTML 只第一个 base 生效）。
+  // 有界正则：标签体 {0,4096} 上限防未闭合标签扫到串尾；href 属性带
+  // (?<![-\w]) 防前缀 data-href 之类误命中（同 attrReFor 的写法）。
+  if (/<base\b/i.test(source)) {
+    return source.replace(/<base\b[^>]{0,4096}>/i, (tag) => {
+      const hrefMatch = tag.match(/(?<![-\w])href\s*=\s*(["'])([^"']*)\1/i);
+      if (!hrefMatch) return tag;
+      const hrefValue = hrefMatch[2].trim();
+      if (hrefValue !== '' && hrefValue !== '/') return tag;
+      return tag.replace(
+        /((?<![-\w])href\s*=\s*)(["'])([^"']*)\2/i,
+        (whole, attrPrefix, quote) => `${attrPrefix}${quote}${base}/${quote}`
+      );
+    });
+  }
 
   const href = `${base}/`;
   const tag = `<base href="${href}">`;
@@ -205,6 +229,109 @@ export function injectPublicBase(html, basePath) {
   return `${tag}\n${source}`;
 }
 
+// 后端项目运行时代理 shim：逐字内联，注入时把 <<BASE>> 占位替换为实际前缀。
+// 注意：本段代码不得出现反引号与 ${ 序列（避免与模板字面量冲突），只允许
+// <<BASE>> 这一处占位符。
+const PROXY_SHIM_CODE = `(function () {
+  if (window.__pagemakeProxyReady) return;
+  window.__pagemakeProxyReady = true;
+  var BASE = '<<BASE>>';
+  function underBase(p) { return p === BASE || p.indexOf(BASE + '/') === 0; }
+  function rebase(v) {
+    var s = String(v);
+    if (s.charAt(0) !== '/' || s.charAt(1) === '/') return s;
+    if (underBase(s.split(/[?#]/)[0])) return s;
+    return BASE + s;
+  }
+  var _fetch = window.fetch;
+  if (_fetch) {
+    window.fetch = function (input, init) {
+      try {
+        if (typeof input === 'string') {
+          input = rebase(input);
+        } else if (input && typeof URL !== 'undefined' && input instanceof URL) {
+          if (input.origin === location.origin && !underBase(input.pathname)) {
+            input = BASE + input.pathname + input.search;
+          }
+        } else if (input && typeof Request !== 'undefined' && input instanceof Request) {
+          var u = new URL(input.url, location.href);
+          if (u.origin === location.origin && !underBase(u.pathname)) {
+            input = new Request(BASE + u.pathname + u.search, input);
+          }
+        }
+      } catch (e) { /* 解析失败保底走原行为 */ }
+      return _fetch.call(window, input, init);
+    };
+  }
+  var _xhrOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function () {
+    var args = Array.prototype.slice.call(arguments);
+    try { if (args.length > 1 && args[1] != null) args[1] = rebase(args[1]); } catch (e) {}
+    return _xhrOpen.apply(this, args);
+  };
+  var _winOpen = window.open;
+  if (_winOpen) {
+    window.open = function (url) {
+      try {
+        if (arguments.length && url != null) {
+          var rest = Array.prototype.slice.call(arguments, 1);
+          return _winOpen.apply(window, [rebase(url)].concat(rest));
+        }
+      } catch (e) {}
+      return _winOpen.apply(window, arguments);
+    };
+  }
+})();`;
+
+/**
+ * 给后端项目的公开页注入运行时代理 shim（fetch / XMLHttpRequest / window.open）。
+ *
+ * 为什么需要：rewriteLocalRefs / injectPublicBase / rewriteCssRefs 是**静态**改写，
+ * 只能覆盖 HTML 属性与 CSS 里的引用字符串；而用户 JS 代码里写死的绝对路径——
+ * `fetch('/api/x')`、`xhr.open('POST', '/save')`、`window.open('/next')`——
+ * 不经任何 HTML 属性，静态阶段根本看不到，运行时才会发出逃出 /p/<id> 前缀的
+ * 请求 → 404。shim 在运行时把这类「同源根绝对路径」改写到 BASE（/p/<id>）之下。
+ *
+ * 覆盖三入口：window.fetch / XMLHttpRequest.prototype.open / window.open。
+ * `location.href = '/x'` 这类赋值浏览器不允许劫持，shim 覆盖不到，逃出前缀的
+ * 页面跳转由宿主层 Referer 兜底重定向处理（docker/server.mjs：未匹配路由的
+ * GET/HEAD 且来源是某 /p/<id> 应用 → 302 回应用内同名路径）。
+ *
+ * 幂等：以 data-pagemake-proxy-shim 标记判重，已注入过直接返回原文。
+ */
+export function injectProxyShim(html, basePath) {
+  const source = String(html ?? '');
+  const base = normalizePublicBase(basePath);
+  if (!base) return source;
+  if (source.indexOf('data-pagemake-proxy-shim') !== -1) return source;
+
+  const script = `<script data-pagemake-proxy-shim>${PROXY_SHIM_CODE.replace('<<BASE>>', () => base)}</script>`;
+  // 插入位置与 injectPublicBase 相同的优先级：head 开标签后 → html 开标签后
+  // （shim 是 script，不需要包 head）→ body 开标签前 → 整体最前面。
+  // 正则沿用 injectPublicBase 的有界写法。
+  if (/<head\b[^>]*>/i.test(source)) {
+    return source.replace(/<head\b[^>]*>/i, (head) => `${head}\n${script}`);
+  }
+  if (/<html\b[^>]*>/i.test(source)) {
+    return source.replace(/<html\b[^>]*>/i, (htmlTag) => `${htmlTag}\n${script}`);
+  }
+  if (/<body\b[^>]*>/i.test(source)) {
+    return source.replace(/<body\b[^>]*>/i, (bodyTag) => `${script}\n${bodyTag}`);
+  }
+  return `${script}\n${source}`;
+}
+
+/**
+ * 引用值是否已经带项目公开前缀（/p/<id> 或 /p/<id>/...）
+ * 后端应用可能自己拼好公开地址（如 <a href="/p/<id>/api">），已是完整公开引用，
+ * 不能再按宿主根假设改写，否则会被二次加前缀变成 /p/<id>/p/<id>/api。
+ */
+function isUnderPublicPrefix(raw, prefix) {
+  if (!prefix) return false;
+  const path = String(raw).trim().split(/[?#]/)[0];
+  return path === prefix || path.startsWith(prefix + '/');
+}
+
 /**
  * 不限定扩展名的本地引用判定（img/iframe/a/form 等）
  * 与 cssLocalRef 同规则：只判「是不是本地引用」，不看扩展名
@@ -213,6 +340,11 @@ function anyLocalRef(value) {
   const raw = String(value ?? '').trim();
   if (!raw) return null;
   if (NON_LOCAL_RE.test(raw) || raw.startsWith('//')) return null;
+  // `a href="/"`、`form action="/"` 指向应用首页：normalizeRelPath('/') 为空串
+  // 会跳过改写，导致仍指向宿主根；改写为 `./` 后配合注入的 <base href="/p/<id>/">
+  // 正确解析到项目入口。本函数只被改写链路调用（rewriteRefAttr / rewriteSrcsetAttr），
+  // findLocalAsset 走的是 localAssetRef，不受影响。
+  if (raw === '/') return './';
   return normalizeRelPath(raw) || null;
 }
 
@@ -237,13 +369,13 @@ function isTagNameChar(ch) {
     || (ch >= '0' && ch <= '9') || ch === ':' || ch === '-' || ch === '_';
 }
 
-/** 改写单个标签体内的引用属性（body 已是有界片段） */
-function rewriteTagBody(rawTag, body) {
+/** 改写单个标签体内的引用属性（body 已是有界片段；publicPrefix 语义见 rewriteLocalRefs） */
+function rewriteTagBody(rawTag, body, publicPrefix) {
   const rules = TAG_RULES[rawTag.toLowerCase()];
   let out = body;
   if (rules) {
     for (const rule of rules) {
-      out = rule === 'srcset' ? rewriteSrcsetAttr(out) : rewriteRefAttr(out, rule);
+      out = rule === 'srcset' ? rewriteSrcsetAttr(out, publicPrefix) : rewriteRefAttr(out, rule, publicPrefix);
     }
   }
   // 内联 style 属性里的 url() / @import（div/span 等无规则标签也要覆盖）
@@ -269,10 +401,12 @@ const TAG_RULES = {
   link: [{ attr: 'href' }],
 };
 
-/** 改写单个标签体内的一个引用属性（body 已是有界片段） */
-function rewriteRefAttr(body, rule) {
+/** 改写单个标签体内的一个引用属性（body 已是有界片段；publicPrefix 语义见 rewriteLocalRefs） */
+function rewriteRefAttr(body, rule, publicPrefix) {
   const re = new RegExp(`((?<![-\\w])${rule.attr}\\s*=\\s*)(["'])([^"']*)\\2`, 'i');
   return body.replace(re, (whole, prefix, quote, value) => {
+    // 已是带公开前缀的完整公开地址（后端应用自己拼的）：原样保留，不能二次加前缀
+    if (isUnderPublicPrefix(value, publicPrefix)) return whole;
     const normalized = rule.ext ? localAssetRef(value, rule.ext) : anyLocalRef(value);
     if (!normalized) return whole;
     const target = `${normalized}${refSuffix(value)}`;
@@ -281,13 +415,15 @@ function rewriteRefAttr(body, rule) {
   });
 }
 
-/** srcset 是「URL + 描述符」的逗号分隔列表，必须逐候选归一 */
-function rewriteSrcsetAttr(body) {
+/** srcset 是「URL + 描述符」的逗号分隔列表，必须逐候选归一（publicPrefix 语义见 rewriteLocalRefs） */
+function rewriteSrcsetAttr(body, publicPrefix) {
   const re = /((?<![-\\w])srcset\s*=\s*)(["'])([^"']*)\2/i;
   return body.replace(re, (whole, prefix, quote, value) => {
     const parts = value.split(',').map((cand) => {
       const m = cand.match(/^(\s*)(\S+)(\s.*)?$/);
       if (!m) return cand;
+      // 已带公开前缀的候选原样保留，不能二次加前缀
+      if (isUnderPublicPrefix(m[2], publicPrefix)) return cand;
       const normalized = anyLocalRef(m[2]);
       const target = normalized ? `${normalized}${refSuffix(m[2])}` : m[2];
       return `${m[1]}${target}${m[3] || ''}`;

@@ -1,9 +1,9 @@
 // GET /api/projects/:id — 项目详情
 // POST /api/projects/:id — action: delete（删除）/ rename（重命名）/ publish（生成公开链接）
 // DELETE /api/projects/:id — 删除项目（兼容；ModelScope 网关拦截 DELETE，客户端走 POST）
-import { getOwnedProject, deleteProjectRecords, syncProjectFiles, readSiteFiles, projectPublicUrl } from '../../lib/project.js';
+import { getOwnedProject, deleteProjectRecords, syncProjectFilesLocked, readSiteFiles, projectPublicUrl } from '../../lib/project.js';
 import { ok, fail } from '../../lib/responses.js';
-import { appendLog, keys, kvGet, kvPut } from '../../lib/kv.js';
+import { appendLog, keys } from '../../lib/kv.js';
 import { STATUS, isBackendKind, normalizeKind } from '../../lib/state.js';
 import { analyzeHtml } from '../../lib/diagnostics.js';
 import { rewriteLocalRefs, rewriteCssRefs } from '../../lib/paths.js';
@@ -41,10 +41,11 @@ export async function onRequest(context) {
   if (action === 'rename') {
     const name = typeof body?.name === 'string' ? body.name.trim().slice(0, 60) : '';
     if (!name) return fail('BAD_REQUEST', 400);
-    project.name = name;
-    await syncProjectFiles(kv, project);
+    // 锁内重读最新记录再合并写回：与封禁/删除并发时旧快照不会覆盖新状态
+    const updated = await syncProjectFilesLocked(kv, project.id, { name });
+    if (!updated) return fail('NOT_FOUND', 404);
     await appendLog(kv, { projectId: project.id, step: 'rename_project', result: 'ok' });
-    return ok({ project });
+    return ok({ project: updated });
   }
 
   // 项目模式：统一生成公开链接（至少需要一个 HTML 文件作为入口）
@@ -64,15 +65,15 @@ export async function onRequest(context) {
     if (isBackendKind(kind) && !canUseBackend(result.user)) {
       return fail('BACKEND_REQUIRES_VIP', 403);
     }
-    if (body?.kind !== undefined) project.kind = kind;
 
     if (isBackendKind(kind)) {
       if (kind !== 'js' && !files.has('package.json')) return fail('MISSING_PACKAGE_JSON', 400);
-      project.entryPath = null;
-      project.status = STATUS.PROCESSING;
-      project.errorCode = null;
-      project.url = projectPublicUrl(new URL(request.url).origin, project.id);
-      await syncProjectFiles(kv, project);
+      // 锁内写 processing：与封禁/删除并发时旧快照不会覆盖新状态
+      const publishPatch = { entryPath: null, status: STATUS.PROCESSING, errorCode: null };
+      if (body?.kind !== undefined) publishPatch.kind = kind;
+      publishPatch.url = projectPublicUrl(new URL(request.url).origin, project.id);
+      const updated = await syncProjectFilesLocked(kv, project.id, publishPatch);
+      if (!updated) return fail('NOT_FOUND', 404);
 
       // 依赖安装/构建/启动可能持续数分钟，不能占住一个 HTTP 请求：
       // ModelScope 网关与 iOS 都有请求超时，同步等待会把成功部署误报成网络错误。
@@ -87,32 +88,33 @@ export async function onRequest(context) {
             // （降级后仍用 svip/ultra 的超时会绕过限制）。
             tier: tierOf(result.user),
           });
-          // 部署期间项目可能被删除；不能拿部署前的内存对象把记录“复活”。
-          const latest = await kvGet(kv, keys.project(project.id));
-          if (!latest) {
+          // 部署期间项目可能被删除 / 再次封禁：锁内复核 + 写回，
+          // 不能拿部署前的内存对象把记录“复活”或把 banned 覆盖回 ready。
+          const saved = await syncProjectFilesLocked(kv, project.id, {
+            status: STATUS.READY,
+            errorCode: null,
+            runtimePort: runtime.port,
+            runtimeKind: runtime.kind,
+          });
+          if (!saved) {
             await stopBackendApp(project.id);
             return;
           }
-          latest.status = STATUS.READY;
-          latest.errorCode = null;
-          latest.runtimePort = runtime.port;
-          latest.runtimeKind = runtime.kind;
-          await syncProjectFiles(kv, latest);
           await appendLog(kv, { projectId: project.id, step: 'publish_backend', result: 'ok', kind });
         } catch (error) {
           await stopBackendApp(project.id);
           // 与成功分支同样的守卫：部署期间项目可能已被删除，不能把旧快照写回去
           // 复活它（会留下永久孤儿记录，且回写的是部署前的 files/size）。
-          const latest = await kvGet(kv, keys.project(project.id));
-          if (!latest) return;
-          latest.status = STATUS.FAILED;
-          latest.errorCode = error?.code || 'RUNTIME_UNAVAILABLE';
-          await syncProjectFiles(kv, latest);
+          const saved = await syncProjectFilesLocked(kv, project.id, {
+            status: STATUS.FAILED,
+            errorCode: error?.code || 'RUNTIME_UNAVAILABLE',
+          });
+          if (!saved) return;
           await appendLog(kv, {
             projectId: project.id,
             step: 'publish_backend',
             result: 'failed',
-            errorCode: latest.errorCode,
+            errorCode: saved.errorCode,
           });
         }
       })();
@@ -122,7 +124,7 @@ export async function onRequest(context) {
       } else {
         await publishTask;
       }
-      return ok({ project });
+      return ok({ project: updated });
     }
 
     // 从 npm/pnpm 切回纯前端时回收旧常驻进程，避免后台继续占端口。
@@ -174,13 +176,16 @@ export async function onRequest(context) {
 
     // 静态诊断
     const html = new TextDecoder().decode(files.get(entry));
-    project.diagnostics = analyzeHtml(html, files);
-    project.entryPath = entry;
-    project.status = STATUS.READY;
-    project.url = projectPublicUrl(new URL(request.url).origin, project.id);
-    await syncProjectFiles(kv, project);
+    // 锁内合并写回：与封禁/删除并发时旧快照不会覆盖新状态
+    const updated = await syncProjectFilesLocked(kv, project.id, {
+      diagnostics: analyzeHtml(html, files),
+      entryPath: entry,
+      status: STATUS.READY,
+      url: projectPublicUrl(new URL(request.url).origin, project.id),
+    });
+    if (!updated) return fail('NOT_FOUND', 404);
     await appendLog(kv, { projectId: project.id, step: 'publish', result: 'ok' });
-    return ok({ project });
+    return ok({ project: updated });
   }
 
   return fail('METHOD_NOT_ALLOWED', 405);

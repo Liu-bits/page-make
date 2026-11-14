@@ -51,6 +51,12 @@
     | 鉴权与权益 | `backend/lib/session.js` | 内联 `role === 'vip'` 会漏掉 svip/ultra |
     | 中英文案 | `ios/PageMake/Resources/{zh-Hans,en}.lproj/Localizable.strings` | 两套必须同改，缺 key 会显示空字符串 |
 
+11. **优先亲自解决，子代理只做评审/查证类辅助**（用户规定，2026-11-14）：
+    实现类工作（写代码、修 bug、改配置）主 Agent **亲自完成**，不要把实现分包给
+    code-writing / general-purpose 等执行型子代理；`code-reviewer`（审查）与只读
+    查证类子代理仍然使用。子代理中途被停掉属正常操作，接手方直接读工作区现状
+    （`git diff`）继续做完，不要从头重写也不要等它回来。
+
 ### 0.1 分支策略（debug / main）
 
 | 分支 | 职责 | CI 工作流 |
@@ -236,10 +242,17 @@ E:/Page-make/
 - 静态诊断：HTML 引用的资源缺失 → 「引用了 x，其实在 y」提示
 - PHP / C++：均不支持；ZIP 中的 `.php` 会跳过，项目模式拒绝 `.php`，公开路由对历史 `.php` 返回 404
 - 部署形态：纯前端 / npm / pnpm / js 四选一；普通用户只能选纯前端，后端形态从 VIP 起可用
+- **后端项目反代前缀语义**（2026-11-14）：用户应用按「部署在站点根目录」假设写代码也能
+  正常工作——`proxy()` 对响应做四件套：Location 根绝对路径改写回 `/p/<id>` 前缀、
+  Set-Cookie Path 收进前缀（无 Path 的补）、text/html 响应体注入 `<base>` + 运行时 shim
+  （fetch/XHR/window.open 绝对路径 rebase）、HTML 属性根绝对引用改写为相对；
+  `server.mjs` 对「未匹配路由 + Referer 来自某应用页」的 GET/HEAD 兜底 302 回应用内
+  同名路径（兜 `location.href` 逃逸）。安全边界：非 UTF-8 charset、压缩响应、HEAD、
+  204/205/304 一律跳过改写
 - 导出备份：`GET /api/projects/:id/export`，VIP 及以上可下载项目源码 ZIP（排除安装产物）
 - 账号等级：`user < vip < svip < ultra`，后台 `setTier` 原地调整 userId / 会话 / 项目
 - 入口选择统一：index.html → 任意 html（publish/findEntry/上传管线一致）
-- 刷新链接（refresh.js，成功/失败均持久化 kvPut——曾有不写回的存量 bug）
+- 刷新链接（refresh.js，写回全部走 mutateProject / syncProjectFilesLocked 锁原语——曾有不写回的存量 bug）
 - 反馈接口（App 内反馈 = 封禁申诉入口）；用量统计 /api/stats；账号删除（过审项）
 
 **管理后台 /admin**（首次启动生成随机初始密码并输出到容器日志；PBKDF2 哈希存储，改密用 setPassword）
@@ -280,12 +293,12 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 173 项 + 静态检查，提交前必须全绿）
+## 5. 测试体系（共 178 项 + 静态检查，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
-| `node dev/run-tests.mjs` | 53 | 单元测试（含 JWKS 三级加载、动态 ZIP 解压配额、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容、密码强度、MIME、等级配额、ZIP 写入器） |
-| `node dev/test-server.mjs` | 55 | 容器冒烟（真实 HTTP 全流程；含等级上传配额、压缩包小于配额但解压后超限、普通用户后端拒绝、npm 后端全链路反向代理、导出备份、ZIP PHP 过滤、Explorer 全流程、限流、删号 KV 残留、Apple/Google 合法 token 登录） |
+| `node dev/run-tests.mjs` | 57 | 单元测试（含 JWKS 三级加载、动态 ZIP 解压配额、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容、密码强度、MIME、等级配额、ZIP 写入器、代理前缀改写线性/幂等/注入位置） |
+| `node dev/test-server.mjs` | 56 | 容器冒烟（真实 HTTP 全流程；含等级上传配额、压缩包小于配额但解压后超限、普通用户后端拒绝、npm 后端全链路反向代理、后端代理改写 e2e（Location 五形态 / Set-Cookie Path / HTML 注入 / Referer 兜底 / gbk+gzip 跳过）、导出备份、ZIP PHP 过滤、Explorer 全流程、限流、删号 KV 残留、Apple/Google 合法 token 登录） |
 | `node dev/check-handler-imports.mjs` | 1 | 静态扫「被调用但未 import/未定义」的标识符（ESM 惰性绑定让这类错误只在运行时炸成 500；已接入 CI） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 26 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
@@ -482,6 +495,29 @@ push debug → debug CI 三 job 全绿 → 合并 main → main 的 deploy job �
 - JWKS：Node fetch 无默认超时，境内连 googleapis 挂 75s+ → 三级加载（live 5s →
   DATA_DIR 磁盘缓存 → 内置种子）；种子由 CI/runner 刷新，**沙箱自己拉不到 Google**
 - Dockerfile 的 `data/` ignore 只匹配根级，`backend/data/` 种子不受影响
+- **项目记录（keys.project(id)）写入必须走 lib/project.js 的锁原语**（2026-11-14 收敛）：
+  `mutateProject`（读改写） / `writeProjectRecord`（创建或整体写回，封禁中拒写） /
+  `syncProjectFilesLocked`（文件清单 + patch 同临界区合并） / `deleteProjectGuarded`
+  （锁内复核后删除），全部以 `project:<id>` 为粒度串行。项目记录写入方遍布管理端
+  封禁/解封/升降级、公开页游客 TTL 刷新、发布/刷新异步回写、上传管线——无锁时
+  旧快照整记录回写会把 `status: 'banned'` 覆盖回正常（封号后站点仍可访问）、
+  把已删除的记录复活成幽灵项目（TOCTOU，实测类同历史双重编码 bug 的隐蔽性）。
+  **例外**：`files.js` 自带 `lockedProject` 临界区，锁内直接调 `syncProjectFiles` /
+  `kvPut`；因此 **`syncProjectFiles` 本体必须保持非锁定**——`withLock` 不可重入，
+  锁内再锁会自锁死整个文件 API。新增项目记录写入点先想清楚自己在不在锁内。
+- **用户后端应用的「部署在站点根目录」假设，前缀还原必须成套做**（2026-11-14）：
+  应用跑在 `/p/<id>` 反代下，四类引用各自要不同覆盖手段，缺一件就是半截修复
+  （症状：应用内按钮「有时推进、有时整页跳走/回退初始状态」，极难归因）：
+  ① HTML 属性引用（含根绝对 `/submit`）→ `rewriteLocalRefs(html, publicPrefix)` 静态改写
+  （已带前缀的跳过防二次加前缀；`/` → `./`）；② 相对引用 → `injectPublicBase` 注入
+  `<base href="/p/<id>/">`（用户自写 `<base href="/">` 也替换，CDN base 尊重不动）；
+  ③ JS 字符串里的 `fetch('/api/x')` / XHR / window.open → `injectProxyShim` 运行时 rebase
+  （**`<base>` 管不到 JS 字符串**，这类请求会打到宿主自身 API → 401/404 → 应用前端
+  重置回初始状态）；④ `location.href='/x'` 赋值浏览器不可劫持 → `server.mjs` 按
+  Referer 兜底 302（只兜 GET/HEAD + 未匹配任何路由）。配套两件：响应头 Location 改写
+  （`res.redirect('/')` 不改写会跳出前缀）、Set-Cookie Path 收进前缀（防应用 cookie
+  泄漏到宿主 /admin）。跳过改写的安全边界：非 text/html、压缩响应、非 UTF-8 charset
+  （含声明了但解析不出的）、HEAD、204/205/304；改写后必须删 content-length/etag。
 
 **iOS/Swift 坑**（本地无 Xcode，只能靠 CI 验证）：
 - SwiftUI `Section("标题"){ } footer:{ }`（头部字符串参数 + 双尾随闭包）**无匹配重载**

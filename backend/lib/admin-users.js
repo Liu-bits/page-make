@@ -3,6 +3,7 @@
 import { kvGet, kvDel, kvListAll, keys } from './kv.js';
 import { decodeKey } from './base64.js';
 import { revokeUserSessions } from './session.js';
+import { deleteProjectGuarded } from './project.js';
 import { stop as stopBackendRuntime } from './backend-runtime.js';
 
 export async function forEachUserProject(kv, userId, fn) {
@@ -19,12 +20,10 @@ export async function deleteUserAccount(kv, userId) {
   const indexedProjects = new Set();
   await forEachUserProject(kv, userId, async (projectId, indexKey) => {
     indexedProjects.add(projectId);
-    await stopBackendRuntime(projectId);
-    for (const siteKey of await kvListAll(kv, keys.sitePrefix(projectId))) {
-      await kvDel(kv, siteKey);
-    }
-    await kvDel(kv, keys.siteMeta(projectId));
-    await kvDel(kv, keys.project(projectId));
+    // 锁内删除：与公开页 TTL 刷新、文件编辑等并发写互斥，删掉的记录不会被复活。
+    // 记录已不存在（索引孤儿）时 guarded 返回 false，但常驻进程仍要回收。
+    const removed = await deleteProjectGuarded(kv, userId, projectId);
+    if (!removed) await stopBackendRuntime(projectId);
     await kvDel(kv, indexKey);
   });
 
@@ -41,11 +40,8 @@ export async function deleteUserAccount(kv, userId) {
     const project = await kvGet(kv, key);
     if (!project || project.userId !== userId) continue;
     if (!indexedProjects.has(project.id)) {
-      await stopBackendRuntime(project.id);
-      for (const siteKey of await kvListAll(kv, keys.sitePrefix(project.id))) {
-        await kvDel(kv, siteKey);
-      }
-      await kvDel(kv, keys.siteMeta(project.id));
+      const removed = await deleteProjectGuarded(kv, userId, project.id);
+      if (!removed) await stopBackendRuntime(project.id);
       await kvDel(kv, keys.userProject(userId, project.id));
     }
     await kvDel(kv, key);

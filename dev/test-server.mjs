@@ -1233,6 +1233,196 @@ await test('SVIP 后端项目：npm 部署 → 进程常驻 → /p/ 反向代理
   );
 });
 
+// 用户后端应用按「部署在站点根目录」假设写代码，代理必须补齐前缀语义，否则
+// 应用内按钮的表现不确定：res.redirect('/x')（Location 不改写）跳到宿主根、
+// fetch('/api/x')（绝对路径，<base> 管不到）打到宿主自身 API → 401/404 →
+// 应用前端错误处理把界面重置回初始状态。
+await test('后端项目代理改写：Location / Set-Cookie / HTML 注入 / Referer 兜底', async () => {
+  const rwUserId = 'dev-proxy-rewrite';
+  seedUser(dataDir, rwUserId, 'svip');
+  const rwAuth = { 'X-Test-User': rwUserId };
+
+  const created = await (await fetch(`${BASE}/api/projects/explorer`, {
+    method: 'POST',
+    headers: { ...rwAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'rewrite-app', kind: 'js' }),
+  })).json();
+  assert(created.ok, `建 js 项目应成功：${JSON.stringify(created)}`);
+  const id = created.project.id;
+
+  // js 形态（单文件，无 npm install）行为与 npm 形态同一条代理链路
+  const serverSrc = [
+    "const http = require('node:http');",
+    "const zlib = require('node:zlib');",
+    'const port = Number(process.env.PORT);',
+    'const pageHtml = (prefix) => [',
+    "  '<!doctype html><html><head><title>t</title></head><body>',",
+    "  '<link rel=\"stylesheet\" href=\"style.css\">',",
+    "  '<a href=\"/\">home</a><a href=\"/page2\">p2</a>',",
+    "  '<a href=\"' + prefix + '/self\">self</a>',",
+    "  '<form action=\"/submit\" method=\"post\"><input name=\"a\"></form>',",
+    "  '<img srcset=\"/a.png 1x, /b.png 2x\" src=\"/logo.png\">',",
+    "  '<script>fetch(\\'/api/x\\').then(function(r){return r.json()});'",
+    "    + 'var u=new URL(\\'/u\\', location.href);</script>',",
+    "  '</body></html>',",
+    "].join('');",
+    'http.createServer((req, res) => {',
+    "  const prefix = req.headers['x-forwarded-prefix'] || '';",
+    "  if (req.url === '/' || req.url === '/html') {",
+    "    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });",
+    '    res.end(pageHtml(prefix));',
+    '    return;',
+    '  }',
+    "  if (req.url === '/302root') { res.writeHead(302, { location: '/' }); res.end(); return; }",
+    "  if (req.url === '/302abs') { res.writeHead(302, { location: '/done?x=1' }); res.end(); return; }",
+    "  if (req.url === '/302rel') { res.writeHead(302, { location: 'step3.html' }); res.end(); return; }",
+    "  if (req.url === '/302proto') { res.writeHead(302, { location: '//evil.example/x' }); res.end(); return; }",
+    "  if (req.url === '/302ext') { res.writeHead(302, { location: 'https://example.com/y' }); res.end(); return; }",
+    "  if (req.url === '/302self') {",
+    "    res.writeHead(302, { location: 'http://127.0.0.1:' + port + '/self' });",
+    '    res.end();',
+    '    return;',
+    '  }',
+    "  if (req.url === '/cookiepath') {",
+    "    res.writeHead(200, { 'content-type': 'text/plain', 'set-cookie': [",
+    "      'sid=abc; Path=/; HttpOnly',",
+    "      'plain=1',",
+    '    ] });',
+    "    res.end('cookies-ok');",
+    '    return;',
+    '  }',
+    "  if (req.url === '/gbk') {",
+    "    res.writeHead(200, { 'content-type': 'text/html; charset=iso-8859-1' });",
+    "    res.end(Buffer.from('<html><body>proxy-untouched-latin1-e9</body></html>', 'latin1'));",
+    '    return;',
+    '  }',
+    "  if (req.url === '/gz') {",
+    "    const gz = zlib.gzipSync(Buffer.from('<html><body>gz-content</body></html>'));",
+    "    res.writeHead(200, { 'content-type': 'text/html', 'content-encoding': 'gzip' });",
+    '    res.end(gz);',
+    '    return;',
+    '  }',
+    "  if (req.url === '/big') {",
+    "    const body = '<div class=\"x\">p</div>'.repeat(12000);",
+    "    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });",
+    '    res.end(body);',
+    '    return;',
+    '  }',
+    "  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });",
+    "  res.end('backend-alive:' + req.url);",
+    "}).listen(port, '127.0.0.1');",
+  ].join('\n');
+  const put = await fetch(`${BASE}/api/projects/${id}/files`, {
+    method: 'POST',
+    headers: { ...rwAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: 'server.js', content: textToBase64(serverSrc) }),
+  });
+  assertEqual(put.status, 200, '写入 server.js 应成功');
+
+  const published = await (await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST',
+    headers: { ...rwAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'publish', kind: 'js' }),
+  })).json();
+  assert(published.ok, `发布 js 后端项目应成功：${JSON.stringify(published)}`);
+  await waitForProjectReady(id, rwAuth);
+
+  // ---- Location 改写：POST-Redirect-GET 是应用表单推进的主流模式 ----
+  const manual = (path) => fetch(`${BASE}/p/${id}${path}`, { redirect: 'manual' });
+  const r1 = await manual('/302root');
+  assertEqual(r1.status, 302, '上游 302 应透传 302');
+  assertEqual(r1.headers.get('location'), `/p/${id}`, `Location: / 应改写为应用入口，实际 ${r1.headers.get('location')}`);
+  const r2 = await manual('/302abs');
+  assertEqual(r2.headers.get('location'), `/p/${id}/done?x=1`, '根绝对 Location 应加公开前缀');
+  const r3 = await manual('/302rel');
+  assertEqual(r3.headers.get('location'), 'step3.html', '相对 Location 原样');
+  const r4 = await manual('/302proto');
+  assertEqual(r4.headers.get('location'), '//evil.example/x', '协议相对 Location 原样');
+  const r5 = await manual('/302ext');
+  assertEqual(r5.headers.get('location'), 'https://example.com/y', '外链 Location 原样');
+  const r6 = await manual('/302self');
+  assertEqual(r6.headers.get('location'), `/p/${id}/self`, '按上游 Host 拼的 127.0.0.1 绝对 Location 应还原为公开前缀');
+
+  // ---- Set-Cookie Path 收进应用前缀（防应用 cookie 泄漏到宿主 /admin） ----
+  const cookieRes = await fetch(`${BASE}/p/${id}/cookiepath`);
+  const cookieList = typeof cookieRes.headers.getSetCookie === 'function'
+    ? cookieRes.headers.getSetCookie()
+    : [];
+  assertEqual(cookieList.length, 2, `应透传 2 条 Set-Cookie，实际 ${cookieList.length}`);
+  assert(cookieList[0].includes(`Path=/p/${id}/`), `显式 Path=/ 应改写为应用前缀，实际：${cookieList[0]}`);
+  assert(cookieList[1].includes(`Path=/p/${id}/`), `无 Path 的 cookie 应补应用前缀 Path，实际：${cookieList[1]}`);
+
+  // ---- HTML 注入：<base> + 静态改写 + 运行时 shim ----
+  const htmlRes = await fetch(`${BASE}/p/${id}/html`);
+  assertEqual(htmlRes.status, 200);
+  const html = await htmlRes.text();
+  assert(html.includes(`<base href="/p/${id}/">`), '应注入项目级 <base>');
+  assert(html.includes('href="style.css"'), '相对引用保留');
+  assert(html.includes('href="./"'), '根引用 / 应改写为 ./');
+  assert(html.includes('href="page2"'), '根绝对链接应改写为相对');
+  assert(html.includes(`href="/p/${id}/self"`), '已带公开前缀的引用应原样保留');
+  assert(html.includes('action="submit"'), 'form action 根绝对应改写为相对');
+  assert(html.includes('srcset="a.png 1x, b.png 2x"'), 'srcset 应逐候选改写');
+  assert(html.includes("fetch('/api/x')"), 'script 内容里的 fetch 字符串不被静态改写（由 shim 运行时处理）');
+  assert(html.includes('data-pagemake-proxy-shim'), '应注入运行时 shim');
+  assert(html.includes(`var BASE = '/p/${id}'`), 'shim BASE 应为实际公开前缀');
+  const entryRes = await fetch(`${BASE}/p/${id}`);
+  const entryHtml = await entryRes.text();
+  assert(
+    entryHtml.includes(`<base href="/p/${id}/">`) && entryHtml.includes('data-pagemake-proxy-shim'),
+    '入口页同样应注入 base 与 shim'
+  );
+
+  // ---- 非 UTF-8 字符集：跳过改写（decode→re-encode 会乱码） ----
+  const gbkRes = await fetch(`${BASE}/p/${id}/gbk`);
+  const gbkText = new TextDecoder('latin1').decode(new Uint8Array(await gbkRes.arrayBuffer()));
+  assert(gbkText.includes('proxy-untouched-latin1-e9'), 'latin1 内容应原样透传');
+  assert(
+    !gbkText.includes('<base') && !gbkText.includes('data-pagemake-proxy-shim'),
+    '非 UTF-8 字符集应整段跳过改写'
+  );
+
+  // ---- 上游强行压缩：整段跳过改写（fetch 会自动解压，解压后内容不应被注入） ----
+  const gzRes = await fetch(`${BASE}/p/${id}/gz`);
+  const gzText = await gzRes.text();
+  assert(gzText.includes('gz-content'), 'gzip 响应解压后内容完整');
+  assert(!gzText.includes('<base') && !gzText.includes('data-pagemake-proxy-shim'), '压缩响应应整段跳过改写');
+
+  // ---- 大响应耗时（改写必须线性，防 ReDoS 回归） ----
+  const started = Date.now();
+  const bigRes = await fetch(`${BASE}/p/${id}/big`);
+  const bigHtml = await bigRes.text();
+  const bigCost = Date.now() - started;
+  assert(bigHtml.length > 200 * 1024, '大响应应超过 200KB');
+  assert(bigHtml.includes(`<base href="/p/${id}/">`), '大响应也应被注入 base');
+  assert(bigCost < 1500, `200KB HTML 代理改写 + 传输应在 1.5s 内完成，实际 ${bigCost}ms`);
+
+  // ---- Referer 兜底：location.href='/x' 这类 shim 覆盖不到的逃逸 ----
+  const fromPage = await fetch(`${BASE}/nowhere-page`, {
+    headers: { referer: `${BASE}/p/${id}/html` },
+    redirect: 'manual',
+  });
+  assertEqual(fromPage.status, 302, '未匹配路由且来源是应用页 → 302 回应用内同名路径');
+  assertEqual(fromPage.headers.get('location'), `/p/${id}/nowhere-page`, '兜底目标应是应用内同名路径');
+  const noRef = await fetch(`${BASE}/nowhere-page`, { redirect: 'manual' });
+  assertEqual(noRef.status, 404, '无 Referer 不兜底（保持宿主 404 语义）');
+  const postRef = await fetch(`${BASE}/nowhere-page`, {
+    method: 'POST',
+    headers: { referer: `${BASE}/p/${id}/html`, 'Content-Type': 'application/json' },
+    body: '{}',
+    redirect: 'manual',
+  });
+  assertEqual(postRef.status, 404, 'POST 不兜底（重定向会丢请求体）');
+
+  // ---- 清理 ----
+  const del = await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST',
+    headers: { ...rwAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete' }),
+  });
+  assertEqual(del.status, 200, '删除后端项目应成功');
+});
+
 // js 形态（单文件 Node 脚本）没有 package.json 是**正常状态**。
 // refresh.js 曾漏掉 `kind !== 'js'` 例外，导致这类项目永远刷新失败
 // （400 MISSING_PACKAGE_JSON），而 publish 走的是 projects/[id].js 的正确判定。

@@ -27,7 +27,13 @@ import {
   BACKEND_PORT_START,
   isBackendKind,
 } from './state.js';
-import { normalizeRelPath, isValidRelPath } from './paths.js';
+import {
+  normalizeRelPath,
+  isValidRelPath,
+  rewriteLocalRefs,
+  injectPublicBase,
+  injectProxyShim,
+} from './paths.js';
 import { kvListAll, kvGet, keys, pathFromSiteKey } from './kv.js';
 import { canUseBackend, tierOf } from './tiers.js';
 
@@ -630,6 +636,55 @@ export function portOf(projectId) {
 }
 
 /**
+ * 改写上游响应的 Location 头。
+ *
+ * 用户应用 `res.redirect('/x')` 是表单提交后推进流程的主流写法；不改写浏览器
+ * 会跳到宿主根（https://host/x）脱离 /p/<id> 前缀——「点按钮后整页跳走 /
+ * 回退初始状态」的直接根因之一。规则：
+ * - 根绝对路径（/ 开头，排除协议相对 //）：`/` → publicPrefix，`/x` → publicPrefix/x
+ * - `http://127.0.0.1:<upstreamPort>` 开头：部分框架按 Host 头生成绝对地址，
+ *   而 Host 被我们改写成了上游地址，必须还原成公开前缀
+ * - 相对路径 / 外链 / 协议相对：原样返回
+ */
+function rewriteProxyLocation(rawLocation, publicPrefix, upstreamPort) {
+  const loc = String(rawLocation ?? '').trim();
+  if (!loc) return loc;
+  if (loc.startsWith('/') && !loc.startsWith('//')) {
+    if (loc === '/') return publicPrefix;
+    return `${publicPrefix}${loc}`;
+  }
+  const selfOrigin = `http://127.0.0.1:${upstreamPort}`;
+  if (loc === selfOrigin) return publicPrefix;
+  if (loc.startsWith(`${selfOrigin}/`)) {
+    return `${publicPrefix}${loc.slice(selfOrigin.length)}`;
+  }
+  return loc;
+}
+
+/**
+ * 把 Set-Cookie 的 Path 属性收进应用前缀。
+ *
+ * 应用 cookie 若落在宿主根（Path=/），会随请求泄漏给宿主自身的 /admin 等页面；
+ * 且 RFC 6265 的默认 path 按请求目录计算，入口 /p/<id> 会算到宿主根，必须显式
+ * 补 Path。规则：
+ * - 显式 Path=/xxx（根绝对，排除 //）：加前缀（`/` → publicPrefix/）
+ * - 完全没有 Path：追加 `Path=publicPrefix/`
+ * - 已带前缀或非根绝对（如 `Path=sub/`）：不动
+ */
+function rewriteProxyCookiePath(cookie, publicPrefix) {
+  const pathRe = /(;\s*path=)([^;]*)/i;
+  const match = cookie.match(pathRe);
+  if (!match) return `${cookie}; Path=${publicPrefix}/`;
+  const value = match[2].trim();
+  if (!value.startsWith('/') || value.startsWith('//')) return cookie;
+  // 应用自己已拼好公开前缀（它知道 x-forwarded-prefix）：原样保留，不能二次加前缀
+  if (value === publicPrefix || value.startsWith(`${publicPrefix}/`)) return cookie;
+  const target = value === '/' ? `${publicPrefix}/` : `${publicPrefix}${value}`;
+  if (target === value) return cookie;
+  return cookie.replace(pathRe, (whole, attrPrefix) => `${attrPrefix}${target}`);
+}
+
+/**
  * 反向代理一次 HTTP 请求到项目进程。
  * 返回 Web Response（调用方直接 return）。
  */
@@ -658,6 +713,10 @@ export async function proxy(projectId, request) {
   }
   headers.host = `127.0.0.1:${record.port}`;
   headers['x-forwarded-prefix'] = publicPrefix;
+  // 浏览器可能带 gzip/br，上游压缩后响应体是密文，无法做 HTML 改写（注入
+  // <base> 与 shim）。identity 保证拿到明文；上游仍强行压缩时由下方
+  // content-encoding 检查跳过改写，透传不受影响。
+  headers['accept-encoding'] = 'identity';
 
   let body = null;
   if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -719,10 +778,58 @@ export async function proxy(projectId, request) {
             responseHeaders.set(lower, Array.isArray(value) ? value.join(', ') : value);
           }
           const status = res.statusCode || 200;
+          // Location 改写：应用 res.redirect('/x') 不改写会跳出 /p/<id> 前缀
+          const loc = responseHeaders.get('location');
+          if (loc) {
+            const rewritten = rewriteProxyLocation(loc, publicPrefix, record.port);
+            if (rewritten !== loc) responseHeaders.set('location', rewritten);
+          }
+          // Set-Cookie 的 Path 收进应用前缀（逐条改写后重建，避免与宿主 cookie 串扰）
+          const setCookies = typeof responseHeaders.getSetCookie === 'function'
+            ? responseHeaders.getSetCookie()
+            : [];
+          if (setCookies.length) {
+            responseHeaders.delete('set-cookie');
+            for (const cookie of setCookies) {
+              responseHeaders.append('set-cookie', rewriteProxyCookiePath(cookie, publicPrefix));
+            }
+          }
           // 204/205/304 是「无 body」状态码：传任何 body（哪怕是空 Buffer）
           // 都会让 Response 构造抛 TypeError → 整个请求变 500。
           const nullBody = status === 204 || status === 205 || status === 304;
-          finish(new Response(nullBody ? null : Buffer.concat(chunks), {
+          let bodyBuffer = nullBody ? null : Buffer.concat(chunks);
+          // HTML 响应体改写：静态改写引用属性（rewriteLocalRefs）+ 注入 <base>
+          // （相对引用解析基准）+ 注入运行时 shim（fetch/XHR/window.open 的绝对
+          // 路径重写）。<base> 管不了 JS 字符串里的 fetch('/api/x')——那正是用户
+          // 应用「点按钮推进步骤」的主要实现方式，请求会逃出 /p/<id> 前缀打到
+          // 宿主自身 API → 401/404 → 应用前端重置回初始状态。
+          // 跳过改写：非 text/html / 无 body 状态码 / HEAD / 上游仍强行压缩
+          // （响应体是密文）/ 非 UTF-8 字符集（decode→re-encode 会乱码）。
+          const contentType = responseHeaders.get('content-type') || '';
+          const encoding = (responseHeaders.get('content-encoding') || '').toLowerCase();
+          // 兼容带引号的 charset="utf-8" 写法。声明了 charset 但提取不出值（罕见
+          // 写法）时按非 UTF-8 处理跳过改写——宁可少改，也不能把非 UTF-8 内容
+          // decode→re-encode 成乱码。
+          const charsetMatch = /charset=["']?([\w-]+)/i.exec(contentType);
+          const charsetOk = !/charset=/i.test(contentType)
+            || (charsetMatch
+              && ['utf-8', 'utf8'].includes(charsetMatch[1].toLowerCase()));
+          if (bodyBuffer && bodyBuffer.length > 0
+            && request.method !== 'HEAD'
+            && /^text\/html\b/i.test(contentType)
+            && (encoding === '' || encoding === 'identity')
+            && charsetOk) {
+            let html = bodyBuffer.toString('utf8');
+            html = rewriteLocalRefs(html, publicPrefix);
+            html = injectPublicBase(html, publicPrefix);
+            html = injectProxyShim(html, publicPrefix);
+            bodyBuffer = Buffer.from(html, 'utf8');
+            // 内容已变：长度与实体标签不再成立，必须删掉，否则浏览器按旧长度
+            // 截断响应，或拿上游 etag 做条件请求拿到错配的 304。
+            responseHeaders.delete('content-length');
+            responseHeaders.delete('etag');
+          }
+          finish(new Response(nullBody ? null : bodyBuffer, {
             status,
             headers: responseHeaders,
           }));

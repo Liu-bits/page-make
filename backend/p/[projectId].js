@@ -1,9 +1,10 @@
 // GET /p/:projectId — 公开访问（任何人可访问，无需登录）
 // 项目被 ban → 「该内容已被下架」；链接过期 → 过期提示页
-import { getKV, kvGet, kvPut, keys, nowSeconds } from '../lib/kv.js';
+import { getKV, kvGet, keys, nowSeconds } from '../lib/kv.js';
 import { contentTypeFor, htmlPage } from '../lib/responses.js';
 import { STATUS, isBackendKind, normalizeKind } from '../lib/state.js';
 import { injectPublicBase, rewriteLocalRefs } from '../lib/paths.js';
+import { mutateProject } from '../lib/project.js';
 import { proxy } from '../lib/backend-runtime.js';
 
 const ID_RE = /^[a-f0-9]{32}$/;
@@ -49,11 +50,15 @@ export async function onRequest(context) {
 
   const type = contentTypeFor(entry);
   // 游客项目按「连续 7 天无人访问」过期：每次成功响应都刷新 lastAccessAt。
-  // 写回失败不影响本次访问（下次再补），避免公开路由被 KV 抖动拖垮。
+  // 读改写必须进项目锁：与封禁 / 升级 / 删除并发时，这里的旧快照整记录回写
+  // 会把 banned 状态覆盖回正常、把已删除的记录复活成幽灵项目（TOCTOU）。
+  // 锁内以最新记录为准：过期已被升级清除或项目已被封禁时不再回写。
   if (project.expiresAt && project.userId?.startsWith('guest_')) {
-    project.lastAccessAt = nowSeconds();
-    project.expiresAt = project.lastAccessAt + (7 * 24 * 3600);
-    kvPut(kv, keys.project(id), project).catch(() => {});
+    await mutateProject(kv, id, (record) => {
+      if (!record.expiresAt || record.status === 'banned') return false;
+      record.lastAccessAt = nowSeconds();
+      record.expiresAt = record.lastAccessAt + (7 * 24 * 3600);
+    });
   }
   // 入口 URL 没有尾斜杠，相对资源会被浏览器解析到 /p/ 根。注入项目级
   // <base> 是唯一能同时覆盖 HTML/CSS/JS/图片与运行时 fetch 的统一下发兜底。

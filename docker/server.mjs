@@ -283,6 +283,32 @@ const server = http.createServer(async (req, res) => {
 
     const route = ROUTES.find((r) => r.pattern.test(pathname));
     if (!route) {
+      // 用户后端应用里 JS 写死绝对路径跳转（location.href = '/x'）会逃出
+      // /p/<id> 前缀——location 赋值浏览器不允许劫持，代理注入的 shim 覆盖
+      // 不到，只能在宿主层兜底：来源页是某个 /p/<id> 应用、目标又不匹配任何
+      // 路由时，302 回该应用内同名路径。
+      // 只兜 GET/HEAD：POST 重定向会丢请求体，静默丢数据比 404 更糟。
+      // 只在「未匹配任何路由」时触发：宿主自身的 /api、/admin、/healthz 与
+      // /p/ 路由不受影响，应用内部的 404（已匹配 /p/ 路由）也保持原语义。
+      if (req.method === 'GET' || req.method === 'HEAD') {
+        const referer = req.headers.referer;
+        if (referer) {
+          try {
+            const refererPath = new URL(referer).pathname;
+            const fromApp = refererPath.match(/^\/p\/([a-f0-9]{32})(?:\/|$)/);
+            if (fromApp && !pathname.startsWith('/p/')) {
+              const search = new URL(request.url).search;
+              const target = `/p/${fromApp[1]}${encodeURI(pathname)}${search}`;
+              res.writeHead(302, { Location: target });
+              res.end();
+              console.log(`${req.method} ${pathname} → 302 ${target}（Referer 前缀兜底, ${Date.now() - startedAt}ms）`);
+              return;
+            }
+          } catch {
+            // Referer 非法按无兜底处理
+          }
+        }
+      }
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('Not Found');
       return;

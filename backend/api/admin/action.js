@@ -29,6 +29,7 @@ import {
   normalizeKind,
 } from '../../lib/state.js';
 import { deleteUserAccount, purgePasswordUsers } from '../../lib/admin-users.js';
+import { mutateProject, deleteProjectGuarded } from '../../lib/project.js';
 import {
   deployBackendApp,
   stop as stopBackendRuntime,
@@ -66,16 +67,16 @@ async function banUser(kv, { userId, level, reason, days }) {
 
   // 项目全部下架（banned 状态公开页 403「已下架」）
   await forEachUserProject(kv, userId, async (projectId) => {
-    const project = await kvGet(kv, keys.project(projectId));
-    if (!project) return;
-    if (project.status !== 'banned') {
+    // 锁内读改写：与公开页游客 TTL 刷新并发时，旧快照整记录回写会把
+    // banned 状态覆盖回正常（封号后站点仍可访问）。
+    const after = await mutateProject(kv, projectId, (project) => {
+      if (project.status === 'banned') return false;
       project._preBanStatus = project.status;
       project.status = 'banned';
-      await kvPut(kv, keys.project(projectId), project);
-    }
+    });
     // 下架不仅是隐藏页面：npm/pnpm 常驻进程也必须停止，否则封禁账号
     // 仍能继续消耗 CPU、内存和内部端口。历史已下架记录也要补做回收。
-    if (isBackendKind(normalizeKind(project.kind))) {
+    if (after && isBackendKind(normalizeKind(after.kind))) {
       await stopBackendRuntime(projectId);
     }
   });
@@ -95,8 +96,12 @@ async function unbanUser(kv, { userId }, context) {
 
   const restoreTasks = [];
   await forEachUserProject(kv, userId, async (projectId) => {
-    const project = await kvGet(kv, keys.project(projectId));
-    if (project && project.status === 'banned') {
+    // 锁内恢复：解封与公开页 TTL 刷新 / 再次封禁并发时，旧快照回写会把
+    // banned 覆盖回 ready 或把恢复中的 processing 覆盖掉。
+    let needsRestore = false;
+    let restoreKind = null;
+    await mutateProject(kv, projectId, (project) => {
+      if (project.status !== 'banned') return false;
       project.status = project._preBanStatus === 'failed' ? 'failed' : 'ready';
       delete project._preBanStatus;
       project.errorCode = null;
@@ -104,36 +109,37 @@ async function unbanUser(kv, { userId }, context) {
         // 解封请求不能同步等 4 分钟依赖安装；先标记 processing，
         // 再交给 waitUntil 恢复常驻进程，客户端可继续轮询项目状态。
         project.status = STATUS.PROCESSING;
-        await kvPut(kv, keys.project(projectId), project);
-        restoreTasks.push((async () => {
-          try {
-            const runtime = await deployBackendApp({
-              kv,
-              projectId,
-              kind: normalizeKind(project.kind),
-            });
-            const latest = await kvGet(kv, keys.project(projectId));
-            if (!latest) {
-              await stopBackendRuntime(projectId);
-              return;
-            }
-            latest.status = STATUS.READY;
-            latest.errorCode = null;
-            latest.runtimePort = runtime.port;
-            latest.runtimeKind = runtime.kind;
-            await kvPut(kv, keys.project(projectId), latest);
-          } catch (error) {
-            const latest = await kvGet(kv, keys.project(projectId));
-            if (!latest) return;
-            latest.status = STATUS.FAILED;
-            latest.errorCode = error?.code || 'RUNTIME_UNAVAILABLE';
-            await kvPut(kv, keys.project(projectId), latest);
-          }
-        })());
-        return;
+        needsRestore = true;
+        restoreKind = normalizeKind(project.kind);
       }
-      await kvPut(kv, keys.project(projectId), project);
-    }
+    });
+    if (!needsRestore) return;
+    restoreTasks.push((async () => {
+      try {
+        const runtime = await deployBackendApp({
+          kv,
+          projectId,
+          kind: restoreKind,
+        });
+        // 部署期间项目可能被再次封禁 / 删除：锁内复核 + 写回，
+        // 不能拿部署前的内存快照把 banned 状态覆盖回 ready。
+        const saved = await mutateProject(kv, projectId, (record) => {
+          if (record.status === 'banned') return false;
+          record.status = STATUS.READY;
+          record.errorCode = null;
+          record.runtimePort = runtime.port;
+          record.runtimeKind = runtime.kind;
+        });
+        if (!saved) await stopBackendRuntime(projectId);
+      } catch (error) {
+        const saved = await mutateProject(kv, projectId, (record) => {
+          if (record.status === 'banned') return false;
+          record.status = STATUS.FAILED;
+          record.errorCode = error?.code || 'RUNTIME_UNAVAILABLE';
+        });
+        if (!saved) return;
+      }
+    })());
   });
   const restoreTask = Promise.all(restoreTasks);
   if (restoreTasks.length && typeof context?.waitUntil === 'function') {
@@ -232,12 +238,15 @@ async function applyTier(kv, user, tier) {
 async function clearGuestLinkExpiry(kv, userId) {
   let cleared = 0;
   await forEachUserProject(kv, userId, async (projectId) => {
-    const project = await kvGet(kv, keys.project(projectId));
-    if (project && project.expiresAt) {
+    let changed = false;
+    // 锁内读改写：升级与公开页 TTL 刷新并发时，旧快照回写会把刚清掉的
+    // expiresAt 又写回去，用户看到「已升级但旧链接仍 410」。
+    await mutateProject(kv, projectId, (project) => {
+      if (!project.expiresAt) return false;
       project.expiresAt = null;
-      await kvPut(kv, keys.project(projectId), project);
-      cleared += 1;
-    }
+      changed = true;
+    });
+    if (changed) cleared += 1;
   });
   return cleared;
 }
@@ -262,13 +271,14 @@ async function reapplyGuestLinkExpiry(kv, userId) {
   const expiresAt = nowSeconds() + GUEST_LINK_IDLE_SECONDS;
   let limited = 0;
   await forEachUserProject(kv, userId, async (projectId) => {
-    const project = await kvGet(kv, keys.project(projectId));
-    if (!project) return;
-    // 已经设置过且未到期的保持原时间，避免把用户的剩余时间一刀切掉
-    if (project.expiresAt && project.expiresAt > nowSeconds()) return;
-    project.expiresAt = expiresAt;
-    await kvPut(kv, keys.project(projectId), project);
-    limited += 1;
+    let changed = false;
+    await mutateProject(kv, projectId, (project) => {
+      // 已经设置过且未到期的保持原时间，避免把用户的剩余时间一刀切掉
+      if (project.expiresAt && project.expiresAt > nowSeconds()) return false;
+      project.expiresAt = expiresAt;
+      changed = true;
+    });
+    if (changed) limited += 1;
   });
   return limited;
 }
@@ -339,12 +349,9 @@ async function deleteVIPRequest(kv, { userId }) {
 async function deleteProjectAdmin(kv, { projectId }) {
   const project = await kvGet(kv, keys.project(projectId));
   if (!project) return fail('NOT_FOUND', 404);
-  const userId = project.userId;
-  await stopBackendRuntime(projectId);
-  for (const key of await kvListAll(kv, keys.sitePrefix(projectId))) await kvDel(kv, key);
-  await kvDel(kv, keys.siteMeta(projectId));
-  await kvDel(kv, keys.project(projectId));
-  await kvDel(kv, keys.userProject(userId, projectId));
+  // 锁内删除 + 复核：公开页 TTL 刷新等并发写不会把已删除的记录复活成幽灵项目
+  const removed = await deleteProjectGuarded(kv, project.userId, projectId);
+  if (!removed) return fail('NOT_FOUND', 404);
   return ok({ deleted: true, projectId });
 }
 

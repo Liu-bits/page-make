@@ -4,6 +4,7 @@ import { requireAuth } from './session.js';
 import { fail } from './responses.js';
 import { ERR } from './state.js';
 import { isValidRelPath } from './paths.js';
+import { withLock } from './lock.js';
 import { stop as stopBackendRuntime } from './backend-runtime.js';
 
 const PHP_FILE_RE = /\.php$/i;
@@ -38,7 +39,13 @@ export async function readSiteFiles(kv, projectId) {
 }
 
 // 更新项目记录中的文件清单（重算 fileCount / size / updatedAt）
-export async function syncProjectFiles(kv, project) {
+//
+// **故意不加锁**：files.js 的 lockedProject() 已经持有 `project:<id>` 锁并在锁内
+// 调用本函数，锁不可重入，这里再加锁会自锁死整个文件 API。
+// 需要锁定语义的调用方（[id].js / refresh.js 的发布与刷新回写）请用下面的
+// syncProjectFilesLocked。patch 用于把状态类字段（status / runtimePort 等）
+// 与文件清单在同一次临界区里合并写回，避免两次写之间被并发修改穿插。
+export async function syncProjectFiles(kv, project, patch = null) {
   const keyList = await kvListAll(kv, keys.sitePrefix(project.id));
   const files = [];
   let total = 0;
@@ -59,9 +66,95 @@ export async function syncProjectFiles(kv, project) {
   project.folders = normalizeFolders(project.folders, files.map((file) => file.path));
   // 历史 PHP 入口在重新发布/刷新时必须失效，避免继续生成 404 链接。
   if (project.entryPath && PHP_FILE_RE.test(project.entryPath)) project.entryPath = null;
+  if (patch) Object.assign(project, patch);
   project.updatedAt = nowSeconds();
   await kvPut(kv, keys.project(project.id), project);
   return project;
+}
+
+/* ============================== 项目记录写原语 ==============================
+ *
+ * 项目记录（keys.project(id)）的写入方遍布五处：管理端封禁/解封/升降级/删除、
+ * 公开页游客 TTL 刷新、文件编辑器、发布/刷新回写、上传处理管线。它们全是
+ * 「读记录 → 改字段 → 写回」模式，不加锁时两个并发请求各自拿旧快照回写，
+ * 后写者会把先写者的变更整体覆盖掉：
+ *   - 封号瞬间用户正好访问公开页 → 旧快照把 status: 'banned' 覆盖回正常；
+ *   - 删号瞬间公开页刷新 TTL → 已删除的记录被复活成幽灵项目；
+ *   - 解封异步恢复部署期间项目又被封 → 恢复任务把 banned 覆盖回 ready。
+ * 统一约定：**所有项目记录写入都必须走下面四个原语之一**（files.js 自带
+ * lockedProject 临界区，锁内直接调 syncProjectFiles / kvPut，属同一约定）。
+ * ========================================================================== */
+
+/**
+ * 项目记录读改写（锁内重读最新快照后交给 mutate 修改并写回）。
+ * @param {Function} mutate 接收最新记录就地修改；返回 false 表示本次不写回
+ * @returns {object|null} 锁内读到的最新记录；记录不存在时返回 null
+ */
+export async function mutateProject(kv, projectId, mutate) {
+  return withLock(`project:${projectId}`, async () => {
+    const record = await kvGet(kv, keys.project(projectId));
+    if (!record) return null;
+    if (mutate(record) !== false) {
+      await kvPut(kv, keys.project(projectId), record);
+    }
+    return record;
+  });
+}
+
+/**
+ * 项目记录创建/整体写回（上传管线用）。锁内复核：记录已存在且为封禁状态时
+ * 不写入（返回 null），防止「封号瞬间上传处理完成」把项目写成 ready 绕过下架。
+ * @param {Function} build 接收已存在的记录（可能为 null），返回要写入的完整记录
+ */
+export async function writeProjectRecord(kv, projectId, build) {
+  return withLock(`project:${projectId}`, async () => {
+    const existing = await kvGet(kv, keys.project(projectId));
+    if (existing && existing.status === 'banned') return null;
+    const record = build(existing);
+    await kvPut(kv, keys.project(projectId), record);
+    return record;
+  });
+}
+
+/**
+ * 锁定版文件清单同步：锁内重读最新记录 → 重算文件清单 → 合并 patch → 写回。
+ * 与 mutateProject 同锁粒度，发布/刷新的异步回写用它替代「手动 kvGet latest
+ * 再整记录写回」的旧模式（那类写回在项目被并发删除时会复活记录）。
+ * @returns {object|null} 写回后的最新记录；记录已被并发删除时返回 null
+ */
+export async function syncProjectFilesLocked(kv, projectId, patch = null) {
+  return withLock(`project:${projectId}`, async () => {
+    const record = await kvGet(kv, keys.project(projectId));
+    if (!record) return null;
+    // 封禁守卫：发布/刷新是慢速异步任务，回写期间账号可能刚被封禁。
+    // 不加这条守卫会把 banned 状态覆盖回 ready，等于绕过下架。
+    // （调用方拿到 null 应按「项目已不可见」处理，如回收常驻进程。）
+    if (record.status === 'banned') return null;
+    await syncProjectFiles(kv, record, patch);
+    return record;
+  });
+}
+
+/**
+ * 锁定版项目删除：文件 + 元信息 + 记录 + 索引一次删净。
+ * 锁内复核记录仍在（可能已被并发删除），删除期间公开页 TTL 刷新等并发写
+ * 会排在锁后面，读到的是删除后的空记录 → 不会复活。
+ * @returns {boolean} 是否实际删除了记录
+ */
+export async function deleteProjectGuarded(kv, userId, projectId) {
+  return withLock(`project:${projectId}`, async () => {
+    const record = await kvGet(kv, keys.project(projectId));
+    if (!record) return false;
+    // 后端项目有常驻 Node 进程，必须先回收再删 KV；否则项目虽然 404，
+    // 端口和内存仍被旧进程占着。
+    await stopBackendRuntime(projectId);
+    const keyList = await kvListAll(kv, keys.sitePrefix(projectId));
+    for (const key of keyList) await kvDel(kv, key);
+    await kvDel(kv, keys.siteMeta(projectId));
+    await kvDel(kv, keys.project(projectId));
+    await kvDel(kv, keys.userProject(userId, projectId));
+    return true;
+  });
 }
 
 /**
@@ -94,16 +187,9 @@ export function normalizeFolders(explicitFolders, filePaths = []) {
   return [...result].sort((a, b) => a.localeCompare(b));
 }
 
-// 删除项目：文件 + 元信息 + 记录 + 索引
+// 删除项目：文件 + 元信息 + 记录 + 索引（委托锁定版，防并发写复活记录）
 export async function deleteProjectRecords(kv, userId, id) {
-  // 后端项目有常驻 Node 进程，必须先回收再删 KV；否则项目虽然 404，
-  // 端口和内存仍被旧进程占着。
-  await stopBackendRuntime(id);
-  const keyList = await kvListAll(kv, keys.sitePrefix(id));
-  for (const key of keyList) await kvDel(kv, key);
-  await kvDel(kv, keys.siteMeta(id));
-  await kvDel(kv, keys.project(id));
-  await kvDel(kv, keys.userProject(userId, id));
+  return deleteProjectGuarded(kv, userId, id);
 }
 
 // 项目状态对外输出（含过期判定：所有线路 expiresAt 到期均记为过期）

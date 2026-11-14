@@ -6,6 +6,7 @@ import { deploySite } from './deploy/index.js';
 import { normalizeKind, isBackendKind, PROJECT_KIND } from './state.js';
 import { deployBackendApp, stop as stopBackendApp } from './backend-runtime.js';
 import { rewriteLocalRefs, rewriteCssRefs } from './paths.js';
+import { writeProjectRecord } from './project.js';
 import {
   keys, kvGet, kvPut, kvDel, kvListAll, readChunkWithRetry,
   nowSeconds, appendLog, pathFromSiteKey,
@@ -57,24 +58,34 @@ function normalizeHtmlRefs(files) {
  * upload: { uploadId, userId, provider, files: [{name, size}] }
  */
 export async function processUpload(args) {
-  const { kv, upload, projectId, origin, env } = args;
-  const started = Date.now();
-  const finish = async (status, extra) => {
-    const project = {
-      id: projectId,
-      userId: upload.userId,
-      provider: upload.provider,
-      kind: normalizeKind(upload.kind),
-      status,
-      ...extra,
-      createdAt: nowSeconds(),
-      diagnostics: extra.diagnostics ?? [],
-      runtimeErrors: extra.runtimeErrors ?? [],
-      files: extra.files ?? [],
+    const { kv, upload, projectId, origin, env } = args;
+    const started = Date.now();
+    const finish = async (status, extra) => {
+      // 上传处理在 waitUntil 里异步执行：完成前账号可能刚被封禁（封禁会下架
+      // 全部项目并拦截登录）。写入前复查用户最新状态，避免「封号瞬间上传完成」
+      // 把项目写成 ready 绕过下架；并发封禁先写入的 banned 也不会被覆盖
+      // （writeProjectRecord 锁内复核 existing.status === 'banned' 时拒绝写入）。
+      let latestUser = null;
+      try {
+        latestUser = await kvGet(kv, keys.user(upload.userId));
+      } catch {
+        // 读失败按未封禁处理，保持原行为
+      }
+      const effectiveStatus = latestUser?.status === 'banned' ? 'banned' : status;
+      const project = {
+        id: projectId,
+        userId: upload.userId,
+        provider: upload.provider,
+        kind: normalizeKind(upload.kind),
+        status: effectiveStatus,
+        ...extra,
+        createdAt: nowSeconds(),
+        diagnostics: extra.diagnostics ?? [],
+        runtimeErrors: extra.runtimeErrors ?? [],
+        files: extra.files ?? [],
+      };
+      return writeProjectRecord(kv, projectId, () => project);
     };
-    await kvPut(kv, keys.project(projectId), project);
-    return project;
-  };
 
   try {
     // 上传异步处理期间，账号可能刚被管理员升级为 VIP。以处理完成时的最新角色

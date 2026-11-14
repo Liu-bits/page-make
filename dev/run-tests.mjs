@@ -12,7 +12,7 @@ import { bytesToBase64, base64ToBytes, base64urlToBytes, encodeKey, decodeKey } 
 import { decodeJwt } from '../backend/lib/apple-auth.js';
 import { createJwksLoader } from '../backend/lib/jwks.js';
 import { processUpload } from '../backend/lib/process.js';
-import { rewriteLocalRefs, rewriteCssRefs } from '../backend/lib/paths.js';
+import { rewriteLocalRefs, rewriteCssRefs, injectPublicBase, injectProxyShim } from '../backend/lib/paths.js';
 import {
   STATUS, ERR, PROVIDERS, SESSION_TTL_SECONDS,
   MAX_TOTAL_BYTES, CHUNK_BYTES, BAN_LEVELS,
@@ -808,6 +808,66 @@ await test('未闭合注释的 CSS 改写保持线性', async () => {
   const cost = Date.now() - started;
   assertEqual(out, css, '没有可改写的引用时应原样返回');
   assert(cost < 2000, `540KB 未闭合注释应在 2s 内完成，实际 ${cost}ms`);
+});
+
+console.log('\n[16] 后端项目代理前缀改写（rewriteLocalRefs 前缀感知 / injectPublicBase / injectProxyShim）');
+
+const PROXY_PID = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6';
+const PROXY_PREFIX = `/p/${PROXY_PID}`;
+
+await test('rewriteLocalRefs 带前缀：根绝对引用改写为相对，已带前缀的保留', async () => {
+  const html = [
+    '<a href="/api/list">列表</a>',
+    '<a href="/">首页</a>',
+    '<a href="/x?q=1#f">带参数</a>',
+    `<a href="${PROXY_PREFIX}/self">自身</a>`,
+    '<a href="https://example.com">外链</a>',
+    '<form action="/submit" method="post"></form>',
+  ].join('');
+  const out = rewriteLocalRefs(html, PROXY_PREFIX);
+  assert(out.includes('href="api/list"'), '根绝对 a[href] 应改写为相对路径');
+  assert(out.includes('href="./"'), '根引用 / 应改写为 ./（配合 base 落到项目入口）');
+  assert(out.includes('href="x?q=1#f"'), '查询串与锚点应保留');
+  assert(out.includes(`<a href="${PROXY_PREFIX}/self">自身</a>`), '已带公开前缀的引用应原样保留');
+  assert(out.includes('href="https://example.com"'), '外链不动');
+  assert(out.includes('action="submit"'), 'form action 根绝对应改写为相对路径');
+  // 不传前缀：历史行为不受影响（`/` → `./` 对纯前端项目同样是修复）
+  assert(rewriteLocalRefs('<a href="/api/list">x</a>').includes('href="api/list"'), '不带前缀参数时行为与历史一致');
+  assert(rewriteLocalRefs('<a href="/">x</a>').includes('href="./"'), '不带前缀参数时 / 仍改写为 ./');
+});
+
+await test('injectProxyShim：幂等、BASE 字面量、插入位置', async () => {
+  const html = '<html><head><title>t</title></head><body></body></html>';
+  const once = injectProxyShim(html, PROXY_PREFIX);
+  assert(once.includes('data-pagemake-proxy-shim'), '应注入 shim 脚本');
+  assert(once.includes(`var BASE = '${PROXY_PREFIX}'`), 'BASE 应为实际公开前缀');
+  const shimAt = once.indexOf('<script data-pagemake-proxy-shim>');
+  const titleAt = once.indexOf('<title>');
+  assert(shimAt > -1 && shimAt < titleAt, 'shim 应注入在 head 开标签之后、用户脚本之前');
+  assertEqual(injectProxyShim(once, PROXY_PREFIX), once, '重复注入应幂等');
+  const injected = injectProxyShim('<div>片段</div>', PROXY_PREFIX);
+  assert(injected.startsWith('<script data-pagemake-proxy-shim>'), '无 head/html/body 的片段应前置注入');
+});
+
+await test('injectPublicBase：用户自写 base href="/" 替换为项目前缀，CDN base 保留', async () => {
+  const replaced = injectPublicBase('<html><head><base href="/"></head></html>', PROXY_PREFIX);
+  assert(replaced.includes(`<base href="${PROXY_PREFIX}/">`), '根 base 应替换为项目前缀 base');
+  assert(!replaced.includes('<base href="/">'), '不应残留根 base');
+  const cdn = injectPublicBase('<html><head><base href="https://cdn.example/"></head></html>', PROXY_PREFIX);
+  assert(cdn.includes('<base href="https://cdn.example/">'), 'CDN base 尊重用户意图不动');
+  assert(injectPublicBase('<html><head><title>t</title></head></html>', PROXY_PREFIX).includes(`<base href="${PROXY_PREFIX}/">`), '无 base 时应正常注入（回归）');
+});
+
+await test('代理改写三步组合：大 HTML 保持线性（防 ReDoS 回归）', async () => {
+  const html = '<div class="x">段落内容</div><a href="/x">链</a>'.repeat(6000);
+  const started = Date.now();
+  let out = rewriteLocalRefs(html, PROXY_PREFIX);
+  out = injectPublicBase(out, PROXY_PREFIX);
+  out = injectProxyShim(out, PROXY_PREFIX);
+  const cost = Date.now() - started;
+  assert(cost < 1000, `约 260KB HTML 三步改写应在 1s 内完成，实际 ${cost}ms`);
+  assert(out.includes(`<base href="${PROXY_PREFIX}/">`), '组合后应包含 base');
+  assert(out.includes('data-pagemake-proxy-shim'), '组合后应包含 shim');
 });
 
 console.log(`\n结果：${passed} 通过，${failed} 失败\n`);

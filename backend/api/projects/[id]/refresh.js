@@ -1,10 +1,10 @@
 // POST /api/projects/:id/refresh — 刷新链接（从存储取回文件重新部署）
 // 重新部署 → 更新 expiresAt → 返回新链接
-import { getOwnedProject, readSiteFiles, syncProjectFiles, projectPublicUrl } from '../../../lib/project.js';
+import { getOwnedProject, readSiteFiles, syncProjectFilesLocked, mutateProject, projectPublicUrl } from '../../../lib/project.js';
 import { deploySite } from '../../../lib/deploy/index.js';
 import { deployBackendApp, stop as stopBackendApp } from '../../../lib/backend-runtime.js';
 import { findEntry } from '../../../lib/diagnostics.js';
-import { appendLog, nowSeconds, kvGet, kvPut, keys } from '../../../lib/kv.js';
+import { appendLog, nowSeconds } from '../../../lib/kv.js';
 import { ok, fail } from '../../../lib/responses.js';
 import { STATUS, GUEST_LINK_IDLE_SECONDS, isBackendKind, normalizeKind } from '../../../lib/state.js';
 import { isGuestLimited } from '../../../lib/session.js';
@@ -36,12 +36,15 @@ export async function onRequest(context) {
       // js 项目永远刷新失败（400 MISSING_PACKAGE_JSON）。
       if (kind !== 'js' && !files.has('package.json')) return fail('MISSING_PACKAGE_JSON', 400);
 
-      project.kind = kind;
-      project.entryPath = null;
-      project.status = STATUS.PROCESSING;
-      project.errorCode = null;
-      project.url = projectPublicUrl(new URL(request.url).origin, project.id);
-      await syncProjectFiles(kv, project);
+      // 锁内写 processing：与封禁/删除并发时旧快照不会覆盖新状态
+      const updated = await syncProjectFilesLocked(kv, project.id, {
+        kind,
+        entryPath: null,
+        status: STATUS.PROCESSING,
+        errorCode: null,
+        url: projectPublicUrl(new URL(request.url).origin, project.id),
+      });
+      if (!updated) return fail('NOT_FOUND', 404);
 
       const refreshTask = (async () => {
         try {
@@ -52,18 +55,19 @@ export async function onRequest(context) {
             // 超时/并发配额按当前账号等级取，不用项目记录里的陈旧 tier
             tier: tierOf(user),
           });
-          // 刷新期间项目可能被删除；只更新仍然存在的记录。
-          const latest = await kvGet(kv, keys.project(project.id));
-          if (!latest) {
+          // 刷新期间项目可能被删除 / 再次封禁：锁内复核 + 写回，
+          // 只更新仍然存在且未被封禁的记录，不复活旧快照。
+          const saved = await syncProjectFilesLocked(kv, project.id, {
+            status: STATUS.READY,
+            errorCode: null,
+            runtimePort: runtime.port,
+            runtimeKind: runtime.kind,
+            expiresAt: null,
+          });
+          if (!saved) {
             await stopBackendApp(project.id);
             return;
           }
-          latest.status = STATUS.READY;
-          latest.errorCode = null;
-          latest.runtimePort = runtime.port;
-          latest.runtimeKind = runtime.kind;
-          latest.expiresAt = null;
-          await syncProjectFiles(kv, latest);
           await appendLog(kv, {
             projectId: project.id,
             step: 'refresh_backend',
@@ -73,14 +77,17 @@ export async function onRequest(context) {
           });
         } catch (error) {
           await stopBackendApp(project.id);
-          project.status = STATUS.FAILED;
-          project.errorCode = error?.code || 'RUNTIME_UNAVAILABLE';
-          await kvPut(kv, keys.project(project.id), project);
+          const saved = await mutateProject(kv, project.id, (record) => {
+            if (record.status === 'banned') return false;
+            record.status = STATUS.FAILED;
+            record.errorCode = error?.code || 'RUNTIME_UNAVAILABLE';
+          });
+          if (!saved) return;
           await appendLog(kv, {
             projectId: project.id,
             step: 'refresh_backend',
             result: 'failed',
-            errorCode: project.errorCode,
+            errorCode: saved.errorCode,
             duration: Date.now() - started,
           });
         }
@@ -91,7 +98,7 @@ export async function onRequest(context) {
       } else {
         await refreshTask;
       }
-      return ok({ project });
+      return ok({ project: updated });
     }
 
     // 历史项目的 entryPath 可能是已下线的 .php；刷新时重新选择 HTML 入口。
@@ -114,36 +121,35 @@ export async function onRequest(context) {
       name: project.name,
     });
 
-    project.status = STATUS.READY;
-    project.errorCode = null;
-    project.entryPath = entry;
-    // 游客链接按「连续 7 天无人访问」重新计时（登录用户长期有效）
-    project.expiresAt = isGuestLimited(user)
-      ? nowSeconds() + GUEST_LINK_IDLE_SECONDS
-      : deploy.expiresAt;
-    if (deploy.deploymentUrl) project.deploymentUrl = deploy.deploymentUrl;
-    // 持久化：内存对象不会自动写回 KV（历史缺陷：刷新后列表/状态读到的仍是旧记录）
-    await kvPut(kv, keys.project(project.id), project);
+    // 锁内读改写：持久化 + 与封禁/删除并发互斥（历史缺陷：内存对象不写回 KV，
+    // 列表/状态读到的仍是旧记录；无锁整记录回写则会覆盖并发变更）
+    const updated = await mutateProject(kv, project.id, (record) => {
+      // 刷新期间账号可能刚被封禁：封禁下架状态不能被 ready 覆盖
+      if (record.status === 'banned') return false;
+      record.status = STATUS.READY;
+      record.errorCode = null;
+      record.entryPath = entry;
+      // 游客链接按「连续 7 天无人访问」重新计时（登录用户长期有效）
+      record.expiresAt = isGuestLimited(user)
+        ? nowSeconds() + GUEST_LINK_IDLE_SECONDS
+        : deploy.expiresAt;
+      if (deploy.deploymentUrl) record.deploymentUrl = deploy.deploymentUrl;
+    });
+    if (!updated) return fail('NOT_FOUND', 404);
     await appendLog(kv, { projectId: project.id, step: 'refresh', result: 'ok', duration: Date.now() - started });
 
-    return ok({ project });
+    return ok({ project: updated });
   } catch (error) {
-    // 项目可能在刷新期间被删除：写回前必须确认记录还在，否则会把已删除的项目
-    // “复活”（列表/统计里凭空多出一个孤儿记录），且回写的是部署前的旧快照。
-    let latest = null;
+    // 项目可能在刷新期间被删除：mutateProject 锁内重读，记录不存在时不写回，
+    // 绝不把已删除的项目“复活”（列表/统计凭空多出孤儿记录）。
     try {
-      latest = await kvGet(kv, keys.project(project.id));
+      await mutateProject(kv, project.id, (record) => {
+        if (record.status === 'banned') return false;
+        record.status = STATUS.FAILED;
+        record.errorCode = error.code || 'STORAGE_ERROR';
+      });
     } catch {
-      // 读失败按「已不存在」处理，绝不写回
-    }
-    if (latest) {
-      latest.status = STATUS.FAILED;
-      latest.errorCode = error.code || 'STORAGE_ERROR';
-      try {
-        await kvPut(kv, keys.project(project.id), latest);
-      } catch {
-        // 持久化失败不掩盖原始错误
-      }
+      // 持久化失败不掩盖原始错误
     }
     await appendLog(kv, { projectId: project.id, step: 'refresh', result: 'failed', errorCode: error.code, duration: Date.now() - started });
     // 客户端错误用 4xx（参数/配额/形态问题不是服务端故障），只有存储/运行时才是 500
