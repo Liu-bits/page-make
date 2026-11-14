@@ -24,7 +24,7 @@ export const PROVIDERS = new Set(['local', 'edgeone', 'cloudflare']);
 /**
  * 部署形态（部署选项三选一）。
  * - static：纯前端，直接由 /p/<id> 下发文件（原有能力，所有等级可用）
- * - npm / pnpm：后端项目，容器内安装依赖并常驻 Node 进程，/p/<id> 反向代理
+ * - npm / pnpm / bun：后端项目，容器内安装依赖并常驻进程，/p/<id> 反向代理
  * 历史项目没有 kind 字段，一律按 static 处理。
  */
 export const PROJECT_KIND = {
@@ -32,6 +32,7 @@ export const PROJECT_KIND = {
   NPM: 'npm',
   PNPM: 'pnpm',
   JS: 'js',
+  BUN: 'bun',
 };
 
 export const PROJECT_KINDS = new Set([
@@ -39,13 +40,15 @@ export const PROJECT_KINDS = new Set([
   PROJECT_KIND.NPM,
   PROJECT_KIND.PNPM,
   PROJECT_KIND.JS,
+  PROJECT_KIND.BUN,
 ]);
 
 /** 是否后端形态（需要安装依赖 + 常驻进程；js 形态无需 package.json 直接跑入口脚本） */
 export function isBackendKind(kind) {
   return kind === PROJECT_KIND.NPM
     || kind === PROJECT_KIND.PNPM
-    || kind === PROJECT_KIND.JS;
+    || kind === PROJECT_KIND.JS
+    || kind === PROJECT_KIND.BUN;
 }
 
 /** 归一化部署形态：非法/缺失一律按 static（历史项目兼容） */

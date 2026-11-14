@@ -1,8 +1,9 @@
 import Foundation
 
-/// 部署形态自动识别：不再让用户在创建页手动选择纯前端 / npm / pnpm。
+/// 部署形态自动识别：不再让用户在创建页手动选择纯前端 / npm / pnpm / bun。
 ///
 /// 规则（与后端 `publish` 的 kind 语义一致）：
+/// - **根目录**有 `bun.lockb` / `bun.lock` → bun
 /// - **根目录**有 `pnpm-lock.yaml` → pnpm
 /// - **根目录**有 `package.json`（或 package-lock.json / yarn.lock）→ npm
 /// - 都没有 → 纯前端（static）
@@ -20,6 +21,7 @@ enum DeployKindDetector {
     static func detect(fileNames: [String]) -> ProjectKind {
         var hasPackageJSON = false
         var hasPnpmLock = false
+        var hasBunLock = false
 
         for rawName in fileNames {
             guard let name = rootFileName(rawName) else { continue }
@@ -28,6 +30,9 @@ enum DeployKindDetector {
                 hasPackageJSON = true
             case "pnpm-lock.yaml":
                 hasPnpmLock = true
+            // bun.lockb（二进制）与 bun.lock（文本，1.2+ 默认）都算 bun 锁文件
+            case "bun.lockb", "bun.lock":
+                hasBunLock = true
             // package-lock.json / yarn.lock 走 npm 安装链路，而 npm 本来就是
             // 「有 package.json」时的默认结果，因此无需单独记录。
             default:
@@ -36,6 +41,7 @@ enum DeployKindDetector {
         }
 
         guard hasPackageJSON else { return .staticSite }
+        if hasBunLock { return .bun }
         return hasPnpmLock ? .pnpm : .npm
     }
 

@@ -358,6 +358,8 @@
 "kind_pnpm_detail" = "使用 pnpm 安装并运行服务";
 "kind_js" = "js 版本";
 "kind_js_detail" = "直接运行 JS/Node 入口脚本";
+"kind_bun" = "Bun 版本";
+"kind_bun_detail" = "使用 Bun 安装依赖并运行服务（原生支持 TS）";
 "export_backup" = "导出备份";
 
 "pick_files_hint_limit" = "支持 .zip、.html、.css、.js，可多选；当前等级单项目上限 %@";

@@ -2039,6 +2039,81 @@ await test('站点访问统计：入口命中计数 / 项目隔离 / 删除清�
 });
 
 // ---------------------------------------------------------------------------
+// bun 形态后端项目：bun install 装依赖 + 用 bun 跑 TS 入口（node 跑不了 TS，
+// 断言内容来自 TS 文件即证明启动命令走的是 bun 而非 node 回退）。
+await test('bun 形态后端项目：bun install + TS 入口由 bun 运行', async () => {
+  // 本机未装 bun 时跳过（CI runner 会安装 bun，跳过计数仍算通过）
+  const probe = spawnSync('bun', ['--version'], { encoding: 'utf8' });
+  if (probe.status !== 0) {
+    console.log('  - 本机无 bun，跳过 bun 形态用例（CI 上仍会执行）');
+    return;
+  }
+
+  const bunUserId = 'dev-bun-backend';
+  seedUser(dataDir, bunUserId, 'svip');
+  const bunAuth = { 'X-Test-User': bunUserId };
+
+  const created = await (await fetch(`${BASE}/api/projects/explorer`, {
+    method: 'POST',
+    headers: { ...bunAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'bun-app', kind: 'bun' }),
+  })).json();
+  assert(created.ok, `建 bun 项目应成功：${JSON.stringify(created)}`);
+  const id = created.project.id;
+  assertEqual(created.project.kind, 'bun', '项目应记录 kind=bun');
+
+  // 故意不写 scripts.start / main：走「常见入口文件」回退，且入口是 TS ——
+  // 只有 bun 能跑，node 回退会直接失败
+  const pkg = JSON.stringify({
+    name: 'bun-demo',
+    version: '1.0.0',
+    private: true,
+  });
+  const serverTs = [
+    "import { createServer } from 'node:http';",
+    'const port = Number(process.env.PORT);',
+    'createServer((req, res) => {',
+    "  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });",
+    "  res.end('bun-server-alive:' + req.url + '|bun:' + typeof Bun);",
+    '}).listen(port, "127.0.0.1");',
+  ].join('\n');
+
+  for (const [filePath, content] of [['package.json', pkg], ['server.ts', serverTs]]) {
+    const put = await fetch(`${BASE}/api/projects/${id}/files`, {
+      method: 'POST',
+      headers: { ...bunAuth, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: filePath, content: textToBase64(content) }),
+    });
+    assertEqual(put.status, 200, `写入 ${filePath} 应成功`);
+  }
+
+  const published = await (await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST',
+    headers: { ...bunAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'publish', kind: 'bun' }),
+  })).json();
+  assert(published.ok, `发布 bun 项目应成功：${JSON.stringify(published)}`);
+  const ready = await waitForProjectReady(id, bunAuth);
+  assertEqual(ready.project.status, 'ready', `bun 项目应部署成功，errorCode=${ready.project.errorCode ?? '无'}`);
+
+  const page = await fetch(`${BASE}/p/${id}`);
+  assertEqual(page.status, 200, 'bun 项目入口应 200');
+  const text = await page.text();
+  assert(
+    text.startsWith('bun-server-alive:/|bun:object'),
+    `应由 bun 运行 TS 入口并暴露 Bun 全局对象，实际：${text.slice(0, 120)}`
+  );
+
+  // 删除回收进程
+  const del = await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST',
+    headers: { ...bunAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete' }),
+  });
+  assertEqual(del.status, 200, '删除 bun 项目应成功');
+});
+
+// ---------------------------------------------------------------------------
 console.log(`\n结果：${passed} 通过，${failed} 失败\n`);
 
 killProcessTree(server);

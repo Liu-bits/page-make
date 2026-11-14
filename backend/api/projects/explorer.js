@@ -28,8 +28,8 @@ export async function onRequest(context) {
   const name =
     (typeof body?.name === 'string' && body.name.trim().slice(0, 60)) || '未命名项目';
 
-  // 部署形态三选一；普通用户只能建纯前端
-  if (body?.kind !== undefined && !['static', 'npm', 'pnpm', 'js'].includes(body.kind)) {
+  // 部署形态四选一；普通用户只能建纯前端
+  if (body?.kind !== undefined && !['static', 'npm', 'pnpm', 'js', 'bun'].includes(body.kind)) {
     return fail('INVALID_KIND', 400);
   }
   const kind = normalizeKind(body?.kind);

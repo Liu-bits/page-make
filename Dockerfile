@@ -13,6 +13,11 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9.15.4 --activate \
     && pnpm --version && npm --version
 
+# bun 形态运行时：从官方镜像拷贝静态二进制（alpine/musl 兼容），
+# 不走 npm 安装（那会引入安装期网络依赖与 postinstall 脚本）
+COPY --from=oven/bun:1-alpine /usr/local/bin/bun /usr/local/bin/bun
+RUN bun --version
+
 # API 处理器（路由、lib 库，与 CI 测试共用同一份代码）
 COPY backend/ ./backend/
 # 容器适配层（Node HTTP + 磁盘 KV）

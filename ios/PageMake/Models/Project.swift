@@ -41,6 +41,7 @@ enum ProjectKind: String, Codable, CaseIterable, Identifiable {
     case npm
     case pnpm
     case js
+    case bun
 
     var id: String { rawValue }
 
@@ -53,6 +54,7 @@ enum ProjectKind: String, Codable, CaseIterable, Identifiable {
         case .npm: return "kind_npm"
         case .pnpm: return "kind_pnpm"
         case .js: return "kind_js"
+        case .bun: return "kind_bun"
         }
     }
 
@@ -62,6 +64,7 @@ enum ProjectKind: String, Codable, CaseIterable, Identifiable {
         case .npm: return "kind_npm_detail"
         case .pnpm: return "kind_pnpm_detail"
         case .js: return "kind_js_detail"
+        case .bun: return "kind_bun_detail"
         }
     }
 
@@ -71,6 +74,7 @@ enum ProjectKind: String, Codable, CaseIterable, Identifiable {
         case .npm: return "shippingbox"
         case .pnpm: return "shippingbox.fill"
         case .js: return "curlybraces.square"
+        case .bun: return "hare.fill"
         }
     }
 }

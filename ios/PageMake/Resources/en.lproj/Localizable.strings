@@ -358,6 +358,8 @@
 "kind_pnpm_detail" = "Install with pnpm and run Node";
 "kind_js" = "js version";
 "kind_js_detail" = "Run your JS / Node entry script directly";
+"kind_bun" = "Bun version";
+"kind_bun_detail" = "Install dependencies and run with Bun (native TS support)";
 "export_backup" = "Export Backup";
 
 "pick_files_hint_limit" = "Supports .zip, .html, .css, .js. Multiple selection; current project limit is %@";

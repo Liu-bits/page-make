@@ -43,6 +43,9 @@ jobs:
         with:
           node-version: "22"
 
+      - name: 安装 Bun（bun 形态 e2e 用例需要真实 bun 可执行文件）
+        run: npm i -g bun && bun --version
+
       - name: 后端单元测试（解压 / 诊断 / 状态机 / KV key / JWT 解码 / 配额）
         run: node dev/run-tests.mjs
 

@@ -17,6 +17,7 @@ import { hit as hitVisit, flush as flushVisits, read as readVisits } from '../ba
 import {
   STATUS, ERR, PROVIDERS, SESSION_TTL_SECONDS,
   MAX_TOTAL_BYTES, CHUNK_BYTES, BAN_LEVELS,
+  isBackendKind, normalizeKind,
 } from '../backend/lib/state.js';
 import { contentTypeFor } from '../backend/lib/responses.js';
 import { readFile } from 'node:fs/promises';
@@ -931,6 +932,16 @@ await test('visitstats：flush 剪掉 7 天前的明细，总数保留', async (
   assertEqual(merged.total, 101, '剪枝只删明细不删总数');
   assert(merged.days[oldDay] === undefined, '超出 7 天窗口的明细应被剪掉');
   assertEqual(merged.days[todayDay], 41, '窗口内明细保留并与增量合并');
+});
+
+console.log('\n[18] 部署形态（bun）');
+
+await test('bun 形态：isBackendKind / normalizeKind 覆盖，配额走 backend 维度', async () => {
+  assertEqual(isBackendKind('bun'), true, 'bun 应视为后端形态（需要常驻进程）');
+  assertEqual(isBackendKind('npm'), true, 'npm 回归：仍为后端形态');
+  assertEqual(isBackendKind('static'), false, 'static 仍为纯前端');
+  assertEqual(normalizeKind('bun'), 'bun', 'bun 应是合法 kind');
+  assertEqual(normalizeKind('bunx'), 'static', '未知 kind 回落到 static');
 });
 
 console.log(`\n结果：${passed} 通过，${failed} 失败\n`);

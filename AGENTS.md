@@ -82,13 +82,13 @@
 
 - **是什么**：iOS App + 自托管后端（**部署在 ModelScope**），让用户在手机上创建/发布静态网页与 Node 服务。
   上传 ZIP、粘贴 HTML/CSS、或虚拟文件夹管理器三种方式建站，生成公开链接分享。
-  普通用户只能部署纯前端；VIP / SVIP / Ultra 可部署 npm / pnpm / js 后端项目。
+  普通用户只能部署纯前端；VIP / SVIP / Ultra 可部署 npm / pnpm / js / bun 后端项目。
 - **仓库**：私有仓库（专有软件，保留所有权利）
 - **技术栈**：
   - iOS：SwiftUI + XcodeGen（`ios/project.yml` 描述工程），最低 iOS 27.0，无第三方 SDK
     （Google 登录用 ASWebAuthenticationSession + PKCE 手写；二维码用 CoreImage）
   - 后端：Node.js **自身零 npm 依赖**（仅标准库），Pages Functions 风格 handler；
-    用户项目可使用 npm / pnpm 安装自己的依赖，并在受限子进程中运行
+    用户项目可使用 npm / pnpm / bun 安装自己的依赖，并在受限子进程中运行
     （`backend/index.js`），同一份代码跑在 ModelScope 创空间 Docker 容器
     （`docker/server.mjs` = Node HTTP 适配层 + DiskKV 磁盘 KV，API 与线上 KV 一致）
   - 存储：容器内 DiskKV（`DATA_DIR` 目录 JSON 文件，key 经 `encodeKey` hex 编码为文件名）
@@ -242,7 +242,11 @@ E:/Page-make/
 - 宽容识别：静态 404 时按 basename（忽略目录/大小写）在项目内唯一匹配自动返回
 - 静态诊断：HTML 引用的资源缺失 → 「引用了 x，其实在 y」提示
 - PHP / C++：均不支持；ZIP 中的 `.php` 会跳过，项目模式拒绝 `.php`，公开路由对历史 `.php` 返回 404
-- 部署形态：纯前端 / npm / pnpm / js 四选一；普通用户只能选纯前端，后端形态从 VIP 起可用
+- 部署形态：纯前端 / npm / pnpm / js / bun 五选一；普通用户只能选纯前端，后端形态从 VIP 起可用。
+  **bun 形态**（2026-11-14）：`bun install` 装依赖（含 devDeps）、入口支持 TS（bun 直接跑
+  server.ts/index.ts，无需编译）；Dockerfile 从 oven/bun:1-alpine 拷贝静态二进制；
+  bun.lockb/bun.lock 自动识别为 bun 形态（DeployKindDetector）。Windows 上 bun 走
+  shell+PATH 解析（不拼 node 同目录 .cmd）。**任何形态枚举必须走 isBackendKind**
 - **后端项目反代前缀语义**（2026-11-14）：用户应用按「部署在站点根目录」假设写代码也能
   正常工作——`proxy()` 对响应做四件套：Location 根绝对路径改写回 `/p/<id>` 前缀、
   Set-Cookie Path 收进前缀（无 Path 的补）、text/html 响应体注入 `<base>` + 运行时 shim
@@ -297,7 +301,7 @@ E:/Page-make/
 |---|---|---|
 | SESSION_TTL_SECONDS | 7 天 | 登录态有效期（到期前 1 天 iOS 静默刷新） |
 | QUOTA.static | user 300KB / vip 1MB / svip 10MB / ultra ∞ | 纯前端项目总量 |
-| QUOTA.backend | user 0 / vip 1MB / svip 10MB / ultra ∞ | npm/pnpm/js 源码包总量 |
+| QUOTA.backend | user 0 / vip 1MB / svip 10MB / ultra ∞ | npm/pnpm/js/bun 源码包总量 |
 | CHUNK_BYTES | 600KB | 分片大小 |
 | UPLOAD_TTL_SECONDS | 30 分钟 | 未完成上传清理 |
 | PASTE_MAX_BYTES | 300KB | 粘贴 HTML+CSS 合计（JS 已移除） |
@@ -309,12 +313,12 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 182 项 + 静态检查，提交前必须全绿）
+## 5. 测试体系（共 184 项 + 静态检查，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
-| `node dev/run-tests.mjs` | 60 | 单元测试（含 JWKS 三级加载、动态 ZIP 解压配额、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容、密码强度、MIME、等级配额、ZIP 写入器、代理前缀改写线性/幂等/注入位置、访问统计聚合/剪枝/隔离） |
-| `node dev/test-server.mjs` | 57 | 容器冒烟（真实 HTTP 全流程；含等级上传配额、压缩包小于配额但解压后超限、普通用户后端拒绝、npm 后端全链路反向代理、后端代理改写 e2e（Location 五形态 / Set-Cookie Path / HTML 注入 / Referer 兜底 / gbk+gzip 跳过）、站点访问统计（入口计数/项目隔离/删除清理 stat_）、导出备份、ZIP PHP 过滤、Explorer 全流程、限流、删号 KV 残留、Apple/Google 合法 token 登录） |
+| `node dev/run-tests.mjs` | 61 | 单元测试（含 JWKS 三级加载、动态 ZIP 解压配额、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容、密码强度、MIME、等级配额、ZIP 写入器、代理前缀改写线性/幂等/注入位置、访问统计聚合/剪枝/隔离、bun 形态判定） |
+| `node dev/test-server.mjs` | 58 | 容器冒烟（真实 HTTP 全流程；含等级上传配额、压缩包小于配额但解压后超限、普通用户后端拒绝、npm 后端全链路反向代理、bun 形态全链路（bun install + TS 入口，本机无 bun 自动跳过）、后端代理改写 e2e（Location 五形态 / Set-Cookie Path / HTML 注入 / Referer 兜底 / gbk+gzip 跳过）、站点访问统计（入口计数/项目隔离/删除清理 stat_）、导出备份、ZIP PHP 过滤、Explorer 全流程、限流、删号 KV 残留、Apple/Google 合法 token 登录） |
 | `node dev/check-handler-imports.mjs` | 1 | 静态扫「被调用但未 import/未定义」的标识符（ESM 惰性绑定让这类错误只在运行时炸成 500；已接入 CI） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 26 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
@@ -450,7 +454,9 @@ push debug → debug CI 三 job 全绿 → 合并 main → main 的 deploy job �
  - npm / pnpm 项目文件白名单与静态项目必须分离：后端需要 package.json、ts/tsx、
    配置文件和静态资源；静态项目仍只允许 html/css/js，`.php` 永远拒绝
  - Windows 上 `spawn('npm')` / `spawn('pnpm')` 会 ENOENT，必须用 Node 同目录的
-   `npm.cmd` / `pnpm.cmd` 并 `shell: true`；Linux 容器直接走命令名
+   `npm.cmd` / `pnpm.cmd` 并 `shell: true`；Linux 容器直接走命令名。
+   bun 例外：独立可执行文件（官方安装器在 ~/.bun/bin、npm 全局装则在 node 同目录），
+   统一走 `shell: true` + 裸 `bun` 让系统按 PATH 解析，不要拼 node 同目录
  - 后端项目运行时子进程 env 只能给最小集合（PATH/HOME/PORT/HOST/NODE_ENV/NODE_OPTIONS），
    绝不能继承宿主 `process.env`，否则会把平台 Token / 密钥暴露给用户代码
  - **`restoreAll` 必须用 `isBackendKind()` 判断，不能枚举 `npm`/`pnpm`**：曾写成

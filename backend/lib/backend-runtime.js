@@ -272,10 +272,13 @@ function run(command, args, options = {}) {
  * 包管理器可执行文件。
  * Windows 上 npm/pnpm 是 .cmd 包装脚本，`spawn('npm')` 会 ENOENT，
  * 必须走 shell 并给完整路径；容器（Linux）里直接调同名命令即可。
+ * bun 是独立可执行文件（npm 全局装 / 官方安装器都在 PATH 里）：
+ * Windows 上同样交给 shell 按 PATH 解析，不走 node 同目录拼接。
  */
 function pmBinary(kind) {
-  const name = kind === 'pnpm' ? 'pnpm' : 'npm';
+  const name = kind === 'pnpm' ? 'pnpm' : kind === 'bun' ? 'bun' : 'npm';
   if (process.platform !== 'win32') return { command: name, shell: false };
+  if (kind === 'bun') return { command: name, shell: true };
   const exeDir = path.dirname(process.execPath);
   return { command: `"${path.join(exeDir, `${name}.cmd`)}"`, shell: true };
 }
@@ -290,7 +293,9 @@ async function installDeps(kind, srcDir, tier = 'vip') {
   // 构建脚本通常依赖 devDependencies（vite/typescript/webpack 等）。
   // 只装生产依赖会让 `npm run build` 在发布阶段必然缺工具，因此先装完整依赖；
   // 用户代码本来就会在同一受限子进程中执行，这里不额外承诺 npm 层面的隔离。
-  const args = kind === 'pnpm' ? ['install'] : ['install', '--no-package-lock'];
+  // npm 用 --no-package-lock 避免生成 package-lock 改写用户源码；pnpm/bun 自有
+  // 锁文件格式（pnpm-lock.yaml / bun.lock），无需该参数
+  const args = kind === 'npm' ? ['install', '--no-package-lock'] : ['install'];
   const timeoutMs = tier === 'ultra'
     ? Number.POSITIVE_INFINITY
     : (tier === 'svip' ? BACKEND_INSTALL_TIMEOUT_MS_SVIP : BACKEND_INSTALL_TIMEOUT_MS);
@@ -340,12 +345,28 @@ async function waitForPort(port, timeoutMs = 60_000, record = null) {
   return false;
 }
 
-/** 决定启动方式：优先 npm/pnpm start，其次 package.json main，最后常见入口文件 */
+/** 决定启动方式：优先 npm/pnpm/bun start，其次 package.json main，最后常见入口文件。
+ * bun 形态用 bun 自身跑入口（支持 TS，无需编译）；npm/pnpm 形态继续用 Node。 */
 async function resolveStartCommand(kind, srcDir, pkg) {
   const nodeFs = await import('node:fs/promises');
   if (pkg?.scripts?.start) {
     const bin = pmBinary(kind);
     return { command: bin.command, args: ['start'], shell: bin.shell };
+  }
+  if (kind === 'bun') {
+    // bun 可以直接执行 .ts / .mjs / .js 入口，无需 build 编译
+    const bin = pmBinary(kind);
+    if (typeof pkg?.main === 'string' && pkg.main) {
+      if (!isValidRelPath(pkg.main) || pkg.main.includes(':')) return null;
+      return { command: bin.command, args: [pkg.main], shell: bin.shell };
+    }
+    for (const candidate of ['server.ts', 'index.ts', 'app.ts', 'main.ts', 'server.js', 'index.js', 'app.js', 'main.js']) {
+      try {
+        await nodeFs.access(path.join(srcDir, candidate));
+        return { command: bin.command, args: [candidate], shell: bin.shell };
+      } catch { /* 继续找 */ }
+    }
+    return null;
   }
   if (typeof pkg?.main === 'string' && pkg.main) {
     if (!isValidRelPath(pkg.main) || pkg.main.includes(':')) return null;

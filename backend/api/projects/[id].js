@@ -63,7 +63,7 @@ export async function onRequest(context) {
 
     // 发布时允许切换部署形态（纯前端 ↔ npm ↔ pnpm ↔ js）。
     // 切到后端必须同时满足：VIP 及以上 + 项目里有 package.json（js 形态除外）。
-    if (body?.kind !== undefined && !['static', 'npm', 'pnpm', 'js'].includes(body.kind)) {
+    if (body?.kind !== undefined && !['static', 'npm', 'pnpm', 'js', 'bun'].includes(body.kind)) {
       return fail('INVALID_KIND', 400);
     }
     // 注意：VIP 校验必须按**最终生效的 kind** 判断，不能只在「显式传 kind」时判断。

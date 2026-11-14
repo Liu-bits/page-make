@@ -14,7 +14,7 @@ import { ok, fail } from '../../lib/responses.js';
 import { requireAdmin } from '../../lib/admin.js';
 import { accountKind, isVIPUser } from '../../lib/session.js';
 import { quotaFor, tierOf } from '../../lib/tiers.js';
-import { BAN_LEVELS } from '../../lib/state.js';
+import { BAN_LEVELS, isBackendKind } from '../../lib/state.js';
 
 /** 账号来源：guest_ / google_ 前缀有明确语义，其余是 Sign in with Apple 的 sub */
 function providerOf(userId) {
@@ -100,7 +100,7 @@ export async function onRequest(context) {
     if (p.userId) {
       projectCountByUser.set(p.userId, (projectCountByUser.get(p.userId) || 0) + 1);
       bytesByUser.set(p.userId, (bytesByUser.get(p.userId) || 0) + size);
-      if (p.kind === 'npm' || p.kind === 'pnpm' || p.kind === 'js') {
+      if (isBackendKind(p.kind)) {
         backendCountByUser.set(p.userId, (backendCountByUser.get(p.userId) || 0) + 1);
       }
     }
@@ -174,7 +174,9 @@ export async function onRequest(context) {
       svipCount: users.filter((u) => u.tier === 'svip').length,
       ultraCount: users.filter((u) => u.tier === 'ultra').length,
       // 后端形态有三种：npm / pnpm / js（js 不要求 package.json），都要计入
-      backendProjectCount: projects.filter((p) => ['npm', 'pnpm', 'js'].includes(p.kind)).length,
+      // 形态判定统一走 isBackendKind（枚举 npm/pnpm/js 的写法在新增形态时必漏——
+      // 与 restoreAll 的 js 形态漏恢复同类教训）
+      backendProjectCount: projects.filter((p) => isBackendKind(p.kind)).length,
       projectCount: projects.length,
       feedbackCount: feedback.length,
       vipRequestCount: vipRequests.filter((item) => item.status === 'pending').length,
