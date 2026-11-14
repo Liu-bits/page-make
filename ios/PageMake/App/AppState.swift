@@ -445,6 +445,30 @@ final class AppState: ObservableObject {
         return false
     }
 
+    /// 克隆项目：副本插入列表顶部并返回；失败走 authError（GUEST_LIMIT 等错误码有对应文案）
+    func cloneProject(_ id: String) async -> Project? {
+        let expected = session
+        do {
+            let project = try await api.cloneProject(projectId: id)
+            // 请求期间可能已退出/换号：旧响应不能写进新账号的列表
+            guard let current = session,
+                  current.userId == expected?.userId,
+                  current.token == expected?.token else { return nil }
+            upsertProject(project)
+            return project
+        } catch let error as APIError {
+            if case .banned(let ban) = error {
+                banInfo = ban
+            } else {
+                authError = error.errorDescription
+            }
+            return nil
+        } catch {
+            authError = L10n.string("error_generic")
+            return nil
+        }
+    }
+
     func upsertProject(_ project: Project) {
         if let index = projects.firstIndex(where: { $0.id == project.id }) {
             projects[index] = project

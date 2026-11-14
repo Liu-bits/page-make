@@ -443,3 +443,11 @@
 "snapshot_restore_confirm" = "Restoring overwrites all current files with the backup. Continue?";
 "snapshot_created" = "Backup created";
 "snapshot_restored" = "Restored %lld files from backup";
+
+// MARK: - Quota / visit trend / clone
+"quota_static_label" = "Static storage";
+"quota_backend_label" = "Backend storage";
+"quota_used_format" = "%@ used of %@";
+"quota_near_hint" = "Storage is almost full — upgrade for more space";
+"clone_menu" = "Duplicate";
+"trend_title" = "Visits · last 7 days";

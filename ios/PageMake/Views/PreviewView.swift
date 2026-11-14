@@ -26,6 +26,8 @@ struct PreviewView: View {
     /// 手动刷新会先取消上一条，否则 `.task(id:)` 与刷新各起一条，
     /// 重复打 /status（限速 + 网关抖动都被放大）。
     @State private var pollTask: Task<Void, Never>?
+    /// 访问趋势折线的展开状态（数据来自 visitStats.days，后端已在存 7 天明细）
+    @State private var showVisitTrend = false
 
     init(project: Project) {
         self.project = project
@@ -42,6 +44,9 @@ struct PreviewView: View {
             toolbarBar
             if current.visitStats != nil {
                 visitStatsBar
+                if showVisitTrend {
+                    visitTrendChart
+                }
             }
             webArea
             bottomBar
@@ -117,22 +122,79 @@ struct PreviewView: View {
 
     // MARK: - 顶部工具栏
 
-    /// 访问统计条：入口页命中计数（后端内存聚合 + 定期落 KV），随静默刷新更新
+    /// 访问统计条：入口页命中计数（后端内存聚合 + 定期落 KV），随静默刷新更新。
+    /// 点击展开/收起近 7 天趋势折线。
     private var visitStatsBar: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "eye")
-                .font(.caption2)
-            Text(L10n.format(
-                "visit_summary_format",
-                current.visitStats?.total ?? 0,
-                current.visitStats?.today ?? 0
-            ))
-            .font(.caption)
+        Button {
+            withAnimation(.easeOut(duration: 0.18)) {
+                showVisitTrend.toggle()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "eye")
+                    .font(.caption2)
+                Text(L10n.format(
+                    "visit_summary_format",
+                    current.visitStats?.total ?? 0,
+                    current.visitStats?.today ?? 0
+                ))
+                .font(.caption)
+                Image(systemName: showVisitTrend ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .foregroundStyle(Theme.secondaryLabel)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 4)
         }
-        .foregroundStyle(Theme.secondaryLabel)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 4)
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.string("trend_title"))
+    }
+
+    /// 近 7 天访问趋势：后端按 UTC 天聚合，这里用同一时区对齐补零画折线
+    private var visitTrendChart: some View {
+        let values = visitTrendValues(days: current.visitStats?.days ?? [:])
+        let maxValue = values.max() ?? 0
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(L10n.string("trend_title"))
+                .font(.caption2)
+                .foregroundStyle(Theme.tertiaryLabel)
+            GeometryReader { proxy in
+                if maxValue > 0 {
+                    Path { path in
+                        let step = proxy.size.width / CGFloat(max(values.count - 1, 1))
+                        for (index, value) in values.enumerated() {
+                            let x = CGFloat(index) * step
+                            let y = proxy.size.height * (1 - CGFloat(value) / CGFloat(maxValue))
+                            if index == 0 {
+                                path.move(to: CGPoint(x: x, y: y))
+                            } else {
+                                path.addLine(to: CGPoint(x: x, y: y))
+                            }
+                        }
+                    }
+                    .stroke(
+                        Theme.highlight,
+                        style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round)
+                    )
+                }
+            }
+            .frame(height: 36)
+            .padding(.horizontal, 20)
+        }
+        .padding(.bottom, 4)
+    }
+
+    /// 取最近 7 天（含今天）的计数；后端 days 只存有访问的日期，缺失天补零
+    private func visitTrendValues(days: [String: Int]) -> [Int] {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        let calendar = Calendar(identifier: .gregorian)
+        return (0..<7).reversed().compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: Date()) else { return 0 }
+            return days[formatter.string(from: date)] ?? 0
+        }
     }
 
     private var toolbarBar: some View {

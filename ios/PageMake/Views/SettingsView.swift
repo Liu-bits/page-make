@@ -402,9 +402,62 @@ struct SettingsView: View {
                             .font(.caption2.bold())
                             .foregroundStyle(Theme.premium)
                     }
+
+                    // 配额进度条：静态空间始终显示；后端空间仅对可用后端的等级显示
+                    quotaBarRow(
+                        label: L10n.string("quota_static_label"),
+                        used: appState.stats?.usedStatic ?? 0,
+                        limit: session.quota?.staticMaxBytes
+                    )
+                    if session.canUseBackend {
+                        quotaBarRow(
+                            label: L10n.string("quota_backend_label"),
+                            used: appState.stats?.usedBackend ?? 0,
+                            limit: session.quota?.backendMaxBytes
+                        )
+                    }
                 }
             }
         }
+    }
+
+    /// 配额进度条：limit 为 nil（Ultra 无上限）时只显示用量；≥80% 变琥珀色提示扩容
+    private func quotaBarRow(label: String, used: Int64, limit: Int64?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondaryLabel)
+                Spacer()
+                Text(quotaUsedText(used: used, limit: limit))
+                    .font(.caption2)
+                    .foregroundStyle(isNearLimit(used: used, limit: limit) ? Theme.premium : Theme.tertiaryLabel)
+            }
+            if let limit, limit > 0 {
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Theme.separator.opacity(0.4))
+                        Capsule()
+                            .fill(isNearLimit(used: used, limit: limit) ? Theme.premium : Theme.highlight)
+                            .frame(width: max(4, proxy.size.width * min(1, CGFloat(used) / CGFloat(limit))))
+                    }
+                }
+                .frame(height: 5)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func quotaUsedText(used: Int64, limit: Int64?) -> String {
+        guard let limit, limit > 0 else {
+            return L10n.format("quota_used_format", formatBytes(Int(used)), L10n.string("quota_unlimited"))
+        }
+        return L10n.format("quota_used_format", formatBytes(Int(used)), formatBytes(Int(limit)))
+    }
+
+    private func isNearLimit(used: Int64, limit: Int64?) -> Bool {
+        guard let limit, limit > 0 else { return false }
+        return Double(used) / Double(limit) >= 0.8
     }
 
     private func metricTile(value: String, label: String, tint: Color) -> some View {

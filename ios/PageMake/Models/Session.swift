@@ -204,11 +204,26 @@ struct ProjectStatusResponse: Decodable {
     }
 }
 
-/// 用量统计
+/// 用量统计（usedStatic / usedBackend 用于配额进度条；旧后端无这两个字段按 0 处理）
 struct UserStats: Decodable, Equatable {
     let projectCount: Int
     let totalSize: Int
     let fileCount: Int
+    let usedStatic: Int64
+    let usedBackend: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case projectCount, totalSize, fileCount, usedStatic, usedBackend
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        projectCount = (try? c.decodeIfPresent(Int.self, forKey: .projectCount)) ?? 0
+        totalSize = (try? c.decodeIfPresent(Int.self, forKey: .totalSize)) ?? 0
+        fileCount = (try? c.decodeIfPresent(Int.self, forKey: .fileCount)) ?? 0
+        usedStatic = (try? c.decodeIfPresent(Int64.self, forKey: .usedStatic)) ?? 0
+        usedBackend = (try? c.decodeIfPresent(Int64.self, forKey: .usedBackend)) ?? 0
+    }
 }
 
 /// /api/stats 的账号权益快照；管理后台升级后 App 可即时刷新，无需重新登录。

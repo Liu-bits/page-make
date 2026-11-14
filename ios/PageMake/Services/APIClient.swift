@@ -435,6 +435,13 @@ final class APIClient {
 
     // MARK: - 运行日志 / 表单收集 / 快照
 
+    /// 克隆项目（同账号复制为新项目；游客限 1 项目会 403 GUEST_LIMIT）
+    func cloneProject(projectId: String) async throws -> Project {
+        let body = try encoder.encode(ActionRequest(action: "clone"))
+        let data = try await request("/api/projects/\(projectId)", method: "POST", body: body)
+        return try decoder.decode(ProjectPayload.self, from: data).project
+    }
+
     struct RuntimeLogsPayload: Decodable {
         let logs: String?
         let running: Bool

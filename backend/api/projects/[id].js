@@ -1,14 +1,16 @@
 // GET /api/projects/:id — 项目详情
 // POST /api/projects/:id — action: delete（删除）/ rename（重命名）/ publish（生成公开链接）
 // DELETE /api/projects/:id — 删除项目（兼容；ModelScope 网关拦截 DELETE，客户端走 POST）
-import { getOwnedProject, deleteProjectRecords, syncProjectFilesLocked, readSiteFiles, projectPublicUrl } from '../../lib/project.js';
+import { getOwnedProject, deleteProjectRecords, syncProjectFilesLocked, readSiteFiles, writeProjectRecord, projectPublicUrl } from '../../lib/project.js';
 import { read as readVisitStats } from '../../lib/visitstats.js';
 import { ok, fail } from '../../lib/responses.js';
-import { appendLog, keys } from '../../lib/kv.js';
+import { appendLog, keys, nowSeconds, kvPut } from '../../lib/kv.js';
 import { STATUS, isBackendKind, normalizeKind } from '../../lib/state.js';
-import { analyzeHtml } from '../../lib/diagnostics.js';
+import { analyzeHtml, findEntry } from '../../lib/diagnostics.js';
 import { rewriteLocalRefs, rewriteCssRefs } from '../../lib/paths.js';
-import { canUseBackend, tierOf } from '../../lib/tiers.js';
+import { canUseBackend, quotaFor, tierOf } from '../../lib/tiers.js';
+import { isGuestLimited } from '../../lib/session.js';
+import { withLock } from '../../lib/lock.js';
 import { deployBackendApp, stop as stopBackendApp } from '../../lib/backend-runtime.js';
 
 export async function onRequest(context) {
@@ -54,6 +56,22 @@ export async function onRequest(context) {
     if (!updated) return fail('NOT_FOUND', 404);
     await appendLog(kv, { projectId: project.id, step: 'rename_project', result: 'ok' });
     return ok({ project: updated });
+  }
+
+  // 项目克隆：把当前项目全量文件复制为新项目（同账号内）。
+  // 游客限 1 个项目 → 克隆必然超出额度，直接拒绝；副本计入同一配额维度。
+  if (action === 'clone') {
+    if (isGuestLimited(user)) return fail('GUEST_LIMIT', 403);
+    const files = await readSiteFiles(kv, project.id);
+    if (files.size === 0) return fail('NO_ENTRY', 400);
+    if (files.size > 300) return fail('CLONE_TOO_MANY_FILES', 400);
+    const kind = normalizeKind(project.kind);
+    const dimension = isBackendKind(kind) ? 'backend' : 'static';
+    const total = [...files.values()].reduce((sum, data) => sum + data.length, 0);
+    if (total > quotaFor(user, dimension)) return fail('TOO_LARGE', 413);
+
+    const newId = crypto.randomUUID().replace(/-/g, '');
+    return withProjectLockAndClone(kv, project, user, newId, files, kind, total, request);
   }
 
   // 项目模式：统一生成公开链接（至少需要一个 HTML 文件作为入口）
@@ -197,4 +215,45 @@ export async function onRequest(context) {
   }
 
   return fail('METHOD_NOT_ALLOWED', 405);
+}
+
+/** 克隆执行体：源项目锁内复制文件与记录（拿到一致的文件快照；副本写入新 key 无竞争） */
+async function withProjectLockAndClone(kv, project, user, newId, files, kind, total, request) {
+  return withLock(`project:${project.id}`, async () => {
+    for (const [path, bytes] of files) {
+      await kv.put(keys.siteFile(newId, path), bytes);
+    }
+    const origin = new URL(request.url).origin;
+    // 入口沿用原项目；原入口文件缺失则按第一个 HTML 重选
+    const entryPath = project.entryPath && files.has(project.entryPath)
+      ? project.entryPath
+      : findEntry(files);
+    // 运行态不继承：副本没有常驻进程（runtimePort 必为 null），后端形态需重新构建
+    const cloned = {
+      ...project,
+      id: newId,
+      name: `${project.name} 副本`,
+      status: STATUS.READY,
+      entryPath: entryPath ?? null,
+      errorCode: null,
+      url: projectPublicUrl(origin, newId),
+      runtimePort: null,
+      runtimeKind: null,
+      expiresAt: null,
+      deploymentUrl: null,
+      runtimeErrors: [],
+      createdAt: nowSeconds(),
+      updatedAt: nowSeconds(),
+    };
+    await kvPut(kv, keys.userProject(user.userId, newId), { createdAt: nowSeconds() });
+    const saved = await writeProjectRecord(kv, newId, () => cloned);
+    await appendLog(kv, {
+      projectId: newId,
+      step: 'clone_project',
+      result: 'ok',
+      sourceId: project.id,
+      kind,
+    });
+    return ok({ project: saved ?? cloned });
+  });
 }

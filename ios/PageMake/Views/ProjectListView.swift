@@ -267,6 +267,11 @@ struct ProjectListView: View {
                                 } label: {
                                     Label(L10n.string("rename"), systemImage: "pencil")
                                 }
+                                Button {
+                                    Task { _ = await appState.cloneProject(project.id) }
+                                } label: {
+                                    Label(L10n.string("clone_menu"), systemImage: "plus.square.on.square")
+                                }
                                 Button(role: .destructive) {
                                     Task { await appState.deleteProject(project.id) }
                                 } label: {
@@ -338,10 +343,18 @@ struct ProjectListView: View {
                     heroDivider
                     heroMetric(value: "\(appState.projects.reduce(0) { $0 + $1.fileCount })", label: L10n.string("dashboard_files"))
                     heroDivider
-                    heroMetric(value: formatBytes(appState.projects.reduce(Int64(0)) { $0 + $1.size }), label: L10n.string("dashboard_space"))
+                    heroMetric(value: heroSpaceValue, label: L10n.string("dashboard_space"))
                 }
                 .padding(.vertical, 13)
                 .background(.black.opacity(0.13), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+                // 配额接近上限的升级引导（Ultra 无上限时不显示）
+                if isSpaceNearLimit {
+                    Text(L10n.string("quota_near_hint"))
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.72))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 HStack(spacing: 11) {
                     Button(action: onCreateTapped) {
@@ -362,6 +375,24 @@ struct ProjectListView: View {
         // 固定黑色阴影：Theme.label 在深色模式下是白色，会变成白色发光；
         // 简约改版收敛阴影强度——高级感靠留白与对比，不靠大阴影
         .shadow(color: Color.black.opacity(0.12), radius: 16, x: 0, y: 8)
+    }
+
+    // MARK: - 空间配额（hero 指标 + 接近上限提示）
+
+    /// 空间用量优先取 stats 的静态维度（后端项目走独立配额，不计入这条）；
+    /// stats 未加载时回退到本地按 kind 过滤求和。会话无上限（Ultra）→ 只显示用量。
+    private var heroSpaceValue: String {
+        let used = Int(appState.stats?.usedStatic
+            ?? appState.projects.filter { !$0.kind.isBackend }.reduce(Int64(0)) { $0 + $1.size })
+        guard let limit = appState.session?.staticProjectLimit else { return formatBytes(used) }
+        return "\(formatBytes(used)) / \(formatBytes(Int(limit)))"
+    }
+
+    private var isSpaceNearLimit: Bool {
+        guard let limit = appState.session?.staticProjectLimit, limit > 0 else { return false }
+        let used = Int64(appState.stats?.usedStatic
+            ?? appState.projects.filter { !$0.kind.isBackend }.reduce(Int64(0)) { $0 + $1.size })
+        return Double(used) / Double(limit) >= 0.8
     }
 
     private func heroMetric(value: String, label: String) -> some View {
@@ -492,6 +523,11 @@ struct ProjectListView: View {
                 renameTarget = project
             } label: {
                 Label(L10n.string("rename"), systemImage: "pencil")
+            }
+            Button {
+                Task { _ = await appState.cloneProject(project.id) }
+            } label: {
+                Label(L10n.string("clone_menu"), systemImage: "plus.square.on.square")
             }
             Button(role: .destructive) {
                 Task { await appState.deleteProject(project.id) }

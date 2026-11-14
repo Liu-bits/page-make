@@ -443,3 +443,11 @@
 "snapshot_restore_confirm" = "恢复会用备份覆盖当前全部文件，确定继续？";
 "snapshot_created" = "备份已创建";
 "snapshot_restored" = "已恢复 %lld 个文件到备份点";
+
+// MARK: - 配额可视化 / 访问趋势 / 项目克隆
+"quota_static_label" = "静态空间";
+"quota_backend_label" = "后端空间";
+"quota_used_format" = "已用 %@ / %@";
+"quota_near_hint" = "空间接近上限，可在设置页升级扩容";
+"clone_menu" = "创建副本";
+"trend_title" = "近 7 天访问";

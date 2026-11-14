@@ -2349,6 +2349,78 @@ await test('表单收集 / 自定义 404 / SEO meta / 快照回滚', async () =>
 });
 
 // ---------------------------------------------------------------------------
+// 项目克隆 + 配额分维度用量（第一梯队）
+await test('项目克隆：副本文件/记录齐全 + 游客拒绝克隆 + stats 分维度用量', async () => {
+  const cloneUserId = 'dev-clone';
+  seedUser(dataDir, cloneUserId, 'svip');
+  const cloneAuth = { 'X-Test-User': cloneUserId };
+
+  const source = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { ...cloneAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: 'clone-source',
+      html: '<!doctype html><html><head><title>CloneSource</title></head><body><h1>clone-v1</h1></body></html>',
+      css: 'body{margin:0}',
+    }),
+  })).json();
+  assert(source.ok, `源项目建站应成功：${JSON.stringify(source)}`);
+  const sourceId = source.project.id;
+
+  // 克隆
+  const cloned = await (await fetch(`${BASE}/api/projects/${sourceId}`, {
+    method: 'POST',
+    headers: { ...cloneAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'clone' }),
+  })).json();
+  assert(cloned.ok, `克隆应成功：${JSON.stringify(cloned)}`);
+  const newId = cloned.project.id;
+  assert(newId !== sourceId, '副本应是新项目 ID');
+  assert(cloned.project.name.includes('副本'), '副本名应带「副本」后缀');
+  assertEqual(cloned.project.status, 'ready', '副本应直接 ready（静态项目即时生效）');
+  assertEqual(cloned.project.entryPath, source.project.entryPath, '入口应与源项目一致');
+
+  // 副本公开页内容与源一致
+  const page = await fetch(`${BASE}/p/${newId}`);
+  assertEqual(page.status, 200, '副本公开页应 200');
+  const pageText = await page.text();
+  assert(pageText.includes('clone-v1'), '副本内容应与源项目一致');
+
+  // stats：分维度用量（该用户只有静态项目 → usedStatic>0 且 usedBackend=0）
+  const statsJson = await (await fetch(`${BASE}/api/stats`, { headers: cloneAuth })).json();
+  assert(statsJson.stats.usedStatic > 0, `usedStatic 应大于 0：${JSON.stringify(statsJson.stats)}`);
+  assertEqual(statsJson.stats.usedBackend, 0, '无后端项目时 usedBackend 应为 0');
+  assert(statsJson.quota && typeof statsJson.quota.staticMaxBytes === 'number', 'stats 应带配额快照');
+
+  // 游客限 1 项目 → 克隆必然 403 GUEST_LIMIT
+  const guestAuth = { 'X-Test-User': `guest_${'g'.repeat(24)}` };
+  seedUser(dataDir, `guest_${'g'.repeat(24)}`, 'user');
+  const guestPaste = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { ...guestAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'guest-site', html: '<html><body>g</body></html>', css: '' }),
+  })).json();
+  assert(guestPaste.ok, '游客建站应成功');
+  const guestClone = await fetch(`${BASE}/api/projects/${guestPaste.project.id}`, {
+    method: 'POST',
+    headers: { ...guestAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'clone' }),
+  });
+  const guestCloneJson = await guestClone.json();
+  assertEqual(guestClone.status, 403, `游客克隆应 403，实际 ${guestClone.status}`);
+  assertEqual(guestCloneJson.error, 'GUEST_LIMIT', '错误码应为 GUEST_LIMIT');
+
+  // 清理
+  for (const pid of [sourceId, newId, guestPaste.project.id]) {
+    await fetch(`${BASE}/api/projects/${pid}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Test-User': pid === guestPaste.project.id ? `guest_${'g'.repeat(24)}` : cloneUserId },
+      body: JSON.stringify({ action: 'delete' }),
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
 console.log(`\n结果：${passed} 通过，${failed} 失败\n`);
 
 killProcessTree(server);

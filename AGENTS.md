@@ -323,7 +323,15 @@ E:/Page-make/
   FormSubmissionsView 列表/删除/清空/文本导出 + 空态展示 form 代码片段提示）；
   VIP 及以上显示「备份与恢复」区（备份当前版本 / 恢复到备份点，恢复有覆盖确认弹窗）
 - WebView 预览（reloadToken、轮询 150 次上限、runtimeErrors 去重上限 50）
-- 中英本地化（各 384 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
+- 中英本地化（各 390 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
+- 配额可视化 + 趋势图 + 项目克隆（2026-11-14 第一梯队）：
+  ① 设置页用量区显示静态/后端两条配额进度条（≥80% 变琥珀色），首页 hero 空间指标
+  显示「已用 / 上限」+ 接近上限提示——数据来自 /api/stats 的 usedStatic/usedBackend
+  分维度用量与 session.quota 配额快照，**均已有字段，纯 iOS 展示**；
+  ② 预览页统计条点击展开近 7 天趋势折线（SwiftUI Path，UTC 天与后端对齐补零）；
+  ③ 项目克隆：`POST /api/projects/:id {action:'clone'}` 全量复制为新项目（游客限 1 项目
+  → 403 GUEST_LIMIT；副本计入同一配额维度；**运行态不继承**——runtimePort 必为 null，
+  后端形态副本需重新构建）；iOS 列表菜单/长按菜单「创建副本」
 - 设置页 VIP 升级卡（皇冠图标 + 申请状态 + 申请/查看进度）；项目模式顶部固定构建栏
 - 隐私政策/用户协议 App 内展示（Documents 双语文档，文件名后缀区分语言）
 
@@ -345,17 +353,17 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 186 项 + 静态检查，提交前必须全绿）
+## 5. 测试体系（共 187 项 + 静态检查，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
 | `node dev/run-tests.mjs` | 61 | 单元测试（含 JWKS 三级加载、动态 ZIP 解压配额、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容、密码强度、MIME、等级配额、ZIP 写入器、代理前缀改写线性/幂等/注入位置、访问统计聚合/剪枝/隔离、bun 形态判定） |
-| `node dev/test-server.mjs` | 60 | 容器冒烟（真实 HTTP 全流程；含等级上传配额、压缩包小于配额但解压后超限、普通用户后端拒绝、npm 后端全链路反向代理、bun 形态全链路（bun install + TS 入口，本机无 bun 自动跳过）、后端代理改写 e2e（Location 五形态 / Set-Cookie Path / HTML 注入 / Referer 兜底 / gbk+gzip 跳过）、站点访问统计（入口计数/项目隔离/删除清理 stat_）、运行日志（stdout 收集→/logs 可见，静态项目 400）、表单收集（urlencoded+JSON 双形态/删单条/清空）、自定义 404.html、SEO meta 注入与用户 meta 保留、快照回滚（备份/改文件/恢复/非 VIP 403/删除清空）、导出备份、ZIP PHP 过滤、Explorer 全流程、限流、删号 KV 残留、Apple/Google 合法 token 登录） |
+| `node dev/test-server.mjs` | 61 | 容器冒烟（真实 HTTP 全流程；含等级上传配额、压缩包小于配额但解压后超限、普通用户后端拒绝、npm 后端全链路反向代理、bun 形态全链路（bun install + TS 入口，本机无 bun 自动跳过）、后端代理改写 e2e（Location 五形态 / Set-Cookie Path / HTML 注入 / Referer 兜底 / gbk+gzip 跳过）、站点访问统计（入口计数/项目隔离/删除清理 stat_）、运行日志（stdout 收集→/logs 可见，静态项目 400）、表单收集（urlencoded+JSON 双形态/删单条/清空）、自定义 404.html、SEO meta 注入与用户 meta 保留、快照回滚（备份/改文件/恢复/非 VIP 403/删除清空）、项目克隆（副本文件+游客 GUEST_LIMIT+stats 分维度用量）、导出备份、ZIP PHP 过滤、Explorer 全流程、限流、删号 KV 残留、Apple/Google 合法 token 登录） |
 | `node dev/check-handler-imports.mjs` | 1 | 静态扫「被调用但未 import/未定义」的标识符（ESM 惰性绑定让这类错误只在运行时炸成 500；已接入 CI） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 26 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
 | `node dev/test-admin.mjs` | 31 | 后台（密码安全、VIP/SVIP/Ultra 等级切换、配额同步、封禁下架/解封、删号、邮箱密码入口删除、VIP 升级申请全链路） |
-| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 384 键） |
+| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 390 键） |
 | `node scripts/check-dead-strings.mjs` | 1 | 死文案键扫描：查无 Swift 引用的本地化键。对 `status_/account_/template_/project_kind_/ban_level_` 前缀插值引用的键单列为「动态引用，需人工确认」，不计入死键。**注意：本脚本只打印、从不 `exit 1`，是提示性检查，不是门禁** |
 | `node scripts/check-swift-decls.mjs` | 1 | Swift 同作用域属性包装器重复声明扫描（替代本地缺失的 `-typecheck`；已接入 CI backend-test job） |
 
