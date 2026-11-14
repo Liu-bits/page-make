@@ -381,18 +381,19 @@ struct ProjectListView: View {
 
     /// 空间用量优先取 stats 的静态维度（后端项目走独立配额，不计入这条）；
     /// stats 未加载时回退到本地按 kind 过滤求和。会话无上限（Ultra）→ 只显示用量。
+    private var usedStaticBytes: Int64 {
+        appState.stats?.usedStatic
+            ?? appState.projects.filter { !$0.kind.isBackend }.reduce(Int64(0)) { $0 + $1.size }
+    }
+
     private var heroSpaceValue: String {
-        let used = Int(appState.stats?.usedStatic
-            ?? appState.projects.filter { !$0.kind.isBackend }.reduce(Int64(0)) { $0 + $1.size })
-        guard let limit = appState.session?.staticProjectLimit else { return formatBytes(used) }
-        return "\(formatBytes(used)) / \(formatBytes(Int(limit)))"
+        guard let limit = appState.session?.staticProjectLimit else { return formatBytes(usedStaticBytes) }
+        return "\(formatBytes(usedStaticBytes)) / \(formatBytes(limit))"
     }
 
     private var isSpaceNearLimit: Bool {
         guard let limit = appState.session?.staticProjectLimit, limit > 0 else { return false }
-        let used = Int64(appState.stats?.usedStatic
-            ?? appState.projects.filter { !$0.kind.isBackend }.reduce(Int64(0)) { $0 + $1.size })
-        return Double(used) / Double(limit) >= 0.8
+        return Double(usedStaticBytes) / Double(limit) >= 0.8
     }
 
     private func heroMetric(value: String, label: String) -> some View {
