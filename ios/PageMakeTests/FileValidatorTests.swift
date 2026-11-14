@@ -36,6 +36,19 @@ final class FileValidatorTests: XCTestCase {
         XCTAssertEqual(try? result.get().count, 3)
     }
 
+    /// bun 形态走同一份后端白名单：TS 源码与两种锁文件（bun.lockb 二进制 /
+    /// bun.lock 文本）都必须放行——lockb 曾不在白名单里导致老 bun 项目被拒收
+    func testBunProjectAcceptsTSAndLockFiles() {
+        let files = [
+            pickedFile(name: "package.json", size: 256),
+            pickedFile(name: "server.ts", size: 2048),
+            pickedFile(name: "bun.lockb", size: 512),
+            pickedFile(name: "bun.lock", size: 384)
+        ]
+        let result = FileValidator.validate(files, limitBytes: 1024 * 1024, kind: .bun)
+        XCTAssertEqual(try? result.get().count, 4)
+    }
+
     func testRejectsTooLargeTotal() {
         let result = FileValidator.validate([pickedFile(name: "big.zip", size: 6 * 1024 * 1024)])
         XCTAssertEqual(result.failure, .tooLarge(bytes: 6 * 1024 * 1024))

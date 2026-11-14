@@ -112,6 +112,26 @@ final class ProjectDecodingTests: XCTestCase {
         XCTAssertNotNil(ban.until)
     }
 
+    /// bun 形态解码 + visitStats 字段（历史后端版本不返回 visitStats，按 nil 处理）
+    func testDecodesBunKindAndVisitStats() throws {
+        let data = projectJSON(extra: """
+        "kind": "bun",
+        "visitStats": { "total": 7, "today": 2, "days": { "2026-11-14": 2 } }
+        """)
+        let project = try JSONDecoder().decode(Project.self, from: data)
+        XCTAssertEqual(project.kind, .bun)
+        XCTAssertTrue(project.kind.isBackend)
+        XCTAssertEqual(project.visitStats?.total, 7)
+        XCTAssertEqual(project.visitStats?.today, 2)
+    }
+
+    /// 访问统计字段格式异常时按缺失处理，不能让个别字段毁掉整个项目的解码
+    func testMalformedVisitStatsDegradesToNil() throws {
+        let data = projectJSON(extra: "\"visitStats\": { \"total\": \"not-a-number\" }")
+        let project = try JSONDecoder().decode(Project.self, from: data)
+        XCTAssertNil(project.visitStats)
+    }
+
     func testBanInfoWithoutUntilIsPermanent() throws {
         let json = """
         { "level": 4, "reason": "严重违规", "permanent": true }

@@ -16,7 +16,7 @@ import { isValidRelPath } from '../../../lib/paths.js';
 // 纯前端项目只允许 html/css/js；后端项目还要放 package.json、TS 源码、
 // 构建配置和静态资源。两份白名单分开，避免放宽静态项目的边界。
 const STATIC_EXT_RE = /\.(html?|css|js)$/i;
-const BACKEND_EXT_RE = /\.(html?|css|js|mjs|cjs|json|ts|tsx|jsx|md|txt|yml|yaml|toml|xml|graphql|gql|sql|map|wasm|svg|png|jpe?g|gif|webp|ico|bmp|avif|woff2?|ttf|otf|eot|mp3|mp4|webm|pdf|csv|lock)$/i;
+const BACKEND_EXT_RE = /\.(html?|css|js|mjs|cjs|json|ts|tsx|jsx|md|txt|yml|yaml|toml|xml|graphql|gql|sql|map|wasm|svg|png|jpe?g|gif|webp|ico|bmp|avif|woff2?|ttf|otf|eot|mp3|mp4|webm|pdf|csv|lockb?)$/i;
 
 /** 按项目形态选择允许的扩展名（.php 永远拒绝） */
 function extAllowed(path, kind) {

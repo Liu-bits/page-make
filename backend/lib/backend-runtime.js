@@ -354,16 +354,19 @@ async function resolveStartCommand(kind, srcDir, pkg) {
     return { command: bin.command, args: ['start'], shell: bin.shell };
   }
   if (kind === 'bun') {
-    // bun 可以直接执行 .ts / .mjs / .js 入口，无需 build 编译
+    // bun 可以直接执行 .ts / .mjs / .js 入口，无需 build 编译。
+    // shell:true 下参数不经转义：入口路径带空格必须显式加引号，
+    // 否则 `bun my server.ts` 会被 cmd 拆成两个参数
     const bin = pmBinary(kind);
+    const quoteArg = (value) => (bin.shell && /\s/.test(value) ? `"${value}"` : value);
     if (typeof pkg?.main === 'string' && pkg.main) {
       if (!isValidRelPath(pkg.main) || pkg.main.includes(':')) return null;
-      return { command: bin.command, args: [pkg.main], shell: bin.shell };
+      return { command: bin.command, args: [quoteArg(pkg.main)], shell: bin.shell };
     }
     for (const candidate of ['server.ts', 'index.ts', 'app.ts', 'main.ts', 'server.js', 'index.js', 'app.js', 'main.js']) {
       try {
         await nodeFs.access(path.join(srcDir, candidate));
-        return { command: bin.command, args: [candidate], shell: bin.shell };
+        return { command: bin.command, args: [quoteArg(candidate)], shell: bin.shell };
       } catch { /* 继续找 */ }
     }
     return null;

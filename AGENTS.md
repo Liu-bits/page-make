@@ -456,7 +456,12 @@ push debug → debug CI 三 job 全绿 → 合并 main → main 的 deploy job �
  - Windows 上 `spawn('npm')` / `spawn('pnpm')` 会 ENOENT，必须用 Node 同目录的
    `npm.cmd` / `pnpm.cmd` 并 `shell: true`；Linux 容器直接走命令名。
    bun 例外：独立可执行文件（官方安装器在 ~/.bun/bin、npm 全局装则在 node 同目录），
-   统一走 `shell: true` + 裸 `bun` 让系统按 PATH 解析，不要拼 node 同目录
+   统一走 `shell: true` + 裸 `bun` 让系统按 PATH 解析，不要拼 node 同目录。
+   **bun 两个加固点**（2026-11-14 审计补）：① `shell: true` 下参数不经转义，入口路径
+   带空格必须显式加引号（`quoteArg`），否则 `bun my server.ts` 被 cmd 拆成两个参数；
+   ② 锁文件白名单必须含 `lockb`——`bun.lockb` 的扩展名是 lockb 而非 lock，
+   files.js 的 BACKEND_EXT_RE 与 iOS backendAllowedExtensions 曾都只写 lock，
+   老版 bun 项目的二进制锁文件会被拒收（iOS 测试 target 有回归用例）
  - 后端项目运行时子进程 env 只能给最小集合（PATH/HOME/PORT/HOST/NODE_ENV/NODE_OPTIONS），
    绝不能继承宿主 `process.env`，否则会把平台 Token / 密钥暴露给用户代码
  - **`restoreAll` 必须用 `isBackendKind()` 判断，不能枚举 `npm`/`pnpm`**：曾写成

@@ -43,12 +43,13 @@ enum FileValidator {
         "svg", "ico", "woff", "woff2", "ttf", "otf", "mp3", "mp4", "epk",
     ]
     /// 后端项目需要 package.json、TS/JS 源码、配置和静态资源；ZIP 仍可直接上传。
+    /// lockb 是 bun 的二进制锁文件（bun 1.2 前默认），bun.lock 的扩展名是 "lock"。
     static let backendAllowedExtensions: Set<String> = [
         "zip", "html", "htm", "css", "js", "mjs", "cjs", "json",
         "ts", "tsx", "jsx", "md", "txt", "yml", "yaml", "toml", "xml",
         "graphql", "gql", "sql", "map", "wasm", "svg", "png", "jpg", "jpeg",
         "gif", "webp", "ico", "bmp", "avif", "woff", "woff2", "ttf", "otf",
-        "eot", "mp3", "mp4", "webm", "pdf", "csv", "lock",
+        "eot", "mp3", "mp4", "webm", "pdf", "csv", "lock", "lockb",
     ]
 
     static func allowedExtensions(for kind: ProjectKind) -> Set<String> {

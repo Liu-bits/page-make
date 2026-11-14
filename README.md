@@ -2,17 +2,17 @@
 
 网页与 Node 服务托管工具：用户上传 ZIP、粘贴 HTML/CSS，或使用项目模式管理虚拟文件，
 后台自动解压、找入口、诊断并生成可公开访问的链接。部署形态自动识别（含 `package.json`
-即为 npm / pnpm 后端）；VIP 及以上可部署后端项目，普通用户只能部署纯前端。PHP 与 C++ 不支持。
+即为 npm / pnpm / bun 后端）；VIP 及以上可部署后端项目，普通用户只能部署纯前端。PHP 与 C++ 不支持。
 
 - **iOS**：SwiftUI 纯原生实现 + AuthenticationServices（Sign in with Apple）
-- **后端**：Node 22 容器（Docker），npm / pnpm / js 项目在受限子进程中安装、构建与运行
+- **后端**：Node 22 容器（Docker），npm / pnpm / js / bun 项目在受限子进程中安装、构建与运行
 - **部署**：ModelScope（Docker 类型空间）
 - **构建**：CI · `xcode-27` runner（macOS 27.0.1）· Xcode 27.0.0 · iOS 27.0 模拟器
 - **许可**：专有软件，保留所有权利
 
 > 架构说明：业务 handler 位于 `backend/`，由 `docker/server.mjs` 适配为普通
 > Node HTTP 服务，数据落盘到 `DATA_DIR`。静态站点直接由 `/p/<id>` 下发；
-> npm / pnpm / js 项目由 `backend/lib/backend-runtime.js` 安装、构建并反向代理；
+> npm / pnpm / js / bun 项目由 `backend/lib/backend-runtime.js` 安装、构建并反向代理；
 > 发布与刷新是异步状态机，客户端轮询 `/status`，避免长请求被网关或 iOS 超时截断。
 
 ## 目录结构
@@ -48,7 +48,7 @@
 | --- | --- |
 | iOS 编译 | `xcode-27` runner（= macOS 27.0.1 镜像）+ Xcode 27.0.0 GM（CI 精确锁定并校验） |
 | 运行目标 | 优先 iOS 27.0.1 模拟器，回退 iOS 27.0（Apple 版本线无 27.0.1） |
-| 后端 | Node 22；用户项目可使用 npm 或 pnpm 安装依赖 |
+| 后端 | Node 22；用户项目可使用 npm / pnpm 或 bun 安装依赖 |
 | 本地开发 | Windows 11（iOS 无法本地编译，由 CI 的 macOS runner 完成） |
 
 ## 快速开始
@@ -114,7 +114,7 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 - **单点**：容器重启期间短暂不可用（Node 冷启动 1~2 秒，数据不丢）
 - **网络**：国内快、海外慢（无 CDN）；用户主要在海外可改部署到 Oracle Always Free 等海外机房（同一镜像，零改动）
 - `DEV_NO_AUTH=1` **仅限本地调试**，生产环境禁止设置（等于关闭登录）
-- 部署形态由客户端**自动识别**：含 `package.json` 即为后端项目（有 `pnpm-lock.yaml` → pnpm，否则 npm），
+- 部署形态由客户端**自动识别**：含 `package.json` 即为后端项目（有 `bun.lockb`/`bun.lock` → bun，有 `pnpm-lock.yaml` → pnpm，否则 npm），
   否则为纯前端；后端形态仅 VIP 及以上可用，创建页不再提供形态选择
 
 ## CI
@@ -143,7 +143,7 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 | `GET/POST /api/projects/:id` | 详情 / 重命名或删除（网关兼容：删除走 `POST action=delete`） |
 | `GET /api/projects/:id/export` | 导出项目源码 ZIP（VIP 及以上） |
 | `GET /api/projects/:id/status` | 状态轮询（每 2 秒） |
-| `POST /api/projects/:id/refresh` | 刷新链接（静态项目重发；npm/pnpm 异步重启进程） |
+| `POST /api/projects/:id/refresh` | 刷新链接（静态项目重发；npm/pnpm/bun 异步重启进程） |
 | `GET/POST /api/projects/:id/files` | 读取 / 新增、编辑、重命名、删除文件 |
 | `POST /api/upload/:uploadId` | 取消上传（`action=cancel`，清理临时分片） |
 | `POST /api/feedback` | 反馈 / 举报 |
