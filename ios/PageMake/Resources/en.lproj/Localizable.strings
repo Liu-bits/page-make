@@ -415,3 +415,4 @@
 "visit_total_value" = "%lld";
 "visit_today_label" = "Visits today";
 "visit_today_value" = "%lld";
+"edit_code" = "Edit code";

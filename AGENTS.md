@@ -282,8 +282,12 @@ E:/Page-make/
 - 文件内容编辑下放（2026-11-14）：管理文件页文本文件（html/css/js/md/json 等 17 类
   扩展名）带编辑按钮，复用项目模式的 FileEditorView（载入/保存/未保存确认全套）；
   普通用户即可改内容，不再依赖 SVIP 项目模式
+- ZIP / 粘贴项目可进项目模式编辑（2026-11-14）：预览页底栏新增「编辑代码」按钮推入
+  ExplorerView（files.js 目录/重命名/新建接口本就全项目通用，仅补 iOS 入口；
+  **创建空白项目仍限 SVIP**）。列表页路由不变（sourceType == explorer 才直进项目模式），
+  返回预览页时 .task 静默刷新带回编辑后的文件清单
 - WebView 预览（reloadToken、轮询 150 次上限、runtimeErrors 去重上限 50）
-- 中英本地化（各 358 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
+- 中英本地化（各 359 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
 - 设置页 VIP 升级卡（皇冠图标 + 申请状态 + 申请/查看进度）；项目模式顶部固定构建栏
 - 隐私政策/用户协议 App 内展示（Documents 双语文档，文件名后缀区分语言）
 
@@ -315,7 +319,7 @@ E:/Page-make/
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 26 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
 | `node dev/test-admin.mjs` | 31 | 后台（密码安全、VIP/SVIP/Ultra 等级切换、配额同步、封禁下架/解封、删号、邮箱密码入口删除、VIP 升级申请全链路） |
-| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 358 键） |
+| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 359 键） |
 | `node scripts/check-dead-strings.mjs` | 1 | 死文案键扫描：查无 Swift 引用的本地化键。对 `status_/account_/template_/project_kind_/ban_level_` 前缀插值引用的键单列为「动态引用，需人工确认」，不计入死键。**注意：本脚本只打印、从不 `exit 1`，是提示性检查，不是门禁** |
 | `node scripts/check-swift-decls.mjs` | 1 | Swift 同作用域属性包装器重复声明扫描（替代本地缺失的 `-typecheck`；已接入 CI backend-test job） |
 

@@ -13,6 +13,7 @@ struct PreviewView: View {
     @State private var runtimeErrors: [String] = []
     @State private var showDiagnostics = false
     @State private var showManage = false
+    @State private var showExplorer = false
     @State private var showDeleteConfirm = false
     @State private var alertItem: AlertItem?
     @State private var isRefreshing = false
@@ -105,6 +106,12 @@ struct PreviewView: View {
         .onDisappear {
             pollTask?.cancel()
             pollTask = nil
+        }
+        // ZIP / 粘贴建的项目也能进项目模式编辑：files.js 的目录/重命名/新建接口
+        // 本就全项目通用，这里只是补 iOS 的推入入口（创建空白项目仍限 SVIP）。
+        // 返回时 .task 静默刷新会把编辑后的文件清单带回来。
+        .navigationDestination(isPresented: $showExplorer) {
+            ExplorerView(project: current)
         }
     }
 
@@ -284,6 +291,9 @@ struct PreviewView: View {
                 }
                 bottomButton(icon: "folder", label: L10n.string("file_list")) {
                     showManage = true
+                }
+                bottomButton(icon: "chevron.left.forwardslash.chevron.left", label: L10n.string("edit_code")) {
+                    showExplorer = true
                 }
                 bottomButton(icon: "trash", label: L10n.string("delete_project")) {
                     showDeleteConfirm = true

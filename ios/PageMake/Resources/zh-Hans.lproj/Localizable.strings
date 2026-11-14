@@ -415,3 +415,4 @@
 "visit_total_value" = "%lld 次";
 "visit_today_label" = "今日访问";
 "visit_today_value" = "%lld 次";
+"edit_code" = "编辑代码";
