@@ -246,7 +246,7 @@ struct SecondaryButtonStyle: ButtonStyle {
             .foregroundStyle(Theme.label)
             .background(
                 RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
-                    .fill(Theme.surfaceSoft.opacity(0.7))
+                    .fill(PageMakeTheme.surfaceSoft.opacity(0.7))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
