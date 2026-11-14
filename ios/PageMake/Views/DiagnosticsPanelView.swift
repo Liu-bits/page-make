@@ -8,6 +8,9 @@ struct DiagnosticsPanelView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
     @State private var alertItem: AlertItem?
+    /// 后端项目的最近运行日志（stdout/stderr 环形缓冲）
+    @State private var runtimeLogs: String?
+    @State private var logsLoading = false
 
     /// 运行时错误映射为诊断项
     private var allItems: [DiagnosticItem] {
@@ -57,6 +60,9 @@ struct DiagnosticsPanelView: View {
                             }
                         }
                     }
+                    if project.kind.isBackend {
+                        runtimeLogsSection
+                    }
                     Section {
                         Button(L10n.string("copy_report")) {
                             copyReport()
@@ -79,6 +85,45 @@ struct DiagnosticsPanelView: View {
                     message: Text(item.message),
                     dismissButton: .default(Text(L10n.string("done")))
                 )
+            }
+        }
+    }
+
+    /// 后端项目运行日志：stdout/stderr 环形缓冲（最近 16KB），调试「为什么 503」的刚需
+    private var runtimeLogsSection: some View {
+        Section(L10n.string("runtime_logs")) {
+            if logsLoading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(L10n.string("loading")).font(.caption).foregroundStyle(.secondary)
+                }
+            } else if let logs = runtimeLogs, !logs.isEmpty {
+                ScrollView {
+                    Text(logs)
+                        .font(.system(size: 11, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .frame(maxHeight: 220)
+                Button(L10n.string("runtime_logs_copy")) {
+                    UIPasteboard.general.string = logs
+                    alertItem = AlertItem(message: L10n.string("report_copied"))
+                }
+            } else {
+                Text(L10n.string("runtime_logs_empty"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .task {
+            logsLoading = true
+            defer { logsLoading = false }
+            do {
+                let payload = try await APIClient.shared.runtimeLogs(projectId: project.id)
+                runtimeLogs = payload.logs
+            } catch {
+                // 拉取失败（静态项目 / 网络抖动）保持空态即可
+                runtimeLogs = nil
             }
         }
     }

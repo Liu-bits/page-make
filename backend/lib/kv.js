@@ -35,6 +35,13 @@ export const keys = {
   // 站点访问统计（backend/lib/visitstats.js）：与项目记录分离，避免统计写入
   // 与业务锁争抢；项目删除时随 deleteProjectGuarded 一起清理
   visitStats: (projectId) => `stat_${encodeKey(projectId)}`,
+  // 静态站表单收集（/p/<id>/__form 提交，App 内查看）；随项目删除清理
+  formSubmission: (projectId, subId) => `formsub_${encodeKey(projectId)}_${encodeKey(subId)}`,
+  formSubmissionPrefix: (projectId) => `formsub_${encodeKey(projectId)}_`,
+  // 项目快照（备份当前版本，VIP+ 可用；每项目一份，恢复即回滚）
+  snapshotMeta: (projectId) => `snapshot_${encodeKey(projectId)}`,
+  snapshotFile: (projectId, path) => `snapshot_${encodeKey(projectId)}_${encodeKey(path)}`,
+  snapshotFilePrefix: (projectId) => `snapshot_${encodeKey(projectId)}_`,
   log: (id) => `log_${encodeKey(id)}`,
   feedback: (id) => `feedback_${encodeKey(id)}`,
   vipRequest: (userId) => `vipreq_${encodeKey(userId)}`,

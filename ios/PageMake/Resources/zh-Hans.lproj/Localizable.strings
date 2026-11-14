@@ -418,3 +418,28 @@
 "visit_today_label" = "今日访问";
 "visit_today_value" = "%lld 次";
 "edit_code" = "编辑代码";
+
+// MARK: - 运行日志 / 表单收集 / 快照
+"loading" = "加载中…";
+"runtime_logs" = "运行日志";
+"runtime_logs_empty" = "暂无运行日志（进程未启动或刚重启）";
+"runtime_logs_copy" = "复制日志";
+"form_submissions" = "表单提交";
+"form_count_badge" = "共 %lld 条";
+"form_empty" = "还没有提交";
+"form_hint" = "在网页 HTML 里加入 <form action=\"__form\" method=\"post\"> 与输入框，访客提交的内容会收集到这里（每站 200 条封顶，仅静态项目）。";
+"form_delete" = "删除这条";
+"form_delete_confirm" = "确定删除这条提交？";
+"form_clear" = "清空全部提交";
+"form_clear_confirm" = "确定清空全部提交？此操作不可恢复。";
+"form_cleared" = "已清空";
+"snapshot_section" = "备份与恢复";
+"snapshot_info_label" = "已备份文件";
+"snapshot_info_format" = "%lld 个";
+"snapshot_date_label" = "备份时间";
+"snapshot_none" = "尚无备份。备份后可随时把站点恢复到备份点。";
+"snapshot_backup" = "备份当前版本";
+"snapshot_restore" = "恢复到备份点";
+"snapshot_restore_confirm" = "恢复会用备份覆盖当前全部文件，确定继续？";
+"snapshot_created" = "备份已创建";
+"snapshot_restored" = "已恢复 %lld 个文件到备份点";

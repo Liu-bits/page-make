@@ -2114,6 +2114,241 @@ await test('bun 形态后端项目：bun install + TS 入口由 bun 运行', asy
 });
 
 // ---------------------------------------------------------------------------
+// 运行日志：后端项目 stdout/stderr 环形缓冲 → App 内可见（调试刚需）
+await test('后端项目运行日志：stdout 收集 → /logs 接口可见', async () => {
+  const lgUserId = 'dev-runtime-logs';
+  seedUser(dataDir, lgUserId, 'svip');
+  const lgAuth = { 'X-Test-User': lgUserId };
+
+  const created = await (await fetch(`${BASE}/api/projects/explorer`, {
+    method: 'POST',
+    headers: { ...lgAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'logs-app', kind: 'js' }),
+  })).json();
+  assert(created.ok, `建 js 项目应成功：${JSON.stringify(created)}`);
+  const id = created.project.id;
+
+  const serverSrc = [
+    "const http = require('node:http');",
+    'let n = 0;',
+    'http.createServer((req, res) => {',
+    "  console.log('log-line-' + (++n) + ':' + req.url);",
+    "  res.writeHead(200, { 'content-type': 'text/plain' });",
+    "  res.end('logs-ok');",
+    "}).listen(Number(process.env.PORT), '127.0.0.1');",
+  ].join('\n');
+  const put = await fetch(`${BASE}/api/projects/${id}/files`, {
+    method: 'POST',
+    headers: { ...lgAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: 'server.js', content: textToBase64(serverSrc) }),
+  });
+  assertEqual(put.status, 200, '写入 server.js 应成功');
+
+  const published = await (await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST',
+    headers: { ...lgAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'publish', kind: 'js' }),
+  })).json();
+  assert(published.ok, `发布应成功：${JSON.stringify(published)}`);
+  await waitForProjectReady(id, lgAuth);
+
+  // 触发两次请求产生 stdout 输出
+  await fetch(`${BASE}/p/${id}/hit1`);
+  await fetch(`${BASE}/p/${id}/hit2`);
+  await new Promise((r) => setTimeout(r, 300));
+
+  const logsRes = await (await fetch(`${BASE}/api/projects/${id}/logs`, { headers: lgAuth })).json();
+  assert(logsRes.ok, '日志接口应成功');
+  assertEqual(logsRes.running, true, '进程在跑应返回 running=true');
+  assert(
+    typeof logsRes.logs === 'string' && logsRes.logs.includes('log-line-1'),
+    `日志应包含 stdout 输出，实际：${String(logsRes.logs).slice(0, 200)}`
+  );
+
+  // 静态项目不提供日志接口
+  const staticPaste = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { ...lgAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'no-logs', html: '<html><body>s</body></html>', css: '' }),
+  })).json();
+  const logsStatic = await fetch(`${BASE}/api/projects/${staticPaste.project.id}/logs`, { headers: lgAuth });
+  assertEqual(logsStatic.status, 400, '静态项目请求日志应 400 LOGS_ONLY_BACKEND');
+
+  await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST',
+    headers: { ...lgAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete' }),
+  });
+  await fetch(`${BASE}/api/projects/${staticPaste.project.id}`, {
+    method: 'POST',
+    headers: { ...lgAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete' }),
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 表单收集 + 自定义 404 + SEO meta + 快照回滚（四个 S/M 级功能一组验证）
+await test('表单收集 / 自定义 404 / SEO meta / 快照回滚', async () => {
+  const mixUserId = 'dev-mix-features';
+  seedUser(dataDir, mixUserId, 'svip');
+  const mixAuth = { 'X-Test-User': mixUserId };
+
+  const pasted = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { ...mixAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: 'mix-site',
+      html: '<!doctype html><html><head><title>Mix</title></head><body><h1>v1</h1></body></html>',
+      css: 'body{margin:0}',
+    }),
+  })).json();
+  assert(pasted.ok, `粘贴建站应成功：${JSON.stringify(pasted)}`);
+  const id = pasted.project.id;
+
+  // ---- 表单收集：浏览器原生表单（urlencoded）----
+  const formPost = await fetch(`${BASE}/p/${id}/__form`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'name=alice&msg=hello',
+  });
+  assertEqual(formPost.status, 200, '表单提交应 200');
+  const formText = await formPost.text();
+  assert(formText.includes('提交成功'), `浏览器原生表单应返回成功页，实际：${formText.slice(0, 150)}`);
+
+  // fetch(JSON) 形态
+  const jsonPost = await fetch(`${BASE}/p/${id}/__form`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ name: 'bob' }),
+  });
+  assertEqual(jsonPost.status, 200, 'JSON 表单应 200');
+  assertEqual((await jsonPost.json()).submitted, true, 'JSON 形态应返回 submitted=true');
+
+  // 管理接口：列表 → 删单条 → 清空
+  let formList = await (await fetch(`${BASE}/api/projects/${id}/form`, { headers: mixAuth })).json();
+  assertEqual(formList.count, 2, '应收集 2 条提交');
+  const first = formList.submissions[0];
+  const target = formList.submissions.find((s) => s.fields.name === 'alice');
+  assert(target, '应包含 urlencoded 提交的字段');
+  assertEqual(target.fields.msg, 'hello', '字段值应原样保留');
+  const del = await fetch(`${BASE}/api/projects/${id}/form`, {
+    method: 'POST',
+    headers: { ...mixAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete', id: target.id }),
+  });
+  assertEqual(del.status, 200, '删单条应成功');
+  formList = await (await fetch(`${BASE}/api/projects/${id}/form`, { headers: mixAuth })).json();
+  assertEqual(formList.count, 1, '删除后应剩 1 条');
+
+  // ---- 自定义 404：写 404.html → 未命中路径返回它（状态码仍 404）----
+  const put404 = await fetch(`${BASE}/api/projects/${id}/files`, {
+    method: 'POST',
+    headers: { ...mixAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      path: '404.html',
+      content: textToBase64('<!doctype html><html><head><title>404</title></head><body><p>custom-not-found-page</p></body></html>'),
+    }),
+  });
+  assertEqual(put404.status, 200, '写入 404.html 应成功');
+  const missing = await fetch(`${BASE}/p/${id}/no-such-page`);
+  assertEqual(missing.status, 404, '未命中路径应返回 404 状态码');
+  const missingText = await missing.text();
+  assert(missingText.includes('custom-not-found-page'), `应返回项目内自定义 404 页，实际：${missingText.slice(0, 150)}`);
+  assert(missingText.includes(`<base href="/p/${id}/">`), '自定义 404 页应注入项目级 base');
+
+  // ---- SEO meta：无 meta 的入口自动注入（标题取 <title>），用户自己的不被覆盖 ----
+  const entry = await (await fetch(`${BASE}/p/${id}`)).text();
+  assert(entry.includes('<meta name="description" content="Mix">'), '应注入 description（取自 <title>）');
+  assert(entry.includes('<meta property="og:title" content="Mix">'), '应注入 og:title');
+  // 用户写了自己的 description 后不再被覆盖
+  const putMeta = await fetch(`${BASE}/api/projects/${id}/files`, {
+    method: 'POST',
+    headers: { ...mixAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      path: 'index.html',
+      content: textToBase64('<!doctype html><html><head><title>Mix</title><meta name="description" content="own-desc"></head><body><h1>v1</h1></body></html>'),
+    }),
+  });
+  assertEqual(putMeta.status, 200, '更新入口应成功');
+  const entry2 = await (await fetch(`${BASE}/p/${id}`)).text();
+  assert(entry2.includes('content="own-desc"'), '用户自己的 description 应保留');
+  assertEqual(
+    (entry2.match(/name="description"/g) || []).length,
+    1,
+    '用户已有 description 时不应重复注入'
+  );
+  assert(entry2.includes('<meta property="og:title" content="Mix">'), '缺失的 og:title 仍应补齐');
+
+  // ---- 快照：备份 → 改文件 → 恢复 → 内容回到备份点 ----
+  const snapCreate = await fetch(`${BASE}/api/projects/${id}/snapshot`, {
+    method: 'POST',
+    headers: { ...mixAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'create' }),
+  });
+  assertEqual(snapCreate.status, 200, `创建快照应成功：${JSON.stringify(await snapCreate.json())}`);
+
+  // 备份后改入口为 v2
+  await fetch(`${BASE}/api/projects/${id}/files`, {
+    method: 'POST',
+    headers: { ...mixAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      path: 'index.html',
+      content: textToBase64('<!doctype html><html><head><title>Mix</title></head><body><h1>v2-changed</h1></body></html>'),
+    }),
+  });
+  const beforeRestore = await (await fetch(`${BASE}/p/${id}`)).text();
+  assert(beforeRestore.includes('v2-changed'), '修改后入口应显示 v2');
+
+  const restore = await fetch(`${BASE}/api/projects/${id}/snapshot`, {
+    method: 'POST',
+    headers: { ...mixAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'restore' }),
+  });
+  assertEqual(restore.status, 200, `恢复快照应成功：${JSON.stringify(await restore.json())}`);
+  const afterRestore = await (await fetch(`${BASE}/p/${id}`)).text();
+  assert(afterRestore.includes('v1') && !afterRestore.includes('v2-changed'), '恢复后应回到备份点内容');
+
+  // 普通账号（无 VIP）在自己的项目上不可用快照（容量成本 = 全站文件副本，仅 VIP+）
+  const plainUser = 'dev-mix-plain';
+  seedUser(dataDir, plainUser, 'user');
+  const plainPaste = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { 'X-Test-User': plainUser, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'plain-site', html: '<html><body>plain</body></html>', css: '' }),
+  })).json();
+  assert(plainPaste.ok, '普通用户建站应成功');
+  const plainDenied = await fetch(`${BASE}/api/projects/${plainPaste.project.id}/snapshot`, {
+    method: 'POST',
+    headers: { 'X-Test-User': plainUser, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'create' }),
+  });
+  assertEqual(plainDenied.status, 403, '非 VIP 应 403 SNAPSHOT_REQUIRES_VIP');
+  await fetch(`${BASE}/api/projects/${plainPaste.project.id}`, {
+    method: 'POST',
+    headers: { 'X-Test-User': plainUser, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete' }),
+  });
+
+  // 删除快照 → 信息为 null
+  await fetch(`${BASE}/api/projects/${id}/snapshot`, {
+    method: 'POST',
+    headers: { ...mixAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete' }),
+  });
+  const snapInfo = await (await fetch(`${BASE}/api/projects/${id}/snapshot`, { headers: mixAuth })).json();
+  assertEqual(snapInfo.snapshot, null, '删除后快照信息应为 null');
+
+  // 清理项目（含表单/快照孤儿清理断言）
+  await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST',
+    headers: { ...mixAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'delete' }),
+  });
+  const statFileGone = !fs.existsSync(path.join(dataDir, `formsub_${encodeKey(id)}_x`));
+  assert(statFileGone, '表单记录应随项目删除清理');
+});
+
+// ---------------------------------------------------------------------------
 console.log(`\n结果：${passed} 通过，${failed} 失败\n`);
 
 killProcessTree(server);

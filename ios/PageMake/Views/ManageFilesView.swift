@@ -7,11 +7,19 @@ struct ManageFilesView: View {
     let onChanged: (Project) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var appState: AppState
     @State private var current: Project
     @State private var showAddFile = false
     @State private var pendingDelete: String?
     @State private var editingFile: ProjectFile?
     @State private var alertItem: AlertItem?
+    /// 表单收集（静态站）：提交计数 + 列表入口
+    @State private var formCount: Int?
+    @State private var showFormSubmissions = false
+    /// 快照（VIP+）：备份当前版本 / 恢复到备份点
+    @State private var snapshotInfo: SnapshotInfo?
+    @State private var snapshotBusy = false
+    @State private var showRestoreConfirm = false
 
     /// 可在应用内直接编辑内容的文本类型（与 AddFileSheet 的 html/css/js 一致并放宽常用文本）
     private static let editableExtensions: Set<String> = [
@@ -45,6 +53,62 @@ struct ManageFilesView: View {
                     if let stats = current.visitStats {
                         LabeledContent(L10n.string("visit_total_label"), value: L10n.format("visit_total_value", stats.total))
                         LabeledContent(L10n.string("visit_today_label"), value: L10n.format("visit_today_value", stats.today))
+                    }
+                }
+
+                // 表单收集（仅静态项目：后端项目走代理由应用自己实现）
+                if !current.kind.isBackend {
+                    Section {
+                        Button {
+                            showFormSubmissions = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "text.bubble")
+                                    .foregroundStyle(Theme.highlight)
+                                Text(L10n.string("form_submissions"))
+                                Spacer()
+                                if let count = formCount {
+                                    Text(L10n.format("form_count_badge", count))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    } footer: {
+                        Text(L10n.string("form_hint"))
+                    }
+                }
+
+                // 快照（备份当前版本 / 恢复）：容量成本是全站文件副本，仅 VIP 及以上
+                if appState.session?.canExport == true {
+                    Section(L10n.string("snapshot_section")) {
+                        if let info = snapshotInfo {
+                            LabeledContent(L10n.string("snapshot_info_label"), value: L10n.format("snapshot_info_format", info.fileCount))
+                            if let date = info.createdAt {
+                                LabeledContent(L10n.string("snapshot_date_label"), value: DateParsing.display(date))
+                            }
+                        } else {
+                            Text(L10n.string("snapshot_none"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Button {
+                            Task { await snapshotCreate() }
+                        } label: {
+                            Label(L10n.string("snapshot_backup"), systemImage: "externaldrive.badge.plus")
+                        }
+                        .disabled(snapshotBusy)
+                        if snapshotInfo != nil {
+                            Button(role: .destructive) {
+                                showRestoreConfirm = true
+                            } label: {
+                                Label(L10n.string("snapshot_restore"), systemImage: "arrow.uturn.backward")
+                            }
+                            .disabled(snapshotBusy)
+                        }
                     }
                 }
 
@@ -115,6 +179,24 @@ struct ManageFilesView: View {
                     onChanged(updated)
                 }
             }
+            .sheet(isPresented: $showFormSubmissions) {
+                FormSubmissionsView(project: current) { count in
+                    formCount = count
+                }
+            }
+            .confirmationDialog(
+                L10n.string("snapshot_restore_confirm"),
+                isPresented: $showRestoreConfirm,
+                titleVisibility: .visible
+            ) {
+                Button(L10n.string("snapshot_restore"), role: .destructive) {
+                    Task { await snapshotRestore() }
+                }
+                Button(L10n.string("cancel"), role: .cancel) {}
+            }
+            .task(id: current.id) {
+                await refreshCounts()
+            }
             .confirmationDialog(
                 L10n.string("delete_file_confirm"),
                 isPresented: Binding(
@@ -137,6 +219,58 @@ struct ManageFilesView: View {
                     dismissButton: .default(Text(L10n.string("done")))
                 )
             }
+        }
+    }
+
+    /// 表单计数 + 快照信息静默刷新（快照仅 VIP+，静态/后端项目都支持）
+    private func refreshCounts() async {
+        if !current.kind.isBackend {
+            if let payload = try? await APIClient.shared.formSubmissions(projectId: current.id) {
+                formCount = payload.count
+            }
+        }
+        if appState.session?.canExport == true {
+            snapshotInfo = try? await APIClient.shared.snapshotInfo(projectId: current.id)
+        }
+    }
+
+    private func snapshotCreate() async {
+        snapshotBusy = true
+        defer { snapshotBusy = false }
+        do {
+            let result = try await APIClient.shared.snapshotAction(projectId: current.id, action: "create")
+            snapshotInfo = SnapshotInfo(
+                projectId: current.id,
+                entryPath: result.entryPath,
+                fileCount: result.fileCount ?? 0,
+                size: 0,
+                createdAt: Date()
+            )
+            alertItem = AlertItem(message: L10n.string("snapshot_created"), titleKey: "alert_tip")
+        } catch let error as APIError {
+            alertItem = AlertItem(message: error.errorDescription ?? L10n.string("error_generic"))
+        } catch {
+            alertItem = AlertItem(message: L10n.string("error_generic"))
+        }
+    }
+
+    private func snapshotRestore() async {
+        snapshotBusy = true
+        defer { snapshotBusy = false }
+        do {
+            let result = try await APIClient.shared.snapshotAction(projectId: current.id, action: "restore")
+            if let updated = try? await APIClient.shared.project(projectId: current.id) {
+                current = updated
+                onChanged(updated)
+            }
+            alertItem = AlertItem(
+                message: L10n.format("snapshot_restored", result.restored ?? 0),
+                titleKey: "alert_tip"
+            )
+        } catch let error as APIError {
+            alertItem = AlertItem(message: error.errorDescription ?? L10n.string("error_generic"))
+        } catch {
+            alertItem = AlertItem(message: L10n.string("error_generic"))
         }
     }
 

@@ -140,7 +140,8 @@ E:/Page-make/
 │   │   │                    #       purgePasswordUsers/setPassword) / overview
 │   │   ├── projects.js      #     项目列表
 │   │   ├── projects/        #     paste(粘贴建站) / explorer(项目模式) / [id].js(rename/delete)
-│   │   │   └── [id]/        #       files(GET/POST) / refresh(刷新区间链接) / status
+│   │   │   └── [id]/        #       files(GET/POST) / refresh / status / logs(运行日志)
+│   │   │                    #       / form(表单提交管理) / snapshot(备份回滚)
 │   │   ├── stats.js         #     用量统计
 │   │   └── upload/          #     init / chunk(600KB 分片) / finish / [uploadId](取消)
 │   ├── lib/                 #   核心库
@@ -259,6 +260,27 @@ E:/Page-make/
   `stat_<id>`（days 只留 7 天明细）；详情接口 `GET /api/projects/:id` 附 `visitStats`
   合并视图（含未落盘增量，实时）。**统计不挂在项目记录上**（避免与业务锁争抢与
   KV 写放大）；项目删除时 deleteProjectGuarded 一并清理 stat_ key
+- **后端项目运行日志**（2026-11-14）：spawnServer 已把 stdout/stderr 收进 16KB 内存
+  环形缓冲（record.logs，不落 KV）；`GET /api/projects/:id/logs` 暴露给项目归属者
+  （仅后端形态，静态项目 400 LOGS_ONLY_BACKEND）；iOS 诊断面板后端项目自动显示
+  日志区（等宽滚动 + 复制）。进程不在跑 → logs=null 显示「暂无」
+- **静态站表单收集**（2026-11-14）：保留路径 `POST /p/<id>/__form`（仅静态项目，后端
+  项目走代理由应用自实现）。浏览器原生表单返回成功页（htmlPage formOk，中英跟随
+  Accept-Language）、fetch JSON 返回 `{ok,submitted}`。清洗：字段 ≤20、单值 ≤2000 字符、
+  body ≤32KB、键名 ≤64 字符；限流每 IP 每分钟 5 次（独立桶 form:）；每项目 200 条封顶
+  （超出 429 拒收不覆盖旧数据）。管理：`GET/POST /api/projects/:id/form`（列表 / 删单条 /
+  清空），key 前缀 formsub_，跨项目 id 归属再核对一层；iOS 管理文件页入口 +
+  FormSubmissionsView（列表/删除/清空/文本导出），仅静态项目显示
+- **自定义 404 页 + SEO meta**（2026-11-14）：项目内放 `404.html` → 未命中路径返回它
+  （状态码仍 404，与入口页同管线：rewriteLocalRefs + injectPublicBase）；
+  `injectSeoMeta` 给入口注入 description / og:title / og:description（标题取用户
+  `<title>` 文本兜底项目名；**只补缺失**，用户已有 description/og:title 一个字节不改；
+  有界正则 {0,300}）
+- **项目快照回滚**（2026-11-14）：`/api/projects/:id/snapshot` create/restore/delete/
+  GET 信息。每项目一份快照（备份当前版本），create 覆盖旧份；restore 在项目锁内
+  换血（删现网 site_ 文件 → 快照写回 → 重算清单 → 入口丢失重选第一个 HTML）；
+  仅 VIP+（SNAPSHOT_REQUIRES_VIP，容量成本 = 全站文件副本），文件数 ≤300、总量按
+  等级配额封顶；项目删除时 formsub_/snapshot_ 全部一并清理
 - 导出备份：`GET /api/projects/:id/export`，VIP 及以上可下载项目源码 ZIP（排除安装产物）
 - 账号等级：`user < vip < svip < ultra`，后台 `setTier` 原地调整 userId / 会话 / 项目
 - 入口选择统一：index.html → 任意 html（publish/findEntry/上传管线一致）
@@ -296,8 +318,12 @@ E:/Page-make/
   ExplorerView（files.js 目录/重命名/新建接口本就全项目通用，仅补 iOS 入口；
   **创建空白项目仍限 SVIP**）。列表页路由不变（sourceType == explorer 才直进项目模式），
   返回预览页时 .task 静默刷新带回编辑后的文件清单
+- 运行日志 / 表单收集 / 快照入口（2026-11-14）：诊断面板后端项目自动显示运行日志区
+  （等宽滚动 + 复制）；管理文件页静态项目显示「表单提交」行（计数徽章 →
+  FormSubmissionsView 列表/删除/清空/文本导出 + 空态展示 form 代码片段提示）；
+  VIP 及以上显示「备份与恢复」区（备份当前版本 / 恢复到备份点，恢复有覆盖确认弹窗）
 - WebView 预览（reloadToken、轮询 150 次上限、runtimeErrors 去重上限 50）
-- 中英本地化（各 359 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
+- 中英本地化（各 384 键，0 重复）；错误码文案中立化（未知码显示码本身便于反馈定位）
 - 设置页 VIP 升级卡（皇冠图标 + 申请状态 + 申请/查看进度）；项目模式顶部固定构建栏
 - 隐私政策/用户协议 App 内展示（Documents 双语文档，文件名后缀区分语言）
 
@@ -319,17 +345,17 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 184 项 + 静态检查，提交前必须全绿）
+## 5. 测试体系（共 186 项 + 静态检查，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
 | `node dev/run-tests.mjs` | 61 | 单元测试（含 JWKS 三级加载、动态 ZIP 解压配额、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容、密码强度、MIME、等级配额、ZIP 写入器、代理前缀改写线性/幂等/注入位置、访问统计聚合/剪枝/隔离、bun 形态判定） |
-| `node dev/test-server.mjs` | 58 | 容器冒烟（真实 HTTP 全流程；含等级上传配额、压缩包小于配额但解压后超限、普通用户后端拒绝、npm 后端全链路反向代理、bun 形态全链路（bun install + TS 入口，本机无 bun 自动跳过）、后端代理改写 e2e（Location 五形态 / Set-Cookie Path / HTML 注入 / Referer 兜底 / gbk+gzip 跳过）、站点访问统计（入口计数/项目隔离/删除清理 stat_）、导出备份、ZIP PHP 过滤、Explorer 全流程、限流、删号 KV 残留、Apple/Google 合法 token 登录） |
+| `node dev/test-server.mjs` | 60 | 容器冒烟（真实 HTTP 全流程；含等级上传配额、压缩包小于配额但解压后超限、普通用户后端拒绝、npm 后端全链路反向代理、bun 形态全链路（bun install + TS 入口，本机无 bun 自动跳过）、后端代理改写 e2e（Location 五形态 / Set-Cookie Path / HTML 注入 / Referer 兜底 / gbk+gzip 跳过）、站点访问统计（入口计数/项目隔离/删除清理 stat_）、运行日志（stdout 收集→/logs 可见，静态项目 400）、表单收集（urlencoded+JSON 双形态/删单条/清空）、自定义 404.html、SEO meta 注入与用户 meta 保留、快照回滚（备份/改文件/恢复/非 VIP 403/删除清空）、导出备份、ZIP PHP 过滤、Explorer 全流程、限流、删号 KV 残留、Apple/Google 合法 token 登录） |
 | `node dev/check-handler-imports.mjs` | 1 | 静态扫「被调用但未 import/未定义」的标识符（ESM 惰性绑定让这类错误只在运行时炸成 500；已接入 CI） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 26 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
 | `node dev/test-admin.mjs` | 31 | 后台（密码安全、VIP/SVIP/Ultra 等级切换、配额同步、封禁下架/解封、删号、邮箱密码入口删除、VIP 升级申请全链路） |
-| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 359 键） |
+| `node scripts/check-localization.mjs` | 1 | 中英本地化 key 集合一致、无重复（当前各 384 键） |
 | `node scripts/check-dead-strings.mjs` | 1 | 死文案键扫描：查无 Swift 引用的本地化键。对 `status_/account_/template_/project_kind_/ban_level_` 前缀插值引用的键单列为「动态引用，需人工确认」，不计入死键。**注意：本脚本只打印、从不 `exit 1`，是提示性检查，不是门禁** |
 | `node scripts/check-swift-decls.mjs` | 1 | Swift 同作用域属性包装器重复声明扫描（替代本地缺失的 `-typecheck`；已接入 CI backend-test job） |
 

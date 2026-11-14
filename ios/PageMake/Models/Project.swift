@@ -248,3 +248,54 @@ struct Project: Identifiable, Codable, Equatable, Hashable {
         return DateParsing.parse(string)
     }
 }
+
+/// 静态站表单收集的一条提交（/p/<id>/__form；App 内查看/删除）
+struct FormSubmission: Codable, Identifiable, Equatable {
+    let id: String
+    let projectId: String?
+    let fields: [String: String]
+    let createdAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, projectId, fields, createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        projectId = try c.decodeIfPresent(String.self, forKey: .projectId)
+        fields = (try? c.decodeIfPresent([String: String].self, forKey: .fields)) ?? [:]
+        // 后端给的是 epoch 秒；格式异常按缺失处理
+        if let seconds = try? c.decodeIfPresent(Double.self, forKey: .createdAt) {
+            createdAt = Date(timeIntervalSince1970: seconds)
+        } else {
+            createdAt = nil
+        }
+    }
+}
+
+/// 项目快照信息（备份当前版本；每项目一份，恢复即回滚）
+struct SnapshotInfo: Codable, Equatable {
+    let projectId: String?
+    let entryPath: String?
+    let fileCount: Int
+    let size: Int64
+    let createdAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case projectId, entryPath, fileCount, size, createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        projectId = try c.decodeIfPresent(String.self, forKey: .projectId)
+        entryPath = try c.decodeIfPresent(String.self, forKey: .entryPath)
+        fileCount = (try? c.decodeIfPresent(Int.self, forKey: .fileCount)) ?? 0
+        size = (try? c.decodeIfPresent(Int64.self, forKey: .size)) ?? 0
+        if let seconds = try? c.decodeIfPresent(Double.self, forKey: .createdAt) {
+            createdAt = Date(timeIntervalSince1970: seconds)
+        } else {
+            createdAt = nil
+        }
+    }
+}

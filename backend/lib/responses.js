@@ -7,6 +7,14 @@ const PAGES = {
     zh: '后端服务正在启动，请稍后刷新',
     en: 'The backend is starting up — refresh in a moment',
   },
+  formOk: {
+    zh: '提交成功，感谢你的反馈！',
+    en: 'Submitted successfully — thank you!',
+  },
+  formFail: {
+    zh: '提交失败：内容超出限制或站点暂不接收新提交',
+    en: 'Submission failed: content exceeds limits or this site is not accepting new entries',
+  },
 };
 
 export function pickLanguage(request) {
@@ -91,15 +99,20 @@ export function contentTypeFor(path) {
   return map[ext] || 'application/octet-stream';
 }
 
-export function htmlPage(status, kind, request) {
+export function htmlPage(status, kind, request, detail = null) {
   const lang = pickLanguage(request);
   const message = PAGES[kind]?.[lang] || PAGES.notFound[lang];
+  // detail 仅来自开发者拼装的服务端文案，单行转义防 HTML 注入
+  const detailHtml = detail
+    ? `<p style="margin-top:10px;font-size:13px;color:#888">${String(detail)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`
+    : '';
   const html = `<!DOCTYPE html>
 <html lang="${lang}">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${message}</title>
 <style>body{font-family:-apple-system,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;color:#333;background:#fafafa}
-.card{text-align:center;padding:32px}h1{font-size:20px;font-weight:600}</style></head>
-<body><div class="card"><h1>${message}</h1></div></body></html>`;
+.card{text-align:center;padding:32px;max-width:520px}h1{font-size:20px;font-weight:600}</style></head>
+<body><div class="card"><h1>${message}</h1>${detailHtml}</div></body></html>`;
   return new Response(html, {
     status,
     headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },

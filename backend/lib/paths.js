@@ -229,6 +229,41 @@ export function injectPublicBase(html, basePath) {
   return `${tag}\n${source}`;
 }
 
+/**
+ * 给公开入口注入基础 SEO meta（description / og:title / og:description）。
+ *
+ * 只补缺失：用户自己写了 description 或 og:title 就完全尊重，一个字节都不改。
+ * 标题取用户 <title> 文本（更贴合用户意图），取不到用项目名兜底——
+ * 这让分享到社交平台时能有像样的预览卡。
+ * 无 <head> 的片段不注入（不是完整页面）；有界正则（{0,300}）遵守防 ReDoS 纪律。
+ */
+export function injectSeoMeta(html, fallbackTitle) {
+  const source = String(html ?? '');
+  if (!/<head\b[^>]{0,300}>/i.test(source)) return source;
+  const hasDescription = /<meta[^>]{0,300}name=["']description["']/i.test(source);
+  const hasOgTitle = /<meta[^>]{0,300}property=["']og:title["']/i.test(source);
+  if (hasDescription && hasOgTitle) return source;
+
+  const titleMatch = source.match(/<title[^>]{0,300}>([^<]{0,200})<\/title>/i);
+  const title = (titleMatch?.[1] && titleMatch[1].trim()) || String(fallbackTitle ?? '').trim() || 'Page';
+  const esc = (value) => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  const metas = [];
+  if (!hasDescription) {
+    metas.push(`<meta name="description" content="${esc(title)}">`);
+    metas.push(`<meta property="og:description" content="${esc(title)}">`);
+  }
+  if (!hasOgTitle) {
+    metas.push(`<meta property="og:title" content="${esc(title)}">`);
+  }
+  if (!metas.length) return source;
+  const block = metas.join('\n');
+  return source.replace(/<head\b[^>]{0,300}>/i, (head) => `${head}\n${block}`);
+}
+
 // 后端项目运行时代理 shim：逐字内联，注入时把 <<BASE>> 占位替换为实际前缀。
 // 注意：本段代码不得出现反引号与 ${ 序列（避免与模板字面量冲突），只允许
 // <<BASE>> 这一处占位符。

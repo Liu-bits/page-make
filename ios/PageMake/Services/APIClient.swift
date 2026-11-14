@@ -433,6 +433,77 @@ final class APIClient {
         return try decoder.decode(ProjectPayload.self, from: data).project
     }
 
+    // MARK: - 运行日志 / 表单收集 / 快照
+
+    struct RuntimeLogsPayload: Decodable {
+        let logs: String?
+        let running: Bool
+    }
+
+    /// 后端项目最近运行日志（stdout/stderr 环形缓冲；进程未运行时 logs 为 nil）
+    func runtimeLogs(projectId: String) async throws -> RuntimeLogsPayload {
+        let data = try await request("/api/projects/\(projectId)/logs", method: "GET")
+        return try decoder.decode(RuntimeLogsPayload.self, from: data)
+    }
+
+    struct FormListPayload: Decodable {
+        let submissions: [FormSubmission]
+        let count: Int
+    }
+
+    struct FormActionRequest: Encodable {
+        let action: String
+        var id: String? = nil
+    }
+
+    /// 表单提交列表（静态站 /p/<id>/__form 收集的数据）
+    func formSubmissions(projectId: String) async throws -> FormListPayload {
+        let data = try await request("/api/projects/\(projectId)/form", method: "GET")
+        return try decoder.decode(FormListPayload.self, from: data)
+    }
+
+    /// 删除单条表单提交
+    func deleteFormSubmission(projectId: String, submissionId: String) async throws {
+        let body = try encoder.encode(FormActionRequest(action: "delete", id: submissionId))
+        _ = try await request("/api/projects/\(projectId)/form", method: "POST", body: body)
+    }
+
+    /// 清空全部表单提交
+    func clearFormSubmissions(projectId: String) async throws {
+        let body = try encoder.encode(FormActionRequest(action: "clear", id: nil))
+        _ = try await request("/api/projects/\(projectId)/form", method: "POST", body: body)
+    }
+
+    struct SnapshotPayload: Decodable {
+        let snapshot: SnapshotInfo?
+    }
+
+    struct SnapshotActionRequest: Encodable {
+        let action: String
+    }
+
+    struct SnapshotResultPayload: Decodable {
+        let created: Bool?
+        let restored: Int?
+        let deleted: Bool?
+        let fileCount: Int?
+        let entryPath: String?
+    }
+
+    /// 快照信息（无备份返回 nil）
+    func snapshotInfo(projectId: String) async throws -> SnapshotInfo? {
+        let data = try await request("/api/projects/\(projectId)/snapshot", method: "GET")
+        return try decoder.decode(SnapshotPayload.self, from: data).snapshot
+    }
+
+    /// 快照操作：create（备份当前版本，覆盖旧备份）/ restore（回滚到备份点）/ delete
+    @discardableResult
+    func snapshotAction(projectId: String, action: String) async throws -> SnapshotResultPayload {
+        let body = try encoder.encode(SnapshotActionRequest(action: action))
+        let data = try await request("/api/projects/\(projectId)/snapshot", method: "POST", body: body)
+        return try decoder.decode(SnapshotResultPayload.self, from: data)
+    }
+
     // MARK: - 项目模式（虚拟文件管理器）
 
     struct ExplorerCreateRequest: Encodable {

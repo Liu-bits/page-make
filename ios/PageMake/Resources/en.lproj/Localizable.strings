@@ -418,3 +418,28 @@
 "visit_today_label" = "Visits today";
 "visit_today_value" = "%lld";
 "edit_code" = "Edit code";
+
+// MARK: - Runtime logs / form submissions / snapshot
+"loading" = "Loading…";
+"runtime_logs" = "Runtime logs";
+"runtime_logs_empty" = "No runtime logs yet (process not started or just restarted)";
+"runtime_logs_copy" = "Copy logs";
+"form_submissions" = "Form submissions";
+"form_count_badge" = "%lld entries";
+"form_empty" = "No submissions yet";
+"form_hint" = "Add a <form action=\"__form\" method=\"post\"> with inputs to your HTML — visitor submissions are collected here (up to 200 per site, static projects only).";
+"form_delete" = "Delete entry";
+"form_delete_confirm" = "Delete this submission?";
+"form_clear" = "Clear all submissions";
+"form_clear_confirm" = "Clear all submissions? This cannot be undone.";
+"form_cleared" = "Cleared";
+"snapshot_section" = "Backup & restore";
+"snapshot_info_label" = "Backed-up files";
+"snapshot_info_format" = "%lld";
+"snapshot_date_label" = "Backed up at";
+"snapshot_none" = "No backup yet. Create one to roll your site back any time.";
+"snapshot_backup" = "Back up current version";
+"snapshot_restore" = "Restore from backup";
+"snapshot_restore_confirm" = "Restoring overwrites all current files with the backup. Continue?";
+"snapshot_created" = "Backup created";
+"snapshot_restored" = "Restored %lld files from backup";

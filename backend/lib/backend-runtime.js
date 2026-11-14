@@ -660,6 +660,17 @@ export function portOf(projectId) {
 }
 
 /**
+ * 最近运行日志（stdout/stderr 环形缓冲，spawnServer 已在收集，上限 16KB）。
+ * 进程不在跑或容器刚重启时返回 null——日志只存内存，不落 KV（调试用途足够，
+ * 落盘反而带来写放大与隐私留存问题）。
+ */
+export function recentLogs(projectId) {
+  const record = runtimes.get(projectId);
+  if (!record) return null;
+  return record.logs || '';
+}
+
+/**
  * 改写上游响应的 Location 头。
  *
  * 用户应用 `res.redirect('/x')` 是表单提交后推进流程的主流写法；不改写浏览器

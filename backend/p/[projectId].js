@@ -3,7 +3,7 @@
 import { getKV, kvGet, keys, nowSeconds } from '../lib/kv.js';
 import { contentTypeFor, htmlPage } from '../lib/responses.js';
 import { STATUS, isBackendKind, normalizeKind } from '../lib/state.js';
-import { injectPublicBase, rewriteLocalRefs } from '../lib/paths.js';
+import { injectPublicBase, injectSeoMeta, rewriteLocalRefs } from '../lib/paths.js';
 import { mutateProject } from '../lib/project.js';
 import { hit as hitVisitStats } from '../lib/visitstats.js';
 import { proxy } from '../lib/backend-runtime.js';
@@ -74,6 +74,7 @@ export async function onRequest(context) {
     // 等写法，再统一注入项目根 <base>；不能同时改写成 `/p/<id>/...`，
     // 否则路径被加两次前缀，且用户后续编辑时会把部署 ID 写回源码。
     html = rewriteLocalRefs(html);
+    html = injectSeoMeta(html, project.name);
     body = injectPublicBase(html, `/p/${id}`);
   }
 

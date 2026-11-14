@@ -1,13 +1,83 @@
 // GET /p/:projectId/... — 公开访问项目内资源（catch-all 动态路由）
 // 新手宽容：精确路径 404 时按"文件名"在项目内做唯一匹配兜底（引用写错目录也能正常显示）
-import { getKV, kvGet, kvListAll, keys, nowSeconds, pathFromSiteKey } from '../../lib/kv.js';
-import { contentTypeFor, htmlPage } from '../../lib/responses.js';
+// 另有两个保留路径：POST /p/<id>/__form（静态站表单收集）与项目内 404.html 自定义 404 页
+import { getKV, kvGet, kvListAll, kvPut, keys, nowSeconds, pathFromSiteKey } from '../../lib/kv.js';
+import { contentTypeFor, htmlPage, ok } from '../../lib/responses.js';
 import { STATUS, isBackendKind, normalizeKind } from '../../lib/state.js';
-import { rewriteCssRefs } from '../../lib/paths.js';
+import { rewriteCssRefs, rewriteLocalRefs, injectPublicBase } from '../../lib/paths.js';
 import { mutateProject } from '../../lib/project.js';
 import { proxy } from '../../lib/backend-runtime.js';
+import { rateLimited, clientIp } from '../../lib/ratelimit.js';
 
 const ID_RE = /^[a-f0-9]{32}$/;
+
+// 表单收集上限：每项目 200 条（超出拒收不覆盖旧数据）、单值 2000 字符、字段 20 个
+const FORM_MAX_SUBMISSIONS = 200;
+const FORM_MAX_FIELDS = 20;
+const FORM_MAX_VALUE_LENGTH = 2000;
+const FORM_BODY_LIMIT = 32_000;
+
+/** 静态站表单提交：POST /p/<id>/__form（浏览器原生表单返回页面，fetch JSON 返回 JSON） */
+async function handleFormSubmit(request, kv, projectId) {
+  // 每 IP 每分钟 5 次（独立桶，不与 feedback 抢额度）
+  if (rateLimited(`form:${clientIp(request)}`, 5, 60_000)) {
+    return htmlPage(429, 'formFail', request, 'rate limited');
+  }
+  let raw = '';
+  try {
+    raw = await request.text();
+  } catch {
+    return htmlPage(400, 'formFail', request, 'unreadable body');
+  }
+  if (raw.length > FORM_BODY_LIMIT) {
+    return htmlPage(413, 'formFail', request, 'body too large');
+  }
+
+  const contentType = request.headers.get('content-type') || '';
+  let fields = {};
+  try {
+    if (contentType.toLowerCase().includes('application/json')) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) fields = parsed;
+    } else {
+      for (const [key, value] of new URLSearchParams(raw)) fields[key] = value;
+    }
+  } catch {
+    return htmlPage(400, 'formFail', request, 'malformed payload');
+  }
+
+  // 字段清洗：只收字符串值，限制个数与长度，键名剥控制字符
+  const cleaned = {};
+  let count = 0;
+  for (const [key, value] of Object.entries(fields)) {
+    if (count >= FORM_MAX_FIELDS) break;
+    const cleanKey = String(key).slice(0, 64);
+    if (!cleanKey) continue;
+    cleaned[cleanKey] = String(value ?? '').slice(0, FORM_MAX_VALUE_LENGTH);
+    count += 1;
+  }
+
+  // 数量上限：封顶后拒收，绝不覆盖旧数据
+  const existing = await kvListAll(kv, keys.formSubmissionPrefix(projectId));
+  if (existing.length >= FORM_MAX_SUBMISSIONS) {
+    return htmlPage(429, 'formFail', request, 'submission limit reached');
+  }
+
+  const subId = `${nowSeconds()}_${(globalThis.crypto?.randomUUID?.() || '').slice(0, 8)}`;
+  await kvPut(kv, keys.formSubmission(projectId, subId), {
+    id: subId,
+    projectId,
+    fields: cleaned,
+    createdAt: nowSeconds(),
+  });
+
+  // fetch(JSON) 调用返回 JSON；浏览器原生表单返回成功页
+  const accept = request.headers.get('accept') || '';
+  if (accept.includes('application/json')) {
+    return ok({ submitted: true });
+  }
+  return htmlPage(200, 'formOk', request);
+}
 
 export async function onRequest(context) {
   const { request, params } = context;
@@ -39,6 +109,11 @@ export async function onRequest(context) {
     const proxied = await proxy(project.id, request);
     if (proxied) return proxied;
     return htmlPage(503, 'backendStarting', request);
+  }
+
+  // 静态项目保留路径：表单收集（浏览器原生表单 / fetch JSON 均可）
+  if (rel === '__form' && request.method === 'POST') {
+    return handleFormSubmit(request, kv, id);
   }
 
   // 新手宽容：引用可能带 URL 编码（中文文件名）→ 先解码再找
@@ -73,7 +148,21 @@ export async function onRequest(context) {
       }
     }
   }
-  if (!bytes) return htmlPage(404, 'notFound', request);
+  if (!bytes) {
+    // 项目内 404.html：自定义 404 页（仍返回 404 状态码，语义正确）。
+    // 与入口页同管线：引用归一 + 项目级 <base>，样式表才能正常加载。
+    const custom404 = await kv.get(keys.siteFile(id, '404.html'), { type: 'arrayBuffer' });
+    if (custom404) {
+      let nfHtml = new TextDecoder().decode(custom404);
+      nfHtml = rewriteLocalRefs(nfHtml);
+      nfHtml = injectPublicBase(nfHtml, `/p/${id}`);
+      return new Response(nfHtml, {
+        status: 404,
+        headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+      });
+    }
+    return htmlPage(404, 'notFound', request);
+  }
 
   // 游客项目按「连续 7 天无人访问」过期：子资源命中也刷新 lastAccessAt。
   // 读改写必须进项目锁（同 p/[projectId].js）：与封禁 / 升级 / 删除并发时，
