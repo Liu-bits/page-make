@@ -494,20 +494,16 @@ final class APIClient {
             AccessPasswordRequest(action: "setAccessPassword", password: password)
         )
         let data = try await request("/api/projects/\(projectId)", method: "POST", body: body)
-        guard let result = try decoder.decode(ProjectPayload.self, from: data).project else {
-            throw APIError.decoding
-        }
-        return result
+        // ProjectPayload.project 是非可选，直接返回（guard let 只能解包 Optional）
+        return try decoder.decode(ProjectPayload.self, from: data).project
     }
 
     /// 关闭站点访问密码（恢复公开访问）
     func clearAccessPassword(projectId: String) async throws -> Project {
         let body = try encoder.encode(AccessPasswordRequest(action: "clearAccessPassword"))
         let data = try await request("/api/projects/\(projectId)", method: "POST", body: body)
-        guard let result = try decoder.decode(ProjectPayload.self, from: data).project else {
-            throw APIError.decoding
-        }
-        return result
+        // ProjectPayload.project 是非可选，直接返回（guard let 只能解包 Optional）
+        return try decoder.decode(ProjectPayload.self, from: data).project
     }
 
     // MARK: - 后端项目环境变量

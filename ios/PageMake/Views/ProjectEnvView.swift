@@ -14,6 +14,7 @@ struct ProjectEnvView: View {
     @State private var rows: [EnvRow] = []
     @State private var maxKeys = 24
     @State private var loaded = false
+    @State private var loadFailed = false
     @State private var saving = false
     @State private var alertItem: AlertItem?
 
