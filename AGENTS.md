@@ -142,6 +142,7 @@ E:/Page-make/
 │   │   ├── projects/        #     paste(粘贴建站) / explorer(项目模式) / [id].js(rename/delete)
 │   │   │   └── [id]/        #       files(GET/POST) / refresh / status / logs(运行日志)
 │   │   │                    #       / form(表单提交管理) / snapshot(备份回滚)
+│   │   │                    #       / env(后端项目环境变量 GET/POST)
 │   │   ├── stats.js         #     用量统计
 │   │   └── upload/          #     init / chunk(600KB 分片) / finish / [uploadId](取消)
 │   ├── lib/                 #   核心库
@@ -156,9 +157,12 @@ E:/Page-make/
 │   │   ├── process.js       #     ZIP 处理 + 上传管线（过滤 PHP）
 │   │   ├── diagnostics.js   #     静态诊断（HTML 引用资源缺失检测）
 │   │   ├── visitstats.js    #     站点访问统计（内存聚合 + 定期落 KV，纯聚合计数）
+│   │   ├── project-env.js   #     后端项目自定义环境变量（校验/保留键/读写/注入）
+│   │   ├── access-gate.js   #     站点访问密码（PBKDF2 校验 + 签名 cookie 解锁票据）
 │   │   ├── zip.js / base64.js / responses.js / admin.js
 │   │   └── deploy/          #     edgeone / cloudflare（兼容旧客户端保留，当前只用 local）
 │   ├── p/                   #   公开页路由：/p/<projectId>（含 [[default]] 宽容回退）
+│   │   └── [projectId]/     #     [[default]].js(静态/反代) / unlock.js(密码解锁入口)
 │   └── data/                #   JWKS 内置种子（apple/google-jwks.json，随镜像分发）
 ├── docker/server.mjs        # 容器入口：Node HTTP + DiskKV，ROOT 自动探测两种布局
 ├── ios/PageMake/            # iOS 端（36 个 Swift 文件）
@@ -237,9 +241,26 @@ E:/Page-make/
   按 `tiers.js` 的等级配额执行；**需 SVIP 及以上**；纯前端仅 html/css/js，后端项目额外允许
   `package.json`、TS/JS、配置和静态资源；路径安全（禁 `..`、`\`、控制字符）；
   新建 HTML 骨架自动引用 style.css；publish 时 index.html 优先选入口 + 静态诊断
+- **后端项目环境变量**（2026-11-15）：`GET/POST /api/projects/:id/env`，POST body
+  `{env:{KEY:VALUE}}` 整体覆盖（空对象等价于清空）；存储用**独立 key**
+  `keys.projectEnv(id)` = `env_<id>`，不挂项目记录——项目记录会被封禁/发布/游客续期/
+  状态轮询频繁写回，挂上去等于每次写放大一份，还会白抢 `project:<id>` 锁。
+  仅后端形态（npm/pnpm/js/bun）且 VIP 及以上，静态项目 400 `ENV_ONLY_BACKEND`；
+  校验：≤24 个键、键名 `^[A-Z_][A-Z0-9_]{0,63}$`、单值 ≤2000 字节、总量 ≤16KB、
+  **保留键拒绝**（PATH/HOME/NODE_ENV/PORT/HOST/NODE_OPTIONS/CI/PWD/SHELL/USER/
+  LOGNAME/TMPDIR/LANG/LC_ALL）；install / build / 常驻进程三处都注入，但仍**不继承**
+  宿主 `process.env`；写入后项目标 `processing` 并后台重新构建（env 只在进程启动时读）；
+  值**明文存 KV**，App 侧已提示用户；项目删除时 `env_` 一并清理
 
 **公开页与服务端**
 - `/p/<id>` 长期有效（登录用户）；游客连续 7 天无人访问才过期；到期 410 中文过期页
+- **站点访问密码**（2026-11-15）：项目记录新增 `passwordHash`（PBKDF2，复用
+  `lib/password.js`），对外只下发 `hasAccessPassword` 布尔，hash 不出 KV；
+  设置/清除走 `POST /api/projects/:id` body `{action:'setAccessPassword', password}` /
+  `{action:'clearAccessPassword'}`（仅项目归属者）。设了密码后 `/p/<id>`、`/p/<id>/*`
+  与后端反代**一律先验解锁票据**，未解锁返回 401 + 密码输入页；
+  `POST /p/<id>/__unlock` 校验通过写签名 cookie（HttpOnly、Path=/p/<id>、7 天）。
+  静态与后端项目都支持
 - 宽容识别：静态 404 时按 basename（忽略目录/大小写）在项目内唯一匹配自动返回
 - 静态诊断：HTML 引用的资源缺失 → 「引用了 x，其实在 y」提示
 - PHP / C++：均不支持；ZIP 中的 `.php` 会跳过，项目模式拒绝 `.php`，公开路由对历史 `.php` 返回 404
@@ -353,7 +374,7 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 188 项 + 静态检查，提交前必须全绿）
+## 5. 测试体系（共 190 项 + 静态检查，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
@@ -598,6 +619,17 @@ push debug → debug CI 三 job 全绿 → 合并 main → main 的 deploy job �
   （`res.redirect('/')` 不改写会跳出前缀）、Set-Cookie Path 收进前缀（防应用 cookie
   泄漏到宿主 /admin）。跳过改写的安全边界：非 text/html、压缩响应、非 UTF-8 charset
   （含声明了但解析不出的）、HEAD、204/205/304；改写后必须删 content-length/etag。
+- **用户 env 注入必须过保留键白名单**（2026-11-15）：用户环境变量会注入到自己的
+  install / build / 常驻进程，而 PATH / HOME / NODE_ENV / PORT / HOST / NODE_OPTIONS
+  是运行时自己依赖的键——放过去等于让用户改模块解析路径、监听地址与堆上限
+  （`NODE_OPTIONS=--max-old-space-size=...` 就能把容器打爆）。
+  `lib/project-env.js` 的 `ENV_RESERVED` 在写入侧显式拒绝，`readProjectEnv` 在读取侧
+  再过滤一遍（历史/脏数据容错）。新增任何注入点都不要自己拼 `process.env` 绕过这两个函数。
+- **站点密码必须在「入口页 + 子资源 + 后端反代」三处都校验**（2026-11-15）：
+  只拦 `/p/<id>` 入口等于没拦——直接请求 `/p/<id>/secret.html` 或后端 API 照样拿到内容。
+  判断要挂在 `[[default]].js` 的静态文件分支**和** `proxy()` 反代分支之前。
+  同时 `__unlock` 本身必须免检（否则解锁页永远打不开 → 死循环），
+  `__form` 等保留路径要显式决定放行还是同样要求解锁，不要靠"没命中就走 401"蒙。
 
 **iOS/Swift 坑**（本地无 Xcode，只能靠 CI 验证）：
 - SwiftUI `Section("标题"){ } footer:{ }`（头部字符串参数 + 双尾随闭包）**无匹配重载**

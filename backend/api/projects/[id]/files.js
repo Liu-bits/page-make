@@ -4,6 +4,7 @@
 // DELETE /api/projects/:id/files — 删除文件（body: { path }）
 // 说明：项目模式支持 .html / .css / .js；文件夹可显式创建并持久化
 import { getOwnedProject, syncProjectFiles, normalizeFolders } from '../../../lib/project.js';
+import { publicProjectView } from '../../../lib/project.js';
 import { keys, kvDel, kvGet, kvListAll, pathFromSiteKey, kvPut } from '../../../lib/kv.js';
 import { withLock } from '../../../lib/lock.js';
 import { base64ToBytes, bytesToBase64 } from '../../../lib/base64.js';
@@ -118,7 +119,7 @@ export async function onRequest(context) {
       await kvDel(kv, keys.siteFile(latest.id, path));
       if (latest.entryPath === path) latest.entryPath = null;
       await syncProjectFiles(kv, latest);
-      return ok({ project: latest });
+      return ok({ project: publicProjectView(latest) });
     });
   }
 
@@ -134,7 +135,7 @@ export async function onRequest(context) {
         latest.files?.map((file) => file.path) || []
       );
       await syncProjectFiles(kv, latest);
-      return ok({ project: latest });
+      return ok({ project: publicProjectView(latest) });
     });
   }
 
@@ -156,7 +157,7 @@ export async function onRequest(context) {
         latest.entryPath = null;
       }
       await syncProjectFiles(kv, latest);
-      return ok({ project: latest });
+      return ok({ project: publicProjectView(latest) });
     });
   }
 
@@ -207,7 +208,7 @@ export async function onRequest(context) {
         }
         // 文件清单以 KV 实际内容为准；这里不根据旧 files 路径手工拼新清单。
         await syncProjectFiles(kv, latest);
-        return ok({ project: latest });
+        return ok({ project: publicProjectView(latest) });
       }
 
       if (!extAllowed(from, latest.kind) || !extAllowed(to, latest.kind)) return fail('BAD_REQUEST', 400);
@@ -225,7 +226,7 @@ export async function onRequest(context) {
       await kvDel(kv, sourceKey);
       if (latest.entryPath === from) latest.entryPath = to;
       await syncProjectFiles(kv, latest);
-      return ok({ project: latest });
+      return ok({ project: publicProjectView(latest) });
     });
   }
   if (request.method === 'DELETE') {
@@ -234,7 +235,7 @@ export async function onRequest(context) {
       await kvDel(kv, keys.siteFile(latest.id, path));
       if (latest.entryPath === path) latest.entryPath = null;
       await syncProjectFiles(kv, latest);
-      return ok({ project: latest });
+      return ok({ project: publicProjectView(latest) });
     });
   }
 
@@ -278,7 +279,7 @@ export async function onRequest(context) {
       }
       latest.status = STATUS.READY;
       await syncProjectFiles(kv, latest);
-      return ok({ project: latest });
+      return ok({ project: publicProjectView(latest) });
     });
   }
 

@@ -6,6 +6,7 @@ import { contentTypeFor, htmlPage, ok } from '../../lib/responses.js';
 import { STATUS, isBackendKind, normalizeKind } from '../../lib/state.js';
 import { rewriteCssRefs, rewriteLocalRefs, injectPublicBase } from '../../lib/paths.js';
 import { mutateProject } from '../../lib/project.js';
+import { isUnlocked, gateHtml } from '../../lib/access-gate.js';
 import { proxy } from '../../lib/backend-runtime.js';
 import { rateLimited, clientIp } from '../../lib/ratelimit.js';
 
@@ -108,6 +109,15 @@ export async function onRequest(context) {
   // 链接过期判定（所有线路）：expiresAt 到期即过期（游客 10 分钟 / EdgeOne TTL）
   if (project.expiresAt && nowSeconds() > project.expiresAt) {
     return htmlPage(410, 'expired', request);
+  }
+
+  // 站点访问密码：子资源（css/js/图片/接口）与入口一样要过门禁。
+  // 只拦入口页等于没拦——攻击者可以直接猜资源路径拿内容。
+  if (project.passwordHash && !(await isUnlocked(kv, id, request, project.passwordHash))) {
+    return new Response(gateHtml(id, request), {
+      status: 401,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+    });
   }
 
   // 后端项目：所有子路径都交给项目自己的进程处理（含 API 路由、静态资源）

@@ -59,6 +59,13 @@ enum PlainLanguage {
         case "CLONE_TOO_MANY_FILES": return "error_clone_too_many"
         case "LOGS_ONLY_BACKEND": return "error_logs_only_backend"
         case "PROJECT_BANNED": return "error_project_banned"
+        // 环境变量
+        case "ENV_ONLY_BACKEND": return "error_env_only_backend"
+        case "ENV_BAD_KEY": return "error_env_bad_key"
+        case "ENV_RESERVED_KEY": return "error_env_reserved_key"
+        case "ENV_TOO_MANY": return "error_env_too_many"
+        case "ENV_VALUE_TOO_LARGE": return "error_env_value_too_large"
+        case "ENV_TOO_LARGE": return "error_env_too_large"
         default: return ""
         }
     }

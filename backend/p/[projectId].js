@@ -7,6 +7,7 @@ import { injectPublicBase, injectSeoMeta, rewriteLocalRefs } from '../lib/paths.
 import { mutateProject } from '../lib/project.js';
 import { hit as hitVisitStats } from '../lib/visitstats.js';
 import { proxy } from '../lib/backend-runtime.js';
+import { isUnlocked, gateHtml } from '../lib/access-gate.js';
 
 const ID_RE = /^[a-f0-9]{32}$/;
 
@@ -31,6 +32,15 @@ export async function onRequest(context) {
   // 链接过期判定（所有线路）：expiresAt 到期即过期（游客 10 分钟 / EdgeOne TTL）
   if (project.expiresAt && nowSeconds() > project.expiresAt) {
     return htmlPage(410, 'expired', request);
+  }
+
+  // 站点访问密码：开启后必须先解锁才能看任何内容（入口 / 子资源 / 反代三处都拦）。
+  // 解锁接口是 /p/<id>/__unlock，通过后签 HttpOnly cookie，7 天内免输。
+  if (project.passwordHash && !(await isUnlocked(kv, id, request, project.passwordHash))) {
+    return new Response(gateHtml(id, request), {
+      status: 401,
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+    });
   }
 
   // 站点访问计数：入口页命中（封禁 / 失败 / 过期不计；子资源走 [[default]] 不计）。

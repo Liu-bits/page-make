@@ -481,6 +481,50 @@ final class APIClient {
         _ = try await request("/api/projects/\(projectId)/form", method: "POST", body: body)
     }
 
+    // MARK: - 站点访问密码
+
+    struct AccessPasswordRequest: Encodable {
+        let action: String
+        var password: String? = nil
+    }
+
+    /// 设置站点访问密码（开启后公开链接需要密码，6-128 位）
+    func setAccessPassword(projectId: String, password: String) async throws -> Project {
+        let body = try encoder.encode(
+            AccessPasswordRequest(action: "setAccessPassword", password: password)
+        )
+        let data = try await request("/api/projects/\(projectId)", method: "POST", body: body)
+        guard let result = try decoder.decode(ProjectPayload.self, from: data).project else {
+            throw APIError.decoding
+        }
+        return result
+    }
+
+    /// 关闭站点访问密码（恢复公开访问）
+    func clearAccessPassword(projectId: String) async throws -> Project {
+        let body = try encoder.encode(AccessPasswordRequest(action: "clearAccessPassword"))
+        let data = try await request("/api/projects/\(projectId)", method: "POST", body: body)
+        guard let result = try decoder.decode(ProjectPayload.self, from: data).project else {
+            throw APIError.decoding
+        }
+        return result
+    }
+
+    // MARK: - 后端项目环境变量
+
+    /// 读取环境变量（仅后端项目；值是明文，UI 负责打码展示）
+    func projectEnv(projectId: String) async throws -> ProjectEnvPayload {
+        let data = try await request("/api/projects/\(projectId)/env", method: "GET")
+        return try decoder.decode(ProjectEnvPayload.self, from: data)
+    }
+
+    /// 保存环境变量（整体覆盖；后端项目会自动重新构建使变量生效）
+    func saveProjectEnv(projectId: String, env: [String: String]) async throws {
+        struct EnvBody: Encodable { let env: [String: String] }
+        let body = try encoder.encode(EnvBody(env: env))
+        _ = try await request("/api/projects/\(projectId)/env", method: "POST", body: body)
+    }
+
     struct SnapshotPayload: Decodable {
         let snapshot: SnapshotInfo?
     }

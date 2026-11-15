@@ -14,6 +14,7 @@ import {
 import { quotaFor, tierOf } from '../../lib/tiers.js';
 import { findLocalAsset, rewriteLocalRefs, rewriteCssRefs } from '../../lib/paths.js';
 import { analyzeHtml } from '../../lib/diagnostics.js';
+import { publicProjectView } from '../../lib/project.js';
 import { deploySite } from '../../lib/deploy/index.js';
 
 const encoder = new TextEncoder();
@@ -228,7 +229,7 @@ export async function onRequest(context) {
     await kvPut(kv, keys.project(projectId), project);
     await appendLog(kv, { projectId, step: 'paste', result: 'ok', duration: Date.now() - started });
 
-    return ok({ project });
+    return ok({ project: publicProjectView(project) });
   } catch (error) {
     await appendLog(kv, {
       projectId,

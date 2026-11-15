@@ -20,6 +20,9 @@ struct ManageFilesView: View {
     @State private var snapshotInfo: SnapshotInfo?
     @State private var snapshotBusy = false
     @State private var showRestoreConfirm = false
+    /// 后端项目环境变量 + 站点访问密码
+    @State private var showEnv = false
+    @State private var showAccessPassword = false
 
     /// 可在应用内直接编辑内容的文本类型（与 AddFileSheet 的 html/css/js 一致并放宽常用文本）
     private static let editableExtensions: Set<String> = [
@@ -80,6 +83,51 @@ struct ManageFilesView: View {
                     } footer: {
                         Text(L10n.string("form_hint"))
                     }
+                }
+
+                // 后端项目环境变量（仅后端形态；保存后服务端自动重建）
+                if current.kind.isBackend {
+                    Section {
+                        Button {
+                            showEnv = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "terminal")
+                                    .foregroundStyle(Theme.highlight)
+                                Text(L10n.string("env_row_title"))
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    } footer: {
+                        Text(L10n.string("env_row_hint"))
+                    }
+                }
+
+                // 站点访问密码（静态 / 后端项目都支持）
+                Section {
+                    Button {
+                        showAccessPassword = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "lock")
+                                .foregroundStyle(current.hasAccessPassword ? Theme.positive : Theme.highlight)
+                            Text(L10n.string("access_password_row"))
+                            Spacer()
+                            Text(current.hasAccessPassword
+                                 ? L10n.string("access_password_enabled")
+                                 : L10n.string("access_password_not_set"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                } footer: {
+                    Text(L10n.string("access_password_row_hint"))
                 }
 
                 // 快照（备份当前版本 / 恢复）：容量成本是全站文件副本，仅 VIP 及以上
@@ -182,6 +230,18 @@ struct ManageFilesView: View {
             .sheet(isPresented: $showFormSubmissions) {
                 FormSubmissionsView(project: current) { count in
                     formCount = count
+                }
+            }
+            .sheet(isPresented: $showEnv) {
+                ProjectEnvView(project: current) { updated in
+                    current = updated
+                    onChanged(updated)
+                }
+            }
+            .sheet(isPresented: $showAccessPassword) {
+                AccessPasswordView(project: current) { updated in
+                    current = updated
+                    onChanged(updated)
                 }
             }
             .confirmationDialog(

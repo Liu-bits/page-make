@@ -9,6 +9,8 @@ import { STATUS, isBackendKind, normalizeKind } from '../../lib/state.js';
 import { analyzeHtml, findEntry } from '../../lib/diagnostics.js';
 import { rewriteLocalRefs, rewriteCssRefs } from '../../lib/paths.js';
 import { canUseBackend, quotaFor, tierOf } from '../../lib/tiers.js';
+import { hashPassword } from '../../lib/password.js';
+import { publicProjectView } from '../../lib/project.js';
 import { isGuestLimited } from '../../lib/session.js';
 import { withLock } from '../../lib/lock.js';
 import { deployBackendApp, stop as stopBackendApp } from '../../lib/backend-runtime.js';
@@ -27,7 +29,15 @@ export async function onRequest(context) {
     } catch {
       // 统计读取失败按 0 处理
     }
-    return ok({ project, visitStats });
+    // 哈希绝不下发：客户端只需要知道"有没有密码"这个布尔
+    return ok({
+      project: {
+        ...project,
+        passwordHash: undefined,
+        hasAccessPassword: Boolean(project.passwordHash),
+      },
+      visitStats,
+    });
   }
 
   // POST + action 支持（网关拦截 DELETE）
@@ -48,6 +58,36 @@ export async function onRequest(context) {
     return ok({ deleted: true });
   }
 
+  // 站点访问密码：PBKDF2 哈希存项目记录，公开路由据此拦截未解锁的访问者。
+  // 只下发 hasAccessPassword 布尔，哈希绝不出现在任何接口响应里。
+  if (action === 'setAccessPassword' || action === 'clearAccessPassword') {
+    // 与文件编辑一致：已下架项目不允许改访问配置（改了也改不回 ready）
+    if (project.status === 'banned') return fail('PROJECT_BANNED', 403);
+  }
+
+  if (action === 'setAccessPassword') {
+    const password = typeof body?.password === 'string' ? body.password : '';
+    // 访问密码是给"看过链接的人"输的，6 位足够；与账号登录密码（8 位 + 强度）不是一回事
+    if (password.length < 6 || password.length > 128) {
+      return fail('BAD_REQUEST', 400, { message: '访问密码需 6-128 位' });
+    }
+    const passwordHash = await hashPassword(password);
+    const updated = await syncProjectFilesLocked(kv, project.id, {
+      passwordHash,
+      passwordSetAt: nowSeconds(),
+    });
+    if (!updated) return fail('NOT_FOUND', 404);
+    await appendLog(kv, { projectId: project.id, step: 'set_access_password', result: 'ok' });
+    return ok({ project: publicProjectView(updated) });
+  }
+
+  if (action === 'clearAccessPassword') {
+    const updated = await syncProjectFilesLocked(kv, project.id, { passwordHash: null });
+    if (!updated) return fail('NOT_FOUND', 404);
+    await appendLog(kv, { projectId: project.id, step: 'clear_access_password', result: 'ok' });
+    return ok({ project: publicProjectView(updated) });
+  }
+
   if (action === 'rename') {
     const name = typeof body?.name === 'string' ? body.name.trim().slice(0, 60) : '';
     if (!name) return fail('BAD_REQUEST', 400);
@@ -55,7 +95,7 @@ export async function onRequest(context) {
     const updated = await syncProjectFilesLocked(kv, project.id, { name });
     if (!updated) return fail('NOT_FOUND', 404);
     await appendLog(kv, { projectId: project.id, step: 'rename_project', result: 'ok' });
-    return ok({ project: updated });
+    return ok({ project: publicProjectView(updated) });
   }
 
   // 项目克隆：把当前项目全量文件复制为新项目（同账号内）。
@@ -178,7 +218,7 @@ export async function onRequest(context) {
       } else {
         await publishTask;
       }
-      return ok({ project: updated });
+      return ok({ project: publicProjectView(updated) });
     }
 
     // 入口选择：沿用已设 HTML 入口 → index.html → 第一个 HTML。
@@ -241,7 +281,7 @@ export async function onRequest(context) {
     });
     if (!updated) return fail('NOT_FOUND', 404);
     await appendLog(kv, { projectId: project.id, step: 'publish', result: 'ok' });
-    return ok({ project: updated });
+    return ok({ project: publicProjectView(updated) });
   }
 
   return fail('METHOD_NOT_ALLOWED', 405);
@@ -285,6 +325,6 @@ async function withProjectLockAndClone(kv, project, user, newId, files, kind, to
       sourceId: project.id,
       kind,
     });
-    return ok({ project: saved ?? cloned });
+    return ok({ project: publicProjectView(saved ?? cloned) });
   });
 }

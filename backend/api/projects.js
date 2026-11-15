@@ -4,6 +4,7 @@ import { kvGet, kvListAll, keys } from '../lib/kv.js';
 import { decodeKey } from '../lib/base64.js';
 import { ok, fail } from '../lib/responses.js';
 import { quotaViewJson, tierOf } from '../lib/tiers.js';
+import { publicProjectView } from '../lib/project.js';
 
 export async function onRequest(context) {
   const { request } = context;
@@ -18,7 +19,7 @@ export async function onRequest(context) {
     // 索引 key 后缀是编码后的项目 ID，需先解码再查项目记录（避免双重编码）
     const id = decodeKey(key.slice(prefix.length));
     const project = await kvGet(auth.kv, keys.project(id));
-    if (project) projects.push(project);
+    if (project) projects.push(publicProjectView(project));
   }
   projects.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   return ok({

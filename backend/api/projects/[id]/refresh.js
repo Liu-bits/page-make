@@ -1,6 +1,7 @@
 // POST /api/projects/:id/refresh — 刷新链接（从存储取回文件重新部署）
 // 重新部署 → 更新 expiresAt → 返回新链接
 import { getOwnedProject, readSiteFiles, syncProjectFilesLocked, mutateProject, projectPublicUrl } from '../../../lib/project.js';
+import { publicProjectView } from '../../../lib/project.js';
 import { deploySite } from '../../../lib/deploy/index.js';
 import { deployBackendApp, stop as stopBackendApp } from '../../../lib/backend-runtime.js';
 import { findEntry } from '../../../lib/diagnostics.js';
@@ -98,7 +99,7 @@ export async function onRequest(context) {
       } else {
         await refreshTask;
       }
-      return ok({ project: updated });
+      return ok({ project: publicProjectView(updated) });
     }
 
     // 历史项目的 entryPath 可能是已下线的 .php；刷新时重新选择 HTML 入口。
@@ -138,7 +139,7 @@ export async function onRequest(context) {
     if (!updated) return fail('NOT_FOUND', 404);
     await appendLog(kv, { projectId: project.id, step: 'refresh', result: 'ok', duration: Date.now() - started });
 
-    return ok({ project: updated });
+    return ok({ project: publicProjectView(updated) });
   } catch (error) {
     // 项目可能在刷新期间被删除：mutateProject 锁内重读，记录不存在时不写回，
     // 绝不把已删除的项目“复活”（列表/统计凭空多出孤儿记录）。

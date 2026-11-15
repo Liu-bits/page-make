@@ -141,6 +141,7 @@ const ROUTES = [
   { file: 'backend/api/projects/[id]/refresh.js', pattern: /^\/api\/projects\/([^/]+)\/refresh$/, params: ['id'] },
   { file: 'backend/api/projects/[id]/files.js', pattern: /^\/api\/projects\/([^/]+)\/files$/, params: ['id'] },
   { file: 'backend/api/projects/[id]/export.js', pattern: /^\/api\/projects\/([^/]+)\/export$/, params: ['id'] },
+  { file: 'backend/api/projects/[id]/env.js', pattern: /^\/api\/projects\/([^/]+)\/env$/, params: ['id'] },
   { file: 'backend/api/projects/[id]/logs.js', pattern: /^\/api\/projects\/([^/]+)\/logs$/, params: ['id'] },
   { file: 'backend/api/projects/[id]/form.js', pattern: /^\/api\/projects\/([^/]+)\/form$/, params: ['id'] },
   { file: 'backend/api/projects/[id]/snapshot.js', pattern: /^\/api\/projects\/([^/]+)\/snapshot$/, params: ['id'] },
@@ -148,6 +149,8 @@ const ROUTES = [
   { file: 'backend/api/admin/overview.js', pattern: /^\/api\/admin\/overview$/ },
   { file: 'backend/api/admin/action.js', pattern: /^\/api\/admin\/action$/ },
   { file: 'backend/p/[projectId].js', pattern: /^\/p\/([^/]+)$/, params: ['projectId'] },
+  // 访问密码解锁：必须排在通配子资源路由之前，否则会被 [[default]] 吃掉
+  { file: 'backend/p/[projectId]/unlock.js', pattern: /^\/p\/([^/]+)\/__unlock$/, params: ['projectId'] },
   { file: 'backend/p/[projectId]/[[default]].js', pattern: /^\/p\/([^/]+)\/(.+)$/, params: ['projectId', 'default'] },
 ];
 

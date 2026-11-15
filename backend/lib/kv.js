@@ -42,6 +42,8 @@ export const keys = {
   snapshotMeta: (projectId) => `snapshot_${encodeKey(projectId)}`,
   snapshotFile: (projectId, path) => `snapshot_${encodeKey(projectId)}_${encodeKey(path)}`,
   snapshotFilePrefix: (projectId) => `snapshot_${encodeKey(projectId)}_`,
+  // 后端项目自定义环境变量（独立 key，避免跟项目记录一起写放大）；随项目删除清理
+  projectEnv: (projectId) => `env_${encodeKey(projectId)}`,
   log: (id) => `log_${encodeKey(id)}`,
   feedback: (id) => `feedback_${encodeKey(id)}`,
   vipRequest: (userId) => `vipreq_${encodeKey(userId)}`,

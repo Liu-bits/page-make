@@ -2056,6 +2056,157 @@ await test('上传初始化接受 bun 形态（ZIP 带 bun.lock 的客户端）'
   assert(json.ok && json.uploadId, '应返回 uploadId');
 });
 
+// 后端项目环境变量：写入 → 重建 → 进程里真的能读到；保留键拒绝；静态项目拒绝
+await test('后端项目环境变量：写入后重建并在进程内生效', async () => {
+  const envUserId = 'dev-env-backend';
+  seedUser(dataDir, envUserId, 'svip');
+  const envAuth = { 'X-Test-User': envUserId };
+
+  const created = await (await fetch(`${BASE}/api/projects/explorer`, {
+    method: 'POST',
+    headers: { ...envAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'env-app', kind: 'js' }),
+  })).json();
+  const id = created.project.id;
+
+  const serverSrc = [
+    "const http = require('node:http');",
+    "http.createServer((req, res) => {",
+    "  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });",
+    "  res.end('env-value:' + (process.env.GREETING || '(missing)'));",
+    '}).listen(Number(process.env.PORT), "127.0.0.1");',
+  ].join('\n');
+  await fetch(`${BASE}/api/projects/${id}/files`, {
+    method: 'POST',
+    headers: { ...envAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: 'server.js', content: textToBase64(serverSrc) }),
+  });
+
+  // 静态项目会被拒绝；这里项目已是 js（后端），先验证保留键拒绝
+  const reserved = await fetch(`${BASE}/api/projects/${id}/env`, {
+    method: 'POST',
+    headers: { ...envAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ env: { PORT: '9999' } }),
+  });
+  assertEqual(reserved.status, 400, `保留键应被拒绝，实际 ${reserved.status}`);
+  assertEqual((await reserved.json()).error, 'ENV_RESERVED_KEY', '错误码应为 ENV_RESERVED_KEY');
+
+  // 写入 env → 后端会标 processing 并自动重建
+  const save = await fetch(`${BASE}/api/projects/${id}/env`, {
+    method: 'POST',
+    headers: { ...envAuth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ env: { GREETING: 'hello-js' } }),
+  });
+  assertEqual(save.status, 200, `保存 env 应成功，实际 ${save.status} ${JSON.stringify(await save.clone().text())}`);
+  const saveBody = await save.json();
+  assertEqual(saveBody.saved, true, '应标记已保存');
+  assertEqual(saveBody.rebuilding, true, '应触发重建');
+
+  const ready = await waitForProjectReady(id, envAuth);
+  assert(typeof ready.project.runtimePort === 'number', '重建后应有常驻进程');
+
+  const proxied = await fetch(`${BASE}/p/${id}`);
+  assertEqual(proxied.status, 200, '代理访问应 200');
+  assert((await proxied.text()).includes('env-value:hello-js'), '进程内应能读到注入的 GREETING');
+
+  // 读回
+  const readBack = await (await fetch(`${BASE}/api/projects/${id}/env`, { headers: envAuth })).json();
+  assertEqual(readBack.env.GREETING, 'hello-js', '读回应返回原值');
+
+  // 静态项目没有进程可注入：必须明确拒绝，而不是静默忽略
+  const staticLogin = await (await fetch(`${BASE}/api/auth/guest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId: `env-static-${Date.now().toString(36)}` }),
+  })).json();
+  const staticPasted = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { 'X-Pagemake-Token': staticLogin.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'static-env', html: '<h1>static</h1>' }),
+  })).json();
+  const staticEnv = await fetch(`${BASE}/api/projects/${staticPasted.project.id}/env`, {
+    method: 'POST',
+    headers: { 'X-Pagemake-Token': staticLogin.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ env: { FOO: 'bar' } }),
+  });
+  assertEqual(staticEnv.status, 400, `静态项目设置 env 应 400，实际 ${staticEnv.status}`);
+  assertEqual((await staticEnv.json()).error, 'ENV_ONLY_BACKEND', '错误码应为 ENV_ONLY_BACKEND');
+});
+
+// 站点访问密码：门禁页 + 解锁 cookie + 子资源拦截 + 关闭后恢复公开
+await test('站点访问密码：未解锁 401，解锁后 200，关闭后恢复公开', async () => {
+  const login = await (await fetch(`${BASE}/api/auth/guest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deviceId: `access-pw-${Date.now().toString(36)}` }),
+  })).json();
+  const ownerToken = login.token;
+  const pasted = await (await fetch(`${BASE}/api/projects/paste`, {
+    method: 'POST',
+    headers: { 'X-Pagemake-Token': ownerToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: 'locked-site',
+      html: '<html><head><link rel="stylesheet" href="style.css"></head><body><h1>secret</h1></body></html>',
+      css: 'body{color:#333}',
+    }),
+  })).json();
+  assert(pasted.ok, `建站应成功：${JSON.stringify(pasted)}`);
+  const id = pasted.project.id;
+  const auth = { 'X-Pagemake-Token': ownerToken, 'Content-Type': 'application/json' };
+
+  const set = await (await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST', headers: auth,
+    body: JSON.stringify({ action: 'setAccessPassword', password: 'verify-123' }),
+  })).json();
+  assert(set.ok, `设置密码应成功：${JSON.stringify(set)}`);
+  assertEqual(set.project.hasAccessPassword, true, '应下发 hasAccessPassword 布尔');
+  assert(!('passwordHash' in set.project), '哈希绝不能出现在响应里');
+
+  // 未解锁：入口与子资源都 401
+  const locked = await fetch(`${BASE}/p/${id}`);
+  assertEqual(locked.status, 401, `入口应 401，实际 ${locked.status}`);
+  const lockedText = await locked.text();
+  assert(lockedText.includes('__unlock'), '401 页应包含解锁表单');
+  const sub = await fetch(`${BASE}/p/${id}/style.css`);
+  assertEqual(sub.status, 401, `子资源也应 401，实际 ${sub.status}`);
+
+  // 解锁：正确密码 → 302 + Set-Cookie
+  const unlock = await fetch(`${BASE}/p/${id}/__unlock`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'password=verify-123',
+    redirect: 'manual',
+  });
+  assertEqual(unlock.status, 302, `解锁应 302，实际 ${unlock.status}`);
+  const cookie = unlock.headers.get('set-cookie') || '';
+  assert(cookie.includes('pm_unlock_'), `应下发解锁 cookie：${cookie}`);
+  assert(cookie.includes('HttpOnly'), 'cookie 应 HttpOnly');
+
+  const unlocked = await fetch(`${BASE}/p/${id}`, {
+    headers: { Cookie: cookie.split(';')[0] },
+  });
+  assertEqual(unlocked.status, 200, `带 cookie 应 200，实际 ${unlocked.status}`);
+  assert((await unlocked.text()).includes('secret'), '解锁后应能看到内容');
+
+  // 错误密码：302 回门禁页（?e=1）
+  const wrong = await fetch(`${BASE}/p/${id}/__unlock`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'password=nope-123',
+    redirect: 'manual',
+  });
+  assertEqual(wrong.status, 302, '错误密码应 302');
+  assert((wrong.headers.get('location') || '').includes('?e=1'), '应带 ?e=1 错误标记');
+
+  // 关闭密码：恢复公开，老 cookie 不再必要
+  const clear = await (await fetch(`${BASE}/api/projects/${id}`, {
+    method: 'POST', headers: auth, body: JSON.stringify({ action: 'clearAccessPassword' }),
+  })).json();
+  assertEqual(clear.project.hasAccessPassword, false, '应清除 hasAccessPassword');
+  const open = await fetch(`${BASE}/p/${id}`);
+  assertEqual(open.status, 200, `关闭密码后应恢复公开，实际 ${open.status}`);
+});
+
 await test('bun 形态后端项目：bun install + TS 入口由 bun 运行', async () => {
   // 本机未装 bun 时跳过（CI runner 会安装 bun，跳过计数仍算通过）
   const probe = spawnSync('bun', ['--version'], { encoding: 'utf8' });

@@ -140,7 +140,9 @@ CI 会把容器构建所需的文件子集（`Dockerfile` + `backend/` + `docker
 | `POST /api/upload/finish` | 完成上传，后台处理（processing → ready/failed） |
 | `GET /api/projects` | 我的项目列表 |
 | `POST /api/projects/paste` | 粘贴代码直接创建（HTML 必填，CSS 可选；粘贴模式不接受 JS） |
-| `GET/POST /api/projects/:id` | 详情 / 重命名或删除（网关兼容：删除走 `POST action=delete`） |
+| `GET/POST /api/projects/:id` | 详情 / 重命名或删除（网关兼容：删除走 `POST action=delete`）；同接口 `setAccessPassword` / `clearAccessPassword` 设置或清除访问密码 |
+| `GET /api/projects/:id/env` | 读取后端项目环境变量（仅后端形态 + VIP 及以上） |
+| `POST /api/projects/:id/env` | 整体覆盖写入环境变量（body `{env:{KEY:VALUE}}`，空对象即清空；写后自动重建） |
 | `GET /api/projects/:id/export` | 导出项目源码 ZIP（VIP 及以上） |
 | `GET /api/projects/:id/status` | 状态轮询（每 2 秒） |
 | `POST /api/projects/:id/refresh` | 刷新链接（静态项目重发；npm/pnpm/bun 异步重启进程） |

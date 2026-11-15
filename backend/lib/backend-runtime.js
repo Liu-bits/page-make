@@ -35,6 +35,7 @@ import {
   injectProxyShim,
 } from './paths.js';
 import { kvListAll, kvGet, keys, pathFromSiteKey } from './kv.js';
+import { readProjectEnv } from './project-env.js';
 import { canUseBackend, tierOf } from './tiers.js';
 
 /** projectId → runtime 记录 */
@@ -288,13 +289,14 @@ function pmBinary(kind) {
  * 用 --omit=dev / --prod：生产容器里不装 devDependencies，省时间省磁盘。
  * 若项目没有 package.json，直接失败（后端项目必须有）。
  */
-async function installDeps(kind, srcDir, tier = 'vip') {
+async function installDeps(kind, srcDir, tier = 'vip', userEnv = {}) {
   const bin = pmBinary(kind);
   // 构建脚本通常依赖 devDependencies（vite/typescript/webpack 等）。
   // 只装生产依赖会让 `npm run build` 在发布阶段必然缺工具，因此先装完整依赖；
   // 用户代码本来就会在同一受限子进程中执行，这里不额外承诺 npm 层面的隔离。
   // npm 用 --no-package-lock 避免生成 package-lock 改写用户源码；pnpm/bun 自有
   // 锁文件格式（pnpm-lock.yaml / bun.lock），无需该参数
+  // userEnv：用户自定义环境变量（如私有 registry token）；保留键在写入时已拒绝
   const args = kind === 'npm' ? ['install', '--no-package-lock'] : ['install'];
   const timeoutMs = tier === 'ultra'
     ? Number.POSITIVE_INFINITY
@@ -303,18 +305,21 @@ async function installDeps(kind, srcDir, tier = 'vip') {
     cwd: srcDir,
     timeoutMs,
     shell: bin.shell,
+    env: userEnv,
   });
   return result;
 }
 
 /** 若 package.json 定义了 build 脚本则执行 */
-async function runBuild(kind, srcDir, pkg) {
+async function runBuild(kind, srcDir, pkg, userEnv = {}) {
   if (!pkg?.scripts?.build) return { skipped: true };
   const bin = pmBinary(kind);
   const result = await run(bin.command, ['run', 'build'], {
     cwd: srcDir,
     timeoutMs: BACKEND_BUILD_TIMEOUT_MS,
     shell: bin.shell,
+    // 构建期常需要 API_BASE / VITE_* 之类的变量，用户 env 要一起注入
+    env: userEnv,
   });
   return { skipped: false, ...result };
 }
@@ -396,6 +401,9 @@ async function spawnServer(record, command, args, shell = false) {
       HOST: '127.0.0.1',
       // 堆上限：防止单个用户项目吃光整机内存
       NODE_OPTIONS: `--max-old-space-size=${BACKEND_MEMORY_MB}`,
+      // 用户自定义环境变量放最后，但保留键在写入时已被拒绝（见 lib/project-env.js），
+      // 不会覆盖上面的 PATH / PORT / NODE_OPTIONS。
+      ...(record.env || {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
     shell,
@@ -548,11 +556,15 @@ async function deployBackendAppNow({ kv, projectId, kind, tier = 'vip' }) {
     throw Object.assign(new Error('MISSING_PACKAGE_JSON'), { code: 'MISSING_PACKAGE_JSON' });
   }
 
+  // 用户自定义环境变量（如 DATABASE_URL / API_KEY）：install、build、常驻进程三处都要带。
+  // 读取失败不影响部署（env 是可选能力，读坏了按空处理）。
+  const userEnv = await readProjectEnv(kv, projectId).catch(() => ({}));
+
   // 没有 package.json 就没有依赖可装。js 形态正是这种情况：以前这里照样跑
   // `npm install`，在空目录里会以非 0 退出 → 部署直接 INSTALL_FAILED
   // （Linux CI 上必现；本地 Windows 的 npm 恰好返回 0，所以一直没暴露）。
   const installed = pkg
-    ? await installDeps(kind, srcDir, tier)
+    ? await installDeps(kind, srcDir, tier, userEnv)
     : { code: 0, skipped: true, stdout: '', stderr: '', timedOut: false };
   if (installed.code !== 0) {
     throw Object.assign(new Error(installed.timedOut ? 'INSTALL_TIMEOUT' : 'INSTALL_FAILED'), {
@@ -561,7 +573,7 @@ async function deployBackendAppNow({ kv, projectId, kind, tier = 'vip' }) {
     });
   }
 
-  const built = await runBuild(kind, srcDir, pkg);
+  const built = await runBuild(kind, srcDir, pkg, userEnv);
   if (!built.skipped && built.code !== 0) {
     throw Object.assign(new Error(built.timedOut ? 'BUILD_TIMEOUT' : 'BUILD_FAILED'), {
       code: built.timedOut ? 'BUILD_TIMEOUT' : 'BUILD_FAILED',
@@ -589,6 +601,8 @@ async function deployBackendAppNow({ kv, projectId, kind, tier = 'vip' }) {
     args: startCommand.args,
     shell: startCommand.shell === true,
     startedAt: Date.now(),
+    // 崩溃自动重启时 spawnServer 直接复用这份 env，不需要再读 KV
+    env: userEnv,
   };
   runtimes.set(projectId, record);
 

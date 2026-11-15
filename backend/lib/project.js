@@ -7,6 +7,7 @@ import { isValidRelPath } from './paths.js';
 import { withLock } from './lock.js';
 import { stop as stopBackendRuntime } from './backend-runtime.js';
 import { forget as forgetVisitStats } from './visitstats.js';
+import { deleteProjectEnv } from './project-env.js';
 
 const PHP_FILE_RE = /\.php$/i;
 
@@ -137,6 +138,23 @@ export async function syncProjectFilesLocked(kv, projectId, patch = null) {
 }
 
 /**
+ * 对外的项目视图：剥掉 passwordHash，补 hasAccessPassword 布尔。
+ *
+ * 项目记录里存着站点访问密码的 PBKDF2 哈希。**所有**返回整条记录的接口
+ * （详情 / 列表 / 改名 / 发布 / 克隆 / 刷新 / 文件编辑 / 粘贴 / explorer）
+ * 都必须过这一层——哈希一旦下发，6 位访问密码就能被离线爆破。
+ * 新增返回项目记录的接口时，先过这里再 ok()。
+ */
+export function publicProjectView(record) {
+  if (!record) return record;
+  return {
+    ...record,
+    passwordHash: undefined,
+    hasAccessPassword: Boolean(record.passwordHash),
+  };
+}
+
+/**
  * 锁定版项目删除：文件 + 元信息 + 记录 + 索引一次删净。
  * 锁内复核记录仍在（可能已被并发删除），删除期间公开页 TTL 刷新等并发写
  * 会排在锁后面，读到的是删除后的空记录 → 不会复活。
@@ -160,6 +178,8 @@ export async function deleteProjectGuarded(kv, userId, projectId) {
     for (const key of await kvListAll(kv, keys.formSubmissionPrefix(projectId))) await kvDel(kv, key);
     for (const key of await kvListAll(kv, keys.snapshotFilePrefix(projectId))) await kvDel(kv, key);
     await kvDel(kv, keys.snapshotMeta(projectId));
+    // 后端项目自定义环境变量同样随项目删除清理（里面可能有用户的密钥，不能留）
+    await deleteProjectEnv(kv, projectId);
     await kvDel(kv, keys.project(projectId));
     await kvDel(kv, keys.userProject(userId, projectId));
     return true;

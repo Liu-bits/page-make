@@ -6,6 +6,7 @@ import { kvPut, keys, nowSeconds, appendLog } from '../../lib/kv.js';
 import { ok, fail } from '../../lib/responses.js';
 import { STATUS, normalizeKind, isBackendKind } from '../../lib/state.js';
 import { canUseBackend, atLeast, tierOf } from '../../lib/tiers.js';
+import { publicProjectView } from '../../lib/project.js';
 
 export async function onRequest(context) {
   const { request } = context;
@@ -68,5 +69,5 @@ export async function onRequest(context) {
   await kvPut(kv, keys.project(projectId), project);
   await appendLog(kv, { projectId, step: 'explorer_create', result: 'ok' });
 
-  return ok({ project });
+  return ok({ project: publicProjectView(project) });
 }
