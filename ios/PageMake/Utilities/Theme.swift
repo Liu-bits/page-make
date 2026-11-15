@@ -45,16 +45,28 @@ enum Theme {
 
     // MARK: - 玻璃
 
-    /// 卡片玻璃 tint：极低透明度，给玻璃一点品牌温度但不变成色块
-    static let cardTint = PageMakeTheme.coral.opacity(0.05)
-    static let premiumTint = PageMakeTheme.gold.opacity(0.10)
+    /// 卡片玻璃 tint：再降一档，让背景透上来（tint 越淡越"透"）
+    static let cardTint = PageMakeTheme.coral.opacity(0.035)
+    static let premiumTint = PageMakeTheme.gold.opacity(0.08)
 
-    /// 玻璃描边：浅色用深色 hairline，深色用浅色 hairline
-    static let glassStroke = dynamic(light: 0.07, dark: 0.14, isWhite: false)
-    /// 玻璃顶部高光：模拟光源从上方打过来的边缘反光
-    static let glassHighlight = dynamic(light: 0.85, dark: 0.10, isWhite: true)
-    /// 玻璃投影：非常淡，只用来把卡片从背景上"抬起来"
-    static let glassShadow = dynamic(light: 0.10, dark: 0.55, isWhite: false)
+    /// 玻璃描边：浅色用深色 hairline，深色用浅色 hairline。
+    /// 略加重——玻璃的"存在感"主要来自边缘那一圈，而不是填充。
+    static let glassStroke = dynamic(light: 0.10, dark: 0.17, isWhite: false)
+    /// 玻璃顶部高光：模拟光源从上方打过来的边缘反光（拉到接近纯白）
+    static let glassHighlight = dynamic(light: 1.0, dark: 0.16, isWhite: true)
+    /// 玻璃投影：略加深，把卡片更明显地"抬"起来
+    static let glassShadow = dynamic(light: 0.13, dark: 0.62, isWhite: false)
+
+    /// 玻璃面斜向反光：左上亮、右下透，制造"一块玻璃"而不是"一块半透明色块"的观感
+    static let glassSheen = LinearGradient(
+        colors: [
+            Color.white.opacity(0.20),
+            Color.white.opacity(0.05),
+            Color.clear,
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
 
     static var cardShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: cardRadius, style: .continuous)
@@ -92,11 +104,15 @@ extension View {
     }
 
     /// 带强调色 tint 的玻璃面板：VIP 卡、主视觉等需要「更贵一点」的位置。
+    ///
+    /// 四层叠出玻璃感：材质模糊（透）→ 品牌 tint（色）→ 斜向反光（面）→
+    /// 边缘高光描边（棱）+ 投影（浮起）。想让玻璃更透就降 tint，想更浓就加高光/描边。
     func glassPanel(tint: Color, radius: CGFloat = Theme.panelRadius) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return self
             .background(.ultraThinMaterial, in: shape)
             .background(tint, in: shape)
+            .overlay(shape.fill(Theme.glassSheen).allowsHitTesting(false))
             .overlay(
                 shape.strokeBorder(
                     LinearGradient(
@@ -104,9 +120,9 @@ extension View {
                         startPoint: .top,
                         endPoint: .bottom
                     ),
-                    lineWidth: 0.9
+                    lineWidth: 1
                 )
             )
-            .shadow(color: Theme.glassShadow, radius: 18, x: 0, y: 8)
+            .shadow(color: Theme.glassShadow, radius: 20, x: 0, y: 10)
     }
 }

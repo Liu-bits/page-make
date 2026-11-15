@@ -115,16 +115,22 @@ struct PageMakeBackground: View {
             )
             GeometryReader { proxy in
                 let w = proxy.size.width
+                // 光晕浓度比上一版更高：玻璃越透，越需要背景有可折射的明暗变化
                 Circle()
-                    .fill(PageMakeTheme.coral.opacity(0.13))
+                    .fill(PageMakeTheme.coral.opacity(0.20))
                     .frame(width: w * 1.15, height: w * 1.15)
                     .blur(radius: 120)
                     .offset(x: w * 0.38, y: -w * 0.62)
                 Circle()
-                    .fill(PageMakeTheme.sea.opacity(0.07))
+                    .fill(PageMakeTheme.sea.opacity(0.11))
                     .frame(width: w * 0.95, height: w * 0.95)
                     .blur(radius: 130)
                     .offset(x: -w * 0.5, y: w * 0.7)
+                Circle()
+                    .fill(PageMakeTheme.gold.opacity(0.06))
+                    .frame(width: w * 0.7, height: w * 0.7)
+                    .blur(radius: 140)
+                    .offset(x: w * 0.1, y: w * 0.15)
             }
         }
         .ignoresSafeArea()
