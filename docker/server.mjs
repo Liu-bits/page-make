@@ -268,7 +268,16 @@ const server = http.createServer(async (req, res) => {
     }
 
     const request = toWebRequest(req, body.length ? body : undefined);
-    let pathname = decodeURIComponent(new URL(request.url).pathname);
+    // 畸形百分号转义（/%zz、/a%）会让 decodeURIComponent 抛 URIError。
+    // 这种请求本该 404/400，不能被外层 catch 包成 500（会刷日志、污染监控）。
+    let pathname;
+    try {
+      pathname = decodeURIComponent(new URL(request.url).pathname);
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ ok: false, error: 'BAD_REQUEST' }));
+      return;
+    }
 
     // 公开页尾斜杠归一：/p/<id>/ 与 /p/<id> 是同一个入口。
     // 后端项目尤其需要——框架生成的链接、浏览器补全、用户手打都常带尾斜杠，

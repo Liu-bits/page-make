@@ -312,28 +312,28 @@ struct ProjectListView: View {
                     .font(.system(size: 11, weight: .bold))
                     .textCase(.uppercase)
                     .tracking(0.7)
-                    .foregroundStyle(.white.opacity(0.84))
+                    .foregroundStyle(PageMakeTheme.coral)
                     .padding(.horizontal, 11)
                     .padding(.vertical, 7)
-                    .background(.white.opacity(0.1), in: Capsule())
+                    .background(PageMakeTheme.coral.opacity(0.12), in: Capsule())
                     .overlay {
-                        Capsule().stroke(.white.opacity(0.14), lineWidth: 1)
+                        Capsule().strokeBorder(PageMakeTheme.coral.opacity(0.22), lineWidth: 0.8)
                     }
                 Spacer()
                 Image(systemName: "chevron.left.forwardslash.chevron.right")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.46))
+                    .foregroundStyle(Theme.tertiaryLabel)
             }
 
             VStack(alignment: .leading, spacing: 10) {
                 Text(L10n.string("studio_headline"))
                     .font(.system(size: 34, weight: .bold))
                     .tracking(-0.7)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.label)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(L10n.string("studio_subtitle"))
                     .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.72))
+                    .foregroundStyle(Theme.secondaryLabel)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -346,13 +346,16 @@ struct ProjectListView: View {
                     heroMetric(value: heroSpaceValue, label: L10n.string("dashboard_space"))
                 }
                 .padding(.vertical, 13)
-                .background(.black.opacity(0.13), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background(
+                    Theme.label.opacity(0.045),
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                )
 
                 // 配额接近上限的升级引导（Ultra 无上限时不显示）
                 if isSpaceNearLimit {
                     Text(L10n.string("quota_near_hint"))
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.72))
+                        .foregroundStyle(Theme.secondaryLabel)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -361,20 +364,16 @@ struct ProjectListView: View {
                         Label(L10n.string("add_project"), systemImage: "plus")
                             .font(.system(.subheadline, weight: .semibold))
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(PageMakeTheme.onAccent, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                            .foregroundStyle(PageMakeTheme.ink)
+                            .padding(.vertical, 13)
+                            .background(PageMakeTheme.coral, in: Capsule(style: .continuous))
+                            .foregroundStyle(PageMakeTheme.onAccent)
                     }
                     .buttonStyle(.plain)
                 }
             }
         }
         .padding(22)
-        .background(PageMakeTheme.heroGradient, in: RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
-        // 固定黑色阴影：Theme.label 在深色模式下是白色，会变成白色发光；
-        // 简约改版收敛阴影强度——高级感靠留白与对比，不靠大阴影
-        .shadow(color: Color.black.opacity(0.12), radius: 16, x: 0, y: 8)
+        .glassPanel(tint: PageMakeTheme.coral.opacity(0.10), radius: Theme.cardRadius)
     }
 
     // MARK: - 空间配额（hero 指标 + 接近上限提示）
@@ -400,19 +399,19 @@ struct ProjectListView: View {
         VStack(spacing: 3) {
             Text(value)
                 .font(.system(.headline, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.label)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
             Text(label)
                 .font(.caption2)
-                .foregroundStyle(.white.opacity(0.55))
+                .foregroundStyle(Theme.secondaryLabel)
         }
         .frame(maxWidth: .infinity)
     }
 
     private var heroDivider: some View {
         Rectangle()
-            .fill(.white.opacity(0.12))
+            .fill(Theme.separator)
             .frame(width: 1, height: 28)
     }
 

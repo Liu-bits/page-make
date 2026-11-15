@@ -48,11 +48,13 @@ export async function onRequest(context) {
   const provider = body?.provider || 'local';
   if (!PROVIDERS.has(provider)) return fail('INVALID_PROVIDER', 400);
 
-  // 部署形态三选一：纯前端 / npm / pnpm。非法值直接拒绝（不能静默降级，
+  // 部署形态：纯前端 / npm / pnpm / js / bun。非法值直接拒绝（不能静默降级，
   // 否则用户以为建了后端项目，实际拿到的是静态站点）。
+  // 白名单必须与 PROJECT_KIND 同步：漏掉 bun 会让「ZIP 里带 bun.lock」的请求
+  // 直接 400 INVALID_KIND，bun 形态等于只在项目模式可用。
   const requestedKind = body?.kind;
   if (requestedKind !== undefined
-    && !['static', PROJECT_KIND.NPM, PROJECT_KIND.PNPM, PROJECT_KIND.JS].includes(requestedKind)) {
+    && !['static', PROJECT_KIND.NPM, PROJECT_KIND.PNPM, PROJECT_KIND.JS, PROJECT_KIND.BUN].includes(requestedKind)) {
     return fail('INVALID_KIND', 400);
   }
   const kind = normalizeKind(requestedKind);

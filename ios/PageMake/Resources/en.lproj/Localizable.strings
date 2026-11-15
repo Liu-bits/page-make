@@ -220,6 +220,12 @@
 "error_guest_no_explorer" = "Project Mode is available to signed-in accounts and guest VIPs";
 "error_explorer_requires_svip" = "Project Mode requires SVIP or higher";
 "error_already_max_tier" = "You already hold the highest tier";
+"error_no_next_tier" = "You're already on the highest tier";
+"error_snapshot_requires_vip" = "Backup & restore requires VIP or above";
+"error_snapshot_too_many" = "Too many files to back up (limit: 300)";
+"error_clone_too_many" = "Too many files to duplicate (limit: 300)";
+"error_logs_only_backend" = "Runtime logs are only available for backend projects";
+"error_project_banned" = "This project has been taken down and can't be edited or restored";
 
 // MARK: - QR code sharing
 "qr_code" = "QR Code";

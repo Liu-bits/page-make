@@ -3,13 +3,14 @@
 // 每项目一份快照（备份当前版本），创建覆盖旧快照，恢复即回滚到备份点。
 // 容量成本 = 全站文件副本，因此仅 VIP 及以上可用；文件数/总量按等级配额封顶。
 // 全部操作在项目锁内进行：与文件编辑 / 发布 / 删除并发互斥（TOCTOU 纪律）。
-import { getOwnedProject, readSiteFiles, syncProjectFiles } from '../../../lib/project.js';
+import { getOwnedProject, readSiteFiles, syncProjectFiles, mutateProject } from '../../../lib/project.js';
 import { ok, fail } from '../../../lib/responses.js';
 import { kvGet, kvDel, kvListAll, kvPut, keys } from '../../../lib/kv.js';
 import { withLock } from '../../../lib/lock.js';
-import { atLeast, quotaFor } from '../../../lib/tiers.js';
+import { atLeast, quotaFor, tierOf } from '../../../lib/tiers.js';
 import { findEntry } from '../../../lib/diagnostics.js';
 import { isBackendKind, normalizeKind, STATUS } from '../../../lib/state.js';
+import { deployBackendApp, stop as stopBackendApp } from '../../../lib/backend-runtime.js';
 import { decodeKey } from '../../../lib/base64.js';
 
 const SNAPSHOT_MAX_FILES = 300;
@@ -90,12 +91,38 @@ export async function onRequest(context) {
         : findEntry(restored);
       const record = await kvGet(kv, keys.project(id));
       if (!record) return ok({ restored: restored.size });
+      // 与文件编辑一致：已下架项目不能用快照恢复把自己重新上线
+      if (record.status === 'banned') return fail('PROJECT_BANNED', 403);
+
+      // 后端项目：快照只换了 KV 里的源码，用户进程仍在跑旧代码
+      // （源码是 publish/refresh 时才物化到 appDir 的）。所以必须重新构建，
+      // 不能直接标 ready —— 否则提示「已恢复」但线上访问还是旧版本。
+      const kind = normalizeKind(record.kind);
+      const backend = isBackendKind(kind);
+
       await syncProjectFiles(kv, record, {
         entryPath: entry ?? null,
-        status: STATUS.READY,
+        status: backend ? STATUS.PROCESSING : STATUS.READY,
         errorCode: null,
       });
-      return ok({ restored: restored.size, entryPath: entry ?? null });
+
+      if (backend) {
+        // 不能 await：install/build 要几分钟，会一直占着项目锁与请求。
+        const task = (async () => {
+          try {
+            await deployBackendApp({ kv, projectId: id, kind, tier: tierOf(user) });
+          } catch (error) {
+            await stopBackendApp(id);
+            await mutateProject(kv, id, (rec) => {
+              rec.status = STATUS.FAILED;
+              rec.errorCode = error?.code || 'RUNTIME_UNAVAILABLE';
+            });
+          }
+        })().catch(() => {});
+        if (typeof context.waitUntil === 'function') context.waitUntil(task);
+      }
+
+      return ok({ restored: restored.size, entryPath: entry ?? null, rebuilding: backend });
     });
   }
 

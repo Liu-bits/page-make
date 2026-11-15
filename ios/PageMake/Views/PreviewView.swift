@@ -153,7 +153,10 @@ struct PreviewView: View {
 
     /// 近 7 天访问趋势：后端按 UTC 天聚合，这里用同一时区对齐补零画折线
     private var visitTrendChart: some View {
-        let values = visitTrendValues(days: current.visitStats?.days ?? [:])
+        let values = visitTrendValues(
+            days: current.visitStats?.days ?? [:],
+            todayKey: current.visitStats?.todayKey
+        )
         let maxValue = values.max() ?? 0
         return VStack(alignment: .leading, spacing: 2) {
             Text(L10n.string("trend_title"))
@@ -185,14 +188,20 @@ struct PreviewView: View {
         .padding(.bottom, 4)
     }
 
-    /// 取最近 7 天（含今天）的计数；后端 days 只存有访问的日期，缺失天补零
-    private func visitTrendValues(days: [String: Int]) -> [Int] {
+    /// 取最近 7 天（含今天）的计数；后端 days 只存有访问的日期，缺失天补零。
+    ///
+    /// 锚点用后端给的 todayKey，而不是设备的 `Date()`：容器时区与设备时区可能不同，
+    /// 之前「UTC 格式化 + 本地日历减天」在 UTC+8 的凌晨会让整条曲线错一天。
+    private func visitTrendValues(days: [String: Int], todayKey: String?) -> [Int] {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        let calendar = Calendar(identifier: .gregorian)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? calendar.timeZone
+        let anchor = todayKey.flatMap { formatter.date(from: $0) } ?? Date()
         return (0..<7).reversed().compactMap { offset in
-            guard let date = calendar.date(byAdding: .day, value: -offset, to: Date()) else { return 0 }
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: anchor) else { return 0 }
             return days[formatter.string(from: date)] ?? 0
         }
     }

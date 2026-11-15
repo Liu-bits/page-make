@@ -157,8 +157,11 @@ enum DiagnosticKind: String, Codable {
 struct VisitStats: Codable, Equatable, Hashable {
     let total: Int
     let today: Int
-    /// 按天明细（最近 7 天，'YYYY-MM-DD' → 次数）；当前版本只展示 total / today
+    /// 按天明细（最近 7 天，'YYYY-MM-DD' → 次数）
     let days: [String: Int]
+    /// 后端认定的「今天」日期键。客户端按它往前推 7 天，避免设备时区与
+    /// 容器时区不同导致整条趋势图错一天（旧字段缺失时为 nil）。
+    let todayKey: String?
 }
 
 /// 项目

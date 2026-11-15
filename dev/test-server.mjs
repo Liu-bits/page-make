@@ -2041,6 +2041,21 @@ await test('站点访问统计：入口命中计数 / 项目隔离 / 删除清�
 // ---------------------------------------------------------------------------
 // bun 形态后端项目：bun install 装依赖 + 用 bun 跑 TS 入口（node 跑不了 TS，
 // 断言内容来自 TS 文件即证明启动命令走的是 bun 而非 node 回退）。
+// ZIP 上传通道的 kind 白名单必须先放行 bun，否则 iOS 自动识别出 bun 后
+// /api/upload/init 直接 400 INVALID_KIND，bun 等于只在项目模式可用。
+await test('上传初始化接受 bun 形态（ZIP 带 bun.lock 的客户端）', async () => {
+  const bunId = 'bun-init-kind';
+  seedUser(dataDir, bunId, 'svip');
+  const res = await fetch(`${BASE}/api/upload/init`, {
+    method: 'POST',
+    headers: { 'X-Test-User': bunId, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ files: [{ name: 'site.zip', size: 100 }], kind: 'bun' }),
+  });
+  const json = await res.json();
+  assertEqual(res.status, 200, `bun 形态应被接受，实际 ${res.status} ${JSON.stringify(json)}`);
+  assert(json.ok && json.uploadId, '应返回 uploadId');
+});
+
 await test('bun 形态后端项目：bun install + TS 入口由 bun 运行', async () => {
   // 本机未装 bun 时跳过（CI runner 会安装 bun，跳过计数仍算通过）
   const probe = spawnSync('bun', ['--version'], { encoding: 'utf8' });
@@ -2224,9 +2239,23 @@ await test('表单收集 / 自定义 404 / SEO meta / 快照回滚', async () =>
   assertEqual(jsonPost.status, 200, 'JSON 表单应 200');
   assertEqual((await jsonPost.json()).submitted, true, 'JSON 形态应返回 submitted=true');
 
+  // 真实浏览器的 fetch() 默认发 Accept: */*，只靠 Content-Type 也必须回 JSON
+  // （否则用户 .then(r => r.json()) 直接抛 SyntaxError，数据其实已入库）
+  const bareFetchPost = await fetch(`${BASE}/p/${id}/__form`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'carol' }),
+  });
+  assertEqual(bareFetchPost.status, 200, '无 Accept 头的 JSON 提交应 200');
+  assertEqual(
+    (await bareFetchPost.json()).submitted,
+    true,
+    '只凭 Content-Type: application/json 也应返回 JSON'
+  );
+
   // 管理接口：列表 → 删单条 → 清空
   let formList = await (await fetch(`${BASE}/api/projects/${id}/form`, { headers: mixAuth })).json();
-  assertEqual(formList.count, 2, '应收集 2 条提交');
+  assertEqual(formList.count, 3, '应收集 3 条提交（urlencoded + 两条 JSON）');
   const first = formList.submissions[0];
   const target = formList.submissions.find((s) => s.fields.name === 'alice');
   assert(target, '应包含 urlencoded 提交的字段');
@@ -2238,7 +2267,7 @@ await test('表单收集 / 自定义 404 / SEO meta / 快照回滚', async () =>
   });
   assertEqual(del.status, 200, '删单条应成功');
   formList = await (await fetch(`${BASE}/api/projects/${id}/form`, { headers: mixAuth })).json();
-  assertEqual(formList.count, 1, '删除后应剩 1 条');
+  assertEqual(formList.count, 2, '删除后应剩 2 条（原 3 条减 1）');
 
   // ---- 自定义 404：写 404.html → 未命中路径返回它（状态码仍 404）----
   const put404 = await fetch(`${BASE}/api/projects/${id}/files`, {

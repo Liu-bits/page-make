@@ -21,6 +21,20 @@ const KEEP_DAYS = 7;
 /** projectId → { total, days: Map<'YYYY-MM-DD', number> }（未落盘的增量） */
 const pending = new Map();
 
+/**
+ * 已删除项目的墓碑：删项目时清掉内存增量并登记，flush 时跳过并清除。
+ * 不登记的话「访问 → 30 秒内删除」会让下一次 flush 按残留增量把 stat_ 重新写回来，
+ * 已删项目永久留下孤儿统计（与上面「不留孤儿」的约定相悖）。
+ */
+const forgotten = new Set();
+
+/** 项目删除时调用：丢弃未落盘增量并阻止后续 flush 重建 stat_ */
+export function forget(projectId) {
+  if (!projectId) return;
+  pending.delete(projectId);
+  forgotten.add(projectId);
+}
+
 /** 本地日期键（容器时区）；统计粒度是「天」，跨时区偏差可接受 */
 function dayKey(ts = Date.now()) {
   const d = new Date(ts);
@@ -56,6 +70,8 @@ export async function flush(kv) {
   pending.clear();
   let flushed = 0;
   for (const [projectId, delta] of entries) {
+    // 期间已被删除的项目：丢弃增量，不重建 stat_
+    if (forgotten.delete(projectId)) continue;
     try {
       await withLock(`stat:${projectId}`, async () => {
         const record = (await kvGet(kv, keys.visitStats(projectId)))
@@ -93,5 +109,7 @@ export async function read(kv, projectId) {
     }
   }
   const today = days[dayKey()] || 0;
-  return { total, today, days };
+  // 把「今天」的日期键也返回：客户端按它往前推 7 天，才不会因为设备时区与
+  // 容器时区不同而整体错一天（此前客户端用 UTC 格式化 + 本地日历减天，必错）。
+  return { total, today, days, todayKey: dayKey() };
 }

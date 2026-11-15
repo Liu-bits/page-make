@@ -1,7 +1,7 @@
 // GET /api/projects/:id — 项目详情
 // POST /api/projects/:id — action: delete（删除）/ rename（重命名）/ publish（生成公开链接）
 // DELETE /api/projects/:id — 删除项目（兼容；ModelScope 网关拦截 DELETE，客户端走 POST）
-import { getOwnedProject, deleteProjectRecords, syncProjectFilesLocked, readSiteFiles, writeProjectRecord, projectPublicUrl } from '../../lib/project.js';
+import { getOwnedProject, deleteProjectRecords, syncProjectFilesLocked, readSiteFiles, writeProjectRecord, projectPublicUrl, mutateProject } from '../../lib/project.js';
 import { read as readVisitStats } from '../../lib/visitstats.js';
 import { ok, fail } from '../../lib/responses.js';
 import { appendLog, keys, nowSeconds, kvPut } from '../../lib/kv.js';
@@ -71,7 +71,35 @@ export async function onRequest(context) {
     if (total > quotaFor(user, dimension)) return fail('TOO_LARGE', 413);
 
     const newId = crypto.randomUUID().replace(/-/g, '');
-    return withProjectLockAndClone(kv, project, user, newId, files, kind, total, request);
+    const response = await withProjectLockAndClone(kv, project, user, newId, files, kind, total, request);
+    // 后端副本不继承运行态：必须立刻在后台构建一次，否则副本链接会一直 503
+    // （之前只把记录标成 ready，App 也没有任何「需要重新构建」的提示）。
+    if (isBackendKind(normalizeKind(kind)) && response?.status === 200) {
+      const task = (async () => {
+        try {
+          const runtime = await deployBackendApp({
+            kv,
+            projectId: newId,
+            kind: normalizeKind(kind),
+            tier: tierOf(user),
+          });
+          await mutateProject(kv, newId, (rec) => {
+            rec.status = STATUS.READY;
+            rec.errorCode = null;
+            rec.runtimePort = runtime.port;
+            rec.runtimeKind = runtime.kind;
+          });
+        } catch (error) {
+          await stopBackendApp(newId);
+          await mutateProject(kv, newId, (rec) => {
+            rec.status = STATUS.FAILED;
+            rec.errorCode = error?.code || 'RUNTIME_UNAVAILABLE';
+          });
+        }
+      })().catch(() => {});
+      if (typeof context.waitUntil === 'function') context.waitUntil(task);
+    }
+    return response;
   }
 
   // 项目模式：统一生成公开链接（至少需要一个 HTML 文件作为入口）
@@ -153,9 +181,6 @@ export async function onRequest(context) {
       return ok({ project: updated });
     }
 
-    // 从 npm/pnpm 切回纯前端时回收旧常驻进程，避免后台继续占端口。
-    await stopBackendApp(project.id);
-
     // 入口选择：沿用已设 HTML 入口 → index.html → 第一个 HTML。
     // 历史项目的 entryPath 可能是 index.php；不能继续沿用，否则发布会生成必然 404 的链接。
     let entry =
@@ -173,6 +198,11 @@ export async function onRequest(context) {
       }
     }
     if (!entry) return fail('NO_ENTRY', 400);
+
+    // 确认入口存在之后再回收后端常驻进程。
+    // 顺序很重要：以前先 stop 再找入口，js/bun 这类没有 HTML 的项目会
+    // 「进程已被杀 + 返回 400 NO_ENTRY + 记录仍是 ready」→ 公开页永久 503。
+    await stopBackendApp(project.id);
 
     // 归一入口 HTML 内的本地引用：项目模式允许用户手写 `../style.css`，
     // 存储侧 validPath 拒绝带 .. 的路径，但 HTML 里的字符串原样下发仍会断链
@@ -228,12 +258,13 @@ async function withProjectLockAndClone(kv, project, user, newId, files, kind, to
     const entryPath = project.entryPath && files.has(project.entryPath)
       ? project.entryPath
       : findEntry(files);
-    // 运行态不继承：副本没有常驻进程（runtimePort 必为 null），后端形态需重新构建
+    // 运行态不继承：副本没有常驻进程（runtimePort 必为 null）。
+    // 后端形态标 processing，调用方会在后台立刻构建一次，成功后转 ready。
     const cloned = {
       ...project,
       id: newId,
       name: `${project.name} 副本`,
-      status: STATUS.READY,
+      status: isBackendKind(normalizeKind(kind)) ? STATUS.PROCESSING : STATUS.READY,
       entryPath: entryPath ?? null,
       errorCode: null,
       url: projectPublicUrl(origin, newId),

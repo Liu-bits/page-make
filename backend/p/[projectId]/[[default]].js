@@ -71,9 +71,15 @@ async function handleFormSubmit(request, kv, projectId) {
     createdAt: nowSeconds(),
   });
 
-  // fetch(JSON) 调用返回 JSON；浏览器原生表单返回成功页
-  const accept = request.headers.get('accept') || '';
-  if (accept.includes('application/json')) {
+  // fetch 调用返回 JSON；浏览器原生表单提交返回成功页。
+  //
+  // 判据不能只看 Accept：浏览器 `fetch()` 默认发 `Accept: */*`，用户按文档写
+  // `fetch('/__form',{headers:{'Content-Type':'application/json'},...}).then(r=>r.json())`
+  // 会拿到 HTML，`r.json()` 直接抛 SyntaxError（数据其实已入库）。
+  // 所以优先看请求的 Content-Type 是不是 JSON，再看 Accept。
+  // 注意复用上面已声明的 `contentType`（同函数作用域，重复 const 会整模块编译失败）。
+  const accept = (request.headers.get('accept') || '').toLowerCase();
+  if (contentType.toLowerCase().includes('application/json') || accept.includes('application/json')) {
     return ok({ submitted: true });
   }
   return htmlPage(200, 'formOk', request);

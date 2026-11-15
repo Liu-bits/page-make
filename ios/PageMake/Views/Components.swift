@@ -100,21 +100,31 @@ struct WorkspaceBottomSpacer: View {
     }
 }
 
-/// 全局背景：纯色底 + 顶部一团极淡的强调色光晕。
-/// 简约高级的关键是克制——去掉网格线与彩色光斑，纵深只靠一团模糊光晕表达。
+/// 全局背景：分层渐变 + 两团大范围柔光。
+///
+/// 玻璃卡片采样的是它背后的像素——纯色底上玻璃只会变成一块灰板。
+/// 这里给背景做出纵深：顶部偏亮的底色渐变 + 右上冷调光晕 + 左下暖调光晕，
+/// 玻璃压上去才有折射感，同时保持中性不花哨。
 struct PageMakeBackground: View {
     var body: some View {
         ZStack {
-            Theme.background
+            LinearGradient(
+                colors: [PageMakeTheme.paper, PageMakeTheme.paperWarm],
+                startPoint: .top,
+                endPoint: .bottom
+            )
             GeometryReader { proxy in
+                let w = proxy.size.width
                 Circle()
-                    .fill(Theme.highlight.opacity(0.06))
-                    .frame(width: proxy.size.width * 1.3, height: proxy.size.width * 1.3)
-                    .blur(radius: 90)
-                    .offset(
-                        x: proxy.size.width * 0.2,
-                        y: -proxy.size.width * 0.62
-                    )
+                    .fill(PageMakeTheme.coral.opacity(0.13))
+                    .frame(width: w * 1.15, height: w * 1.15)
+                    .blur(radius: 120)
+                    .offset(x: w * 0.38, y: -w * 0.62)
+                Circle()
+                    .fill(PageMakeTheme.sea.opacity(0.07))
+                    .frame(width: w * 0.95, height: w * 0.95)
+                    .blur(radius: 130)
+                    .offset(x: -w * 0.5, y: w * 0.7)
             }
         }
         .ignoresSafeArea()
@@ -217,43 +227,59 @@ struct StatusBadge: View {
     }
 }
 
-/// 主要按钮：实心强调色 + 深浅自适应前景。简约高级的关键是「少即是多」：
-/// 主操作用一块安静的实色承担全部视觉重量，不再堆玻璃和 tint。
+/// 主要按钮：强调色渐变胶囊 + 顶部高光 + 柔光投影。
+/// 胶囊 + 轻微渐变是「玻璃系」界面里最稳的主操作形态（ChatGPT 的主按钮即此形态）。
 struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(.headline, weight: .semibold))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, 15)
             .foregroundStyle(PageMakeTheme.onAccent)
             .background(
-                RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
-                    .fill(PageMakeTheme.coral)
+                Capsule(style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [PageMakeTheme.coral, PageMakeTheme.coral.opacity(0.86)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
             )
-            .opacity(configuration.isPressed ? 0.85 : 1)
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(Theme.glassHighlight.opacity(0.28), lineWidth: 0.8)
+            )
+            .shadow(color: PageMakeTheme.coral.opacity(0.26), radius: 14, x: 0, y: 6)
+            .opacity(configuration.isPressed ? 0.9 : 1)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }
 
-/// 次要按钮：hairline 描边 + 低调底色，把注意力让给主操作。
+/// 次要按钮：玻璃胶囊 + hairline 描边，把注意力让给主操作。
 struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(.headline, weight: .semibold))
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, 15)
             .foregroundStyle(Theme.label)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
-                    .fill(PageMakeTheme.surfaceSoft.opacity(0.7))
-            )
+            .background(.ultraThinMaterial, in: Capsule(style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
-                    .strokeBorder(Theme.separator.opacity(0.7), lineWidth: 1)
+                Capsule(style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Theme.glassHighlight, Theme.glassStroke],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 0.9
+                    )
             )
-            .opacity(configuration.isPressed ? 0.82 : 1)
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .shadow(color: Theme.glassShadow, radius: 10, x: 0, y: 4)
+            .opacity(configuration.isPressed ? 0.86 : 1)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }
@@ -316,9 +342,14 @@ struct MainTabBar: View {
                     .font(.system(size: 10, weight: .semibold))
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
+            .padding(.vertical, 9)
             .foregroundStyle(isSelected ? PageMakeTheme.coral : Theme.secondaryLabel)
-            .contentShape(Rectangle())
+            // 选中态用一层淡胶囊托底，比只改颜色更像"玻璃里的滑块"
+            .background(
+                Capsule(style: .continuous)
+                    .fill(isSelected ? PageMakeTheme.coral.opacity(0.15) : Color.clear)
+            )
+            .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])

@@ -518,27 +518,26 @@ struct FilePickerView: View {
             HStack {
                 Image(systemName: icon)
                     .font(.system(size: 21, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(PageMakeTheme.coral)
                     .frame(width: 45, height: 45)
-                    .background(.white.opacity(0.11), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .background(PageMakeTheme.coral.opacity(0.12), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 Spacer()
                 Text(L10n.string(eyebrowKey))
                     .font(.system(size: 10, weight: .bold))
                     .tracking(0.8)
                     .textCase(.uppercase)
-                    .foregroundStyle(.white.opacity(0.58))
+                    .foregroundStyle(Theme.tertiaryLabel)
             }
             Text(L10n.string(titleKey))
                 .font(.system(size: 28, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(Theme.label)
             Text(detailText ?? L10n.string(detailKey))
                 .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.68))
+                .foregroundStyle(Theme.secondaryLabel)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(19)
-        .background(PageMakeTheme.heroGradient, in: RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+        .glassPanel(tint: PageMakeTheme.coral.opacity(0.08), radius: Theme.cardRadius)
     }
 
     private var isTooLarge: Bool {

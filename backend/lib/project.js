@@ -6,6 +6,7 @@ import { ERR } from './state.js';
 import { isValidRelPath } from './paths.js';
 import { withLock } from './lock.js';
 import { stop as stopBackendRuntime } from './backend-runtime.js';
+import { forget as forgetVisitStats } from './visitstats.js';
 
 const PHP_FILE_RE = /\.php$/i;
 
@@ -151,7 +152,9 @@ export async function deleteProjectGuarded(kv, userId, projectId) {
     const keyList = await kvListAll(kv, keys.sitePrefix(projectId));
     for (const key of keyList) await kvDel(kv, key);
     await kvDel(kv, keys.siteMeta(projectId));
-    // 访问统计与项目记录同生命周期：项目没了，stat_ 记录不留孤儿
+    // 访问统计与项目记录同生命周期：项目没了，stat_ 记录不留孤儿。
+    // forget() 还要清掉内存里未落盘的增量，否则 30 秒后的 flush 会把 stat_ 写回来。
+    forgetVisitStats(projectId);
     await kvDel(kv, keys.visitStats(projectId));
     // 表单提交与快照同样随项目删除一并清理，不留孤儿数据
     for (const key of await kvListAll(kv, keys.formSubmissionPrefix(projectId))) await kvDel(kv, key);

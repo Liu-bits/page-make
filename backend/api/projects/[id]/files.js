@@ -266,6 +266,10 @@ export async function onRequest(context) {
         return fail('TOO_LARGE', 413);
       }
 
+      // 被封禁的项目不允许通过编辑文件「自救」：状态不能从 banned 改回 ready，
+      // 否则用户改一个文件就能把已下架的站点重新上线（下架只能走后台解封）。
+      if (latest.status === 'banned') return fail('PROJECT_BANNED', 403);
+
       await kv.put(keys.siteFile(latest.id, path), bytes);
       addParentFolders(latest, path);
       // 若入口缺失且新增了 html，设为入口

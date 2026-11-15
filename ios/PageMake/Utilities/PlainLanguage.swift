@@ -51,7 +51,14 @@ enum PlainLanguage {
         case "GUEST_NO_EXPLORER": return "error_guest_no_explorer"
         case "EXPLORER_REQUIRES_SVIP": return "error_explorer_requires_svip"
         case "ALREADY_MAX_TIER": return "error_already_max_tier"
+        case "NO_NEXT_TIER": return "error_no_next_tier"
         case "VIP_REQUEST_GUEST_ONLY": return "vip_request_guest_only"
+        // 快照 / 克隆 / 运行日志 / 下架项目
+        case "SNAPSHOT_REQUIRES_VIP": return "error_snapshot_requires_vip"
+        case "SNAPSHOT_TOO_MANY_FILES": return "error_snapshot_too_many"
+        case "CLONE_TOO_MANY_FILES": return "error_clone_too_many"
+        case "LOGS_ONLY_BACKEND": return "error_logs_only_backend"
+        case "PROJECT_BANNED": return "error_project_banned"
         default: return ""
         }
     }

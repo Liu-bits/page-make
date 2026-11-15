@@ -685,6 +685,10 @@ function rewriteProxyLocation(rawLocation, publicPrefix, upstreamPort) {
   const loc = String(rawLocation ?? '').trim();
   if (!loc) return loc;
   if (loc.startsWith('/') && !loc.startsWith('//')) {
+    // 应用可能已经按 x-forwarded-prefix 生成了带前缀的地址（Express/Koa 常见写法），
+    // 再加一次前缀会变成 /p/<id>/p/<id>/... → 404，随后被 Referer 兜底拉回原页，
+    // 表现成「按钮点了原地转圈/跳错页」。已带前缀就原样返回。
+    if (loc === publicPrefix || loc.startsWith(`${publicPrefix}/`)) return loc;
     if (loc === '/') return publicPrefix;
     return `${publicPrefix}${loc}`;
   }

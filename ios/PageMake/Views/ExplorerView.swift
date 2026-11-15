@@ -742,14 +742,21 @@ struct ExplorerView: View {
     }
 
     private func publish() async {
-        // 部署形态自动识别：有 package.json 就是后端项目（pnpm-lock → pnpm，
-        // 否则 npm），没有则按纯前端发布。不再依赖创建时手选的形态。
+        // 部署形态自动识别：有 package.json 就是后端项目（锁文件决定 npm/pnpm/bun），
+        // 没有则按纯前端发布。
+        //
+        // 但**不能把已经是后端的项目降级成静态**：js / bun 形态可以没有 package.json，
+        // 重算会得出 .staticSite，发布时后端会先杀掉常驻进程、再找不到 HTML 入口
+        // 返回 NO_ENTRY —— 站点从此 503，而记录仍是 ready。
         let detected = DeployKindDetector.detect(paths: current.files.map(\.path))
-        if detected.isBackend && appState.session?.canUseBackend != true {
+        let kind = detected.isBackend
+            ? detected
+            : (current.kind.isBackend ? current.kind : .staticSite)
+        if kind.isBackend && appState.session?.canUseBackend != true {
             pendingBackendPublish = true
             return
         }
-        await performPublish(kind: detected)
+        await performPublish(kind: kind)
     }
 
     private func performPublish(kind: ProjectKind) async {

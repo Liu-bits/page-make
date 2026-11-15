@@ -353,12 +353,12 @@ E:/Page-make/
 
 ---
 
-## 5. 测试体系（共 187 项 + 静态检查，提交前必须全绿）
+## 5. 测试体系（共 188 项 + 静态检查，提交前必须全绿）
 
 | 命令 | 数量 | 内容 |
 |---|---|---|
 | `node dev/run-tests.mjs` | 61 | 单元测试（含 JWKS 三级加载、动态 ZIP 解压配额、ZIP 炸弹防护、PBKDF2 60 万轮/旧 12 万轮兼容、密码强度、MIME、等级配额、ZIP 写入器、代理前缀改写线性/幂等/注入位置、访问统计聚合/剪枝/隔离、bun 形态判定） |
-| `node dev/test-server.mjs` | 61 | 容器冒烟（真实 HTTP 全流程；含等级上传配额、压缩包小于配额但解压后超限、普通用户后端拒绝、npm 后端全链路反向代理、bun 形态全链路（bun install + TS 入口，本机无 bun 自动跳过）、后端代理改写 e2e（Location 五形态 / Set-Cookie Path / HTML 注入 / Referer 兜底 / gbk+gzip 跳过）、站点访问统计（入口计数/项目隔离/删除清理 stat_）、运行日志（stdout 收集→/logs 可见，静态项目 400）、表单收集（urlencoded+JSON 双形态/删单条/清空）、自定义 404.html、SEO meta 注入与用户 meta 保留、快照回滚（备份/改文件/恢复/非 VIP 403/删除清空）、项目克隆（副本文件+游客 GUEST_LIMIT+stats 分维度用量）、导出备份、ZIP PHP 过滤、Explorer 全流程、限流、删号 KV 残留、Apple/Google 合法 token 登录） |
+| `node dev/test-server.mjs` | 62 | 容器冒烟（真实 HTTP 全流程；含等级上传配额、压缩包小于配额但解压后超限、普通用户后端拒绝、npm 后端全链路反向代理、bun 形态全链路（bun install + TS 入口，本机无 bun 自动跳过）、后端代理改写 e2e（Location 五形态 / Set-Cookie Path / HTML 注入 / Referer 兜底 / gbk+gzip 跳过）、站点访问统计（入口计数/项目隔离/删除清理 stat_）、运行日志（stdout 收集→/logs 可见，静态项目 400）、表单收集（urlencoded+JSON 双形态/删单条/清空）、自定义 404.html、SEO meta 注入与用户 meta 保留、快照回滚（备份/改文件/恢复/非 VIP 403/删除清空）、项目克隆（副本文件+游客 GUEST_LIMIT+stats 分维度用量）、导出备份、ZIP PHP 过滤、Explorer 全流程、限流、删号 KV 残留、Apple/Google 合法 token 登录） |
 | `node dev/check-handler-imports.mjs` | 1 | 静态扫「被调用但未 import/未定义」的标识符（ESM 惰性绑定让这类错误只在运行时炸成 500；已接入 CI） |
 | `node dev/test-guest-ttl.mjs` | 8 | 游客链路（真实游客会话/篡改磁盘 KV 模拟到期/身份重置） |
 | `node dev/test-assets.mjs` | 26 | CSS/JS 引用全模式回归（诊断归一单测/粘贴完整/片段/`<head>` 缺失与只有 `<body>` 注入/内置模板逐字回归/子目录/`../`与`/`归一/查询串+type/外链忽略/ZIP 上传链路/explorer publish/PHP 拒绝/CSS 内部 url() 归一三链路/HTML 其他引用标签 img/iframe/source/a/form/srcset/外链与 data URI 原样保留/**CSS @import 字符串形式与注释/文本属性边界**） |
@@ -504,6 +504,19 @@ push debug → debug CI 三 job 全绿 → 合并 main → main 的 deploy job �
    老版 bun 项目的二进制锁文件会被拒收（iOS 测试 target 有回归用例）
  - 后端项目运行时子进程 env 只能给最小集合（PATH/HOME/PORT/HOST/NODE_ENV/NODE_OPTIONS），
    绝不能继承宿主 `process.env`，否则会把平台 Token / 密钥暴露给用户代码
+ - **新增部署形态必须同步四处白名单**（2026-11-15）：`PROJECT_KIND` / `isBackendKind` /
+   `upload/init` 的 kind 白名单 / iOS `DeployKindDetector` + `ProjectKind`。漏掉 bun 时
+   ZIP 通道直接 400 `INVALID_KIND`（只在项目模式可用），且测试只覆盖 explorer 通道时发现不了
+ - **发布静态分支必须先确认入口再停后端进程**（2026-11-15）：原顺序是「先 stopBackendApp
+   再找 HTML 入口」，js/bun 这类没有 HTML 的项目会「进程已杀 + 返回 NO_ENTRY + 记录仍 ready」
+   → 公开页永久 503。同理 iOS 侧「重新构建」不能把已有后端项目按文件重新推断成静态
+ - **快照恢复后端项目必须重新构建**（2026-11-15）：restore 只换 KV 里的源码，用户进程仍在跑
+   旧代码（源码只在 publish/refresh 时物化）。恢复后要标 processing 并后台 deploy，否则
+   提示「已恢复」但线上还是旧版本
+ - **表单 JSON 判定不能只看 Accept**：浏览器 `fetch()` 默认 `Accept: */*`，必须同时看
+   `Content-Type: application/json`，否则用户 `.then(r => r.json())` 直接抛 SyntaxError
+ - **已下架（status=banned）的项目不允许通过编辑文件/恢复快照自救**：这两处写 `status=ready`
+   没有 banned 守卫，用户改一个文件就能把被下架站点重新上线
  - **`restoreAll` 必须用 `isBackendKind()` 判断，不能枚举 `npm`/`pnpm`**：曾写成
    `if (kind !== 'npm' && kind !== 'pnpm') continue`，导致容器重启后 `js` 形态项目
    永不拉起、公开页一直 503，而 KV 里状态还是 `ready`。三种后端形态要一起处理；

@@ -220,6 +220,12 @@
 "error_guest_no_explorer" = "项目模式仅对登录账号或 VIP 游客开放";
 "error_explorer_requires_svip" = "项目模式需要 SVIP 及以上等级";
 "error_already_max_tier" = "已经是最高等级，无需再申请";
+"error_no_next_tier" = "已经是最高等级，没有可申请的下一级";
+"error_snapshot_requires_vip" = "备份与恢复是 VIP 及以上权益，升级后即可使用";
+"error_snapshot_too_many" = "项目文件太多，暂时无法备份（上限 300 个文件）";
+"error_clone_too_many" = "项目文件太多，无法创建副本（上限 300 个文件）";
+"error_logs_only_backend" = "只有后端项目才有运行日志";
+"error_project_banned" = "该项目已被下架，无法编辑或恢复";
 
 // MARK: - 二维码分享
 "qr_code" = "二维码";
