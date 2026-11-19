@@ -123,21 +123,12 @@ struct FilePickerView: View {
                         .padding(.bottom, 12)
                 }
             }
-            // 大文件（Ultra 可到 60MB+）拷贝到临时目录期间的遮挡，避免用户
-            // 在“点了打开但还没进上传页”的空窗里反复点按钮。
+            // 大文件（Ultra 可到 60MB+）处理期间的透明遮挡：只拦触摸，不再单独
+            // 显示转圈文案——进度反馈已经落在用户刚点的那个主按钮上（见 filesMode），
+            // 两处都转反而显得乱。按钮本身 disable 后再加这层，防误触其它控件。
             .overlay {
                 if isPreparingFiles {
-                    ZStack {
-                        Color.black.opacity(0.22).ignoresSafeArea()
-                        VStack(spacing: 10) {
-                            ProgressView()
-                            Text(L10n.string("uploading"))
-                                .font(.caption)
-                                .foregroundStyle(Theme.secondaryLabel)
-                        }
-                        .padding(20)
-                        .glassPanel(radius: 16)
-                    }
+                    Color.clear.contentShape(Rectangle())
                 }
             }
             .navigationTitle(L10n.string("creation_studio"))
@@ -381,9 +372,22 @@ struct FilePickerView: View {
                                 showPicker = true
                             }
                         } label: {
-                            Label(L10n.string("pick_files_action"), systemImage: "folder")
+                            // 大文件处理慢时，把按钮本身换成转圈指示器 + 文案，
+                            // 用户盯着刚点的那个按钮就能看到“正在读取/解剖”，
+                            // 不再因界面无反馈而反复点击或以为卡死。
+                            if isPreparingFiles {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle(tint: PageMakeTheme.onAccent))
+                                    Text(L10n.string("pick_files_preparing"))
+                                }
+                            } else {
+                                Label(L10n.string("pick_files_action"), systemImage: "folder")
+                            }
                         }
                         .buttonStyle(PrimaryButtonStyle())
+                        .disabled(isPreparingFiles)
+                        .animation(.easeOut(duration: 0.18), value: isPreparingFiles)
                     }
                 }
             }

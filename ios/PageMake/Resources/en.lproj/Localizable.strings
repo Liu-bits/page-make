@@ -72,6 +72,7 @@
 // MARK: - File picker
 "pick_files_title" = "Select Files";
 "pick_files_action" = "Select Files";
+"pick_files_preparing" = "Reading files…";
 "pick_files_hint" = "Supports .zip, .html, .css, .js. Multiple selection, 5MB total max";
 "creation_studio" = "New Project";
 "creation_zip_eyebrow" = "File upload";

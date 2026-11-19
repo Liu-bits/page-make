@@ -72,6 +72,7 @@
 // MARK: - 选文件
 "pick_files_title" = "选择文件";
 "pick_files_action" = "选择文件";
+"pick_files_preparing" = "正在读取文件…";
 "pick_files_hint" = "支持 .zip、.html、.css、.js，可多选，总大小不超过 5MB";
 "creation_studio" = "新建作品";
 "creation_zip_eyebrow" = "文件上传";
