@@ -116,7 +116,12 @@ final class UploadService: ObservableObject {
         // 否则 SVIP/Ultra 的大文件会在 iPhone 上长期占用空间。
         defer {
             for file in files {
-                try? FileManager.default.removeItem(at: file.url)
+                if file.requiresSecurityScope {
+                    // 选文件时已持有 ZIP 安全作用域，上传/识别结束后平衡释放。
+                    file.releaseSecurityScope()
+                } else {
+                    try? FileManager.default.removeItem(at: file.url)
+                }
             }
         }
         func update(_ transform: (inout Item) -> Void) {

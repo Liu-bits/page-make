@@ -359,7 +359,11 @@ final class APIClient {
             chunkIndex: chunkIndex,
             data: data.base64EncodedString()
         ))
-        _ = try await request("/api/upload/chunk", method: "POST", body: body)
+        // 单片固定 chunkIndex 覆盖写，天然幂等；弱网下重试不会重复文件。
+        _ = try await request(
+            "/api/upload/chunk", method: "POST", body: body,
+            maxAttempts: 3, timeout: 45
+        )
     }
 
     func finishUpload(uploadId: String) async throws -> UploadFinishResponse {

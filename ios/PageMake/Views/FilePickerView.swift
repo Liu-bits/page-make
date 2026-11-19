@@ -657,44 +657,46 @@ struct FilePickerView: View {
         guard !isPreparingFiles else { return }
         guard let name = validatedProjectName() else { return }
 
-        // 60MB 的 ZIP 从安全作用域 copyItem 可能耗时数百毫秒到数秒，绝不能卡在主线程
-        // （否则用户点“打开”后 UI 冻结，感知为“没反应”）。把“访问作用域 + 读大小 +
-        // copy”整体丢到后台任务，回主线程前只拿到 [PickedFile] 这个纯数据。
+        // ZIP 不整包复制：65MB 在 iPhone 13 上既慢又会额外占用存储，还可能触发内存峰值。
+        // 保留安全作用域直到上传结束，FileHandle 每次只读 600KB。散文件仍复制为临时文件。
         isPreparingFiles = true
         defer { isPreparingFiles = false }
 
         let allowed = FileValidator.allowedExtensions(for: uploadWhitelistKind)
         let limit = maxUploadBytes
-        let copied = await Task.detached(priority: .userInitiated) { () -> Result<[PickedFile], PickError> in
+        let prepared = await Task.detached(priority: .userInitiated) { () -> Result<[PickedFile], PickError> in
             var picked: [PickedFile] = []
-            var copiedBytes: Int64 = 0
+            var totalBytes: Int64 = 0
             func discard() {
-                for file in picked { try? FileManager.default.removeItem(at: file.url) }
+                for file in picked {
+                    if file.requiresSecurityScope { file.releaseSecurityScope() }
+                    else { try? FileManager.default.removeItem(at: file.url) }
+                }
             }
             for url in urls {
-                let didStart = url.startAccessingSecurityScopedResource()
-                defer { if didStart { url.stopAccessingSecurityScopedResource() } }
-
                 let fileName = url.lastPathComponent
                 let ext = fileName.lowercased().components(separatedBy: ".").last ?? ""
                 guard allowed.contains(ext) else {
                     discard()
                     return .failure(.unsupportedExtension(ext))
                 }
-
+                let isZip = ext == "zip"
+                let didStart = url.startAccessingSecurityScopedResource()
+                // ZIP 的作用域由 UploadService 结束上传后释放；散文件复制完立即释放。
+                defer { if didStart && !isZip { url.stopAccessingSecurityScopedResource() } }
                 let values = try? url.resourceValues(forKeys: [.fileSizeKey])
                 let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-                // Xcode 27 SDK 中 fileSize / int64Value 的整型宽度与旧 SDK 不同，
-                // 不依赖 int64Value：直接把 NSNumber 转成 Int64，避免 SDK 推断差异。
-                let resourceSize = values?.fileSize.map { Int64($0) }
-                let attributeSize = (attributes?[.size] as? NSNumber).map { Int64(truncating: $0) }
-                let size = resourceSize ?? attributeSize ?? 0
-                // copy 前先按等级配额预判：非 Ultra 选 60MB 时不必白拷一整包再删，
-                // 直接返回超限错误（文案口径与 FileValidator 的 tooLargeForTier 一致）。
-                copiedBytes += size
-                if let limit, copiedBytes > limit {
+                let size = values?.fileSize.map { Int64($0) }
+                    ?? (attributes?[.size] as? NSNumber).map { Int64(truncating: $0) } ?? 0
+                totalBytes += size
+                if let limit, totalBytes > limit {
+                    if didStart { url.stopAccessingSecurityScopedResource() }
                     discard()
-                    return .failure(.tooLarge(bytes: copiedBytes, limit: limit))
+                    return .failure(.tooLarge(bytes: totalBytes, limit: limit))
+                }
+                if isZip {
+                    picked.append(PickedFile(url: url, name: fileName, size: size, requiresSecurityScope: true))
+                    continue
                 }
                 let destination = FileManager.default.temporaryDirectory
                     .appendingPathComponent("\(UUID().uuidString)_\(fileName)")
@@ -710,7 +712,7 @@ struct FilePickerView: View {
         }.value
 
         let picked: [PickedFile]
-        switch copied {
+        switch prepared {
         case .success(let files):
             picked = files
         case .failure(let error):
@@ -719,7 +721,8 @@ struct FilePickerView: View {
         }
         func discardPicked() {
             for file in picked {
-                try? FileManager.default.removeItem(at: file.url)
+                if file.requiresSecurityScope { file.releaseSecurityScope() }
+                else { try? FileManager.default.removeItem(at: file.url) }
             }
         }
 
@@ -731,6 +734,8 @@ struct FilePickerView: View {
                 // ZIP 中央目录读不出条目名（zip64 / 加密 / 条目名非 UTF-8）：
                 // 无法判定是纯前端还是后端，必须让用户知情后再决定，
                 // 不能静默按纯前端上传（后端项目会缺 Node 运行时）。
+                // 注意：文件还要交给后续流程（降级上传或取消回收），
+                // 这里绝不能 discard——ZIP 的安全作用域一旦释放就读不了了。
                 pendingBackendUpload = PendingBackendUpload(
                     files: files,
                     name: name,
@@ -740,7 +745,7 @@ struct FilePickerView: View {
             }
             if detected.isBackend && !canUseBackend {
                 // 非 VIP 选了含 package.json 的项目：不能静默按纯前端上传，
-                // 让用户明确选择「降级纯前端」或取消去升级。
+                // 让用户明确选择「降级纯前端」或取消去升级。同上，不 discard。
                 pendingBackendUpload = PendingBackendUpload(
                     files: files,
                     name: name,
@@ -761,10 +766,15 @@ struct FilePickerView: View {
     }
 
     /// 页面关闭时回收：已交给上传队列的文件在交接时就从列表里摘掉了，
-    /// 这里只需要删剩下的（取消弹窗留下的那一批）。
+    /// 这里只需要处理剩下的（取消弹窗留下的那一批）。ZIP 保留的是用户的原文件，
+    /// 绝不能 removeItem——只释放安全作用域；散文件是临时副本，直接删除。
     private func recycleLeftoverPendingFiles() {
         for file in pendingRecycleFiles {
-            try? FileManager.default.removeItem(at: file.url)
+            if file.requiresSecurityScope {
+                file.releaseSecurityScope()
+            } else {
+                try? FileManager.default.removeItem(at: file.url)
+            }
         }
         pendingRecycleFiles.removeAll()
     }
