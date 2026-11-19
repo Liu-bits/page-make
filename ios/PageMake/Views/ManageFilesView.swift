@@ -393,12 +393,18 @@ struct AddFileSheet: View {
                     Button(L10n.string("cancel")) { dismiss() }
                 }
             }
-            .sheet(isPresented: $showPicker) {
-                DocumentPicker(types: Self.supportedTypes, allowsMultipleSelection: false) { urls in
-                    Task { @MainActor in
-                        if let url = urls.first {
-                            await uploadFile(url)
-                        }
+            // 原生 .fileImporter：旧版 .sheet 包 UIDocumentPicker 会在选完文件后
+            // 因 showPicker 不复位而卡住，再点“选择文件”毫无反应。
+            .fileImporter(
+                isPresented: $showPicker,
+                allowedContentTypes: Self.supportedTypes,
+                allowsMultipleSelection: false
+            ) { result in
+                Task { @MainActor in
+                    // 延后一帧，等 fileImporter 完全 dismiss 再处理，避免 alert 与之同帧被吞
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                    if case .success(let urls) = result, let url = urls.first {
+                        await uploadFile(url)
                     }
                 }
             }

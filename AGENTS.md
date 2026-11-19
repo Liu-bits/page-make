@@ -635,6 +635,18 @@ push debug → debug CI 三 job 全绿 → 合并 main → main 的 deploy job �
   `__form` 等保留路径要显式决定放行还是同样要求解锁，不要靠"没命中就走 401"蒙。
 
 **iOS/Swift 坑**（本地无 Xcode，只能靠 CI 验证）：
+- **文件选择绝不能用 `.sheet` 包 `UIDocumentPickerViewController`**（2026-11-19）：
+  系统 picker 自己 dismiss 后 `showPicker` 仍是 true、SwiftUI sheet 容器不关；
+  若校验失败提前 return，picker 永久卡屏，用户再点「打开」只是把已是 true 的
+  showPicker 再设 true（幂等）→ 表现「完全没反应」。统一用 SwiftUI 原生
+  `.fileImporter(isPresented:allowedContentTypes:allowsMultipleSelection:onCompletion:)`，
+  它自带正确 present/dismiss 生命周期 + `Result`。onCompletion 里延后一帧
+  （`Task.sleep 50ms`）再处理结果，避免 alert / confirmationDialog 与 importer
+  dismiss 同帧被吞。FilePickerView / AddFileSheet 已按此改；新增文件选择入口照抄。
+- 大文件（Ultra 60MB+ ZIP）的 copyItem 必须放 `Task.detached` 后台执行，
+  不能在主线程做（否则 UI 冻结同样表现为「点了没反应」）；copy 期间加遮罩防重复点。
+  Security-scoped 的 `startAccessingSecurityScopedResource()` 要在后台闭包内、
+  copy 之后才 stop（defer 放循环体内每次迭代结束执行是对的）。
 - SwiftUI `Section("标题"){ } footer:{ }`（头部字符串参数 + 双尾随闭包）**无匹配重载**
   → xcodebuild exit 65；改为 Section 内 Text 行
 - Swift 计算属性块内不能有以 `get` 开头的方法调用（get 是访问器关键字）

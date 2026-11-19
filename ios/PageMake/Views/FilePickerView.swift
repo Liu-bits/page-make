@@ -20,6 +20,9 @@ struct FilePickerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var mode: Mode = .files
     @State private var showPicker = false
+    /// 正在把选中的文件（可能是 60MB 的 ZIP）从安全作用域拷贝到临时目录。
+    /// 完成后才切入上传页；期间用遮罩防重复点击。
+    @State private var isPreparingFiles = false
     @State private var alertItem: AlertItem?
     @State private var projectName = ""
     /// 需要用户明确确认的待定上传：不能静默降级成纯前端。
@@ -52,21 +55,42 @@ struct FilePickerView: View {
         let reason: PendingUploadReason
     }
 
+    /// 后台 copy 阶段的可传递错误（只带基础类型，供 Task.detached @Sendable 闭包返回；
+    /// message 在回到 MainActor 后才取值，不在后台线程碰 L10n）。
+    private enum PickError: Error {
+        case unsupportedExtension(String)
+        case tooLarge(bytes: Int64, limit: Int64)
+        case copyFailed
+
+        var message: String {
+            switch self {
+            case .unsupportedExtension(let ext):
+                return L10n.format("validation_extension", ext)
+            case .tooLarge(let bytes, let limit):
+                let mb = Double(bytes) / 1_048_576.0
+                let limitText = limit >= 1_048_576
+                    ? String(format: "%.0f MB", Double(limit) / 1_048_576.0)
+                    : String(format: "%.0f KB", Double(limit) / 1024.0)
+                return L10n.format("validation_too_large_limit", mb, limitText)
+            case .copyFailed:
+                return L10n.string("error_generic")
+            }
+        }
+    }
+
     /// 上传时用于扩展名白名单/配额的形态：VIP 及以上按后端白名单收源码，
     /// 普通账号只收静态资源；真正的部署形态由选中的文件自动识别。
     private var uploadWhitelistKind: ProjectKind {
         canUseBackend ? .npm : .staticSite
     }
 
+    /// 排序保证每次一致（Set 遍历顺序不定）。两套白名单都含 zip，
+    /// 所以无论账号等级，ZIP 一定在可选类型里。
     private var supportedTypes: [UTType] {
-        var types: [UTType] = []
-        let extensions = canUseBackend
-            ? FileValidator.backendAllowedExtensions
-            : FileValidator.staticAllowedExtensions
-        for ext in extensions {
-            if let type = UTType(filenameExtension: ext) { types.append(type) }
-        }
-        return types
+        let extensions: [String] = canUseBackend
+            ? FileValidator.backendAllowedExtensions.sorted()
+            : FileValidator.staticAllowedExtensions.sorted()
+        return extensions.compactMap { UTType(filenameExtension: $0) }
     }
 
     private var pasteContent: PasteContent {
@@ -97,6 +121,23 @@ struct FilePickerView: View {
                     autoDetectBar
                         .padding(.horizontal, 16)
                         .padding(.bottom, 12)
+                }
+            }
+            // 大文件（Ultra 可到 60MB+）拷贝到临时目录期间的遮挡，避免用户
+            // 在“点了打开但还没进上传页”的空窗里反复点按钮。
+            .overlay {
+                if isPreparingFiles {
+                    ZStack {
+                        Color.black.opacity(0.22).ignoresSafeArea()
+                        VStack(spacing: 10) {
+                            ProgressView()
+                            Text(L10n.string("uploading"))
+                                .font(.caption)
+                                .foregroundStyle(Theme.secondaryLabel)
+                        }
+                        .padding(20)
+                        .glassPanel(radius: 16)
+                    }
                 }
             }
             .navigationTitle(L10n.string("creation_studio"))
@@ -141,12 +182,29 @@ struct FilePickerView: View {
             } message: {
                 Text(L10n.string(pendingDialogMessageKey))
             }
-            .sheet(isPresented: $showPicker) {
-                DocumentPicker(types: supportedTypes) { urls in
-                    // UIKit delegate 回调不保证主线程；直接改 @State 会触发
-                    // “Publishing changes from background threads” 甚至崩溃。
-                    Task { @MainActor in
+            // 用 SwiftUI 原生 .fileImporter，不再用 .sheet 包 UIDocumentPickerViewController。
+            // 旧实现的致命问题：UIDocumentPicker 自己 dismiss 后 showPicker 仍是 true，
+            // SwiftUI 的 sheet 容器不关；若 handlePicked 因校验失败提前 return，
+            // picker 永远卡在屏幕上，用户再点“打开”只是把已是 true 的 showPicker
+            // 再设一次 true（幂等），表现就是“完全没反应”。.fileImporter 自带正确的
+            // present/dismiss 生命周期和 Result 回调，从根上消除这类状态脱节。
+            .fileImporter(
+                isPresented: $showPicker,
+                allowedContentTypes: supportedTypes,
+                allowsMultipleSelection: true
+            ) { result in
+                // onCompletion 由系统回调，切回主线程再改 @State。
+                Task { @MainActor in
+                    // 系统回调时 fileImporter 的 dismiss 与这里的 @State 更新可能同帧。
+                    // 延后一帧，确保 importer 完全关闭后再处理结果/弹 alert，
+                    // 避免两个 presentation 竞争导致 alert 被吞（RootView 里踩过同款坑）。
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                    switch result {
+                    case .success(let urls):
                         await handlePicked(urls)
+                    case .failure:
+                        // 用户取消或系统错误：文件选择器已由系统关闭，无需额外处理。
+                        break
                     }
                 }
             }
@@ -576,41 +634,75 @@ struct FilePickerView: View {
     /// 拷贝到临时目录（脱离安全作用域资源）+ 本地校验。
     /// 判定 ZIP 形态要读中央目录，因此是 async（读取本身在后台线程）。
     private func handlePicked(_ urls: [URL]) async {
+        // 重入守卫：遮罩靠 overlay 拦截触摸，但 hit-test 未必 100% 可靠；
+        // 若用户在 copy 窗口内二次触发选择，这里直接挡掉，避免并发两次 onPick
+        // 产生重复上传项。状态在主线程（onCompletion 的 Task @MainActor）读写。
+        guard !isPreparingFiles else { return }
         guard let name = validatedProjectName() else { return }
-        var picked: [PickedFile] = []
+
+        // 60MB 的 ZIP 从安全作用域 copyItem 可能耗时数百毫秒到数秒，绝不能卡在主线程
+        // （否则用户点“打开”后 UI 冻结，感知为“没反应”）。把“访问作用域 + 读大小 +
+        // copy”整体丢到后台任务，回主线程前只拿到 [PickedFile] 这个纯数据。
+        isPreparingFiles = true
+        defer { isPreparingFiles = false }
+
+        let allowed = FileValidator.allowedExtensions(for: uploadWhitelistKind)
+        let limit = maxUploadBytes
+        let copied = await Task.detached(priority: .userInitiated) { () -> Result<[PickedFile], PickError> in
+            var picked: [PickedFile] = []
+            var copiedBytes: Int64 = 0
+            func discard() {
+                for file in picked { try? FileManager.default.removeItem(at: file.url) }
+            }
+            for url in urls {
+                let didStart = url.startAccessingSecurityScopedResource()
+                defer { if didStart { url.stopAccessingSecurityScopedResource() } }
+
+                let fileName = url.lastPathComponent
+                let ext = fileName.lowercased().components(separatedBy: ".").last ?? ""
+                guard allowed.contains(ext) else {
+                    discard()
+                    return .failure(.unsupportedExtension(ext))
+                }
+
+                let values = try? url.resourceValues(forKeys: [.fileSizeKey])
+                let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+                // Xcode 27 SDK 中 fileSize / int64Value 的整型宽度与旧 SDK 不同，
+                // 不依赖 int64Value：直接把 NSNumber 转成 Int64，避免 SDK 推断差异。
+                let resourceSize = values?.fileSize.map { Int64($0) }
+                let attributeSize = (attributes?[.size] as? NSNumber).map { Int64(truncating: $0) }
+                let size = resourceSize ?? attributeSize ?? 0
+                // copy 前先按等级配额预判：非 Ultra 选 60MB 时不必白拷一整包再删，
+                // 直接返回超限错误（文案口径与 FileValidator 的 tooLargeForTier 一致）。
+                copiedBytes += size
+                if let limit, copiedBytes > limit {
+                    discard()
+                    return .failure(.tooLarge(bytes: copiedBytes, limit: limit))
+                }
+                let destination = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("\(UUID().uuidString)_\(fileName)")
+                do {
+                    try FileManager.default.copyItem(at: url, to: destination)
+                    picked.append(PickedFile(url: destination, name: fileName, size: size))
+                } catch {
+                    discard()
+                    return .failure(.copyFailed)
+                }
+            }
+            return .success(picked)
+        }.value
+
+        let picked: [PickedFile]
+        switch copied {
+        case .success(let files):
+            picked = files
+        case .failure(let error):
+            alertItem = AlertItem(message: error.message)
+            return
+        }
         func discardPicked() {
             for file in picked {
                 try? FileManager.default.removeItem(at: file.url)
-            }
-        }
-        for url in urls {
-            let didStart = url.startAccessingSecurityScopedResource()
-            defer { if didStart { url.stopAccessingSecurityScopedResource() } }
-
-            let name = url.lastPathComponent
-            let ext = name.lowercased().components(separatedBy: ".").last ?? ""
-            guard FileValidator.allowedExtensions(for: uploadWhitelistKind).contains(ext) else {
-                discardPicked()
-                alertItem = AlertItem(message: L10n.format("validation_extension", ext))
-                return
-            }
-
-            let values = try? url.resourceValues(forKeys: [.fileSizeKey])
-            let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-            // Xcode 27 SDK 中 fileSize / int64Value 的整型宽度与旧 SDK 不同，
-            // 不依赖 int64Value：直接把 NSNumber 转成 Int64，避免 SDK 推断差异。
-            let resourceSize = values?.fileSize.map { Int64($0) }
-            let attributeSize = (attributes?[.size] as? NSNumber).map { Int64(truncating: $0) }
-            let size = resourceSize ?? attributeSize ?? 0
-            let destination = FileManager.default.temporaryDirectory
-                .appendingPathComponent("\(UUID().uuidString)_\(name)")
-            do {
-                try FileManager.default.copyItem(at: url, to: destination)
-                picked.append(PickedFile(url: destination, name: name, size: size))
-            } catch {
-                discardPicked()
-                alertItem = AlertItem(message: L10n.string("error_generic"))
-                return
             }
         }
 
@@ -677,51 +769,5 @@ struct FilePickerView: View {
     private func formatLimit(_ bytes: Int64) -> String {
         let mb = Double(bytes) / 1_048_576.0
         return mb >= 1 ? String(format: "%.0f MB", mb) : String(format: "%.0f KB", Double(bytes) / 1024.0)
-    }
-}
-
-/// UIDocumentPicker 封装
-struct DocumentPicker: UIViewControllerRepresentable {
-    let types: [UTType]
-    let allowsMultipleSelection: Bool
-    let onPick: ([URL]) -> Void
-
-    init(types: [UTType], allowsMultipleSelection: Bool = true, onPick: @escaping ([URL]) -> Void) {
-        self.types = types
-        self.allowsMultipleSelection = allowsMultipleSelection
-        self.onPick = onPick
-    }
-
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: false)
-        picker.allowsMultipleSelection = allowsMultipleSelection
-        picker.delegate = context.coordinator
-        return picker
-    }
-
-    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onPick: onPick)
-    }
-
-    final class Coordinator: NSObject, UIDocumentPickerDelegate {
-        let onPick: ([URL]) -> Void
-
-        init(onPick: @escaping ([URL]) -> Void) {
-            self.onPick = onPick
-        }
-
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            if Thread.isMainThread {
-                onPick(urls)
-            } else {
-                DispatchQueue.main.async { [onPick] in
-                    onPick(urls)
-                }
-            }
-        }
-
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {}
     }
 }

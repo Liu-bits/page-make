@@ -85,6 +85,23 @@ final class FileValidatorTests: XCTestCase {
         )
         XCTAssertNotNil(try? unlimited.get())
     }
+
+    /// 用户报的 60MB ZIP 场景：Ultra（limitBytes=nil）必须放行，
+    /// 且非 Ultra（哪怕 SVIP 10MB）要明确拒绝，不能静默。
+    func testSixtyMegabyteZipOnlyPassesForUltra() {
+        let sixtyMB: Int64 = 60 * 1024 * 1024
+        let ultra = FileValidator.validate(
+            [pickedFile(name: "site.zip", size: sixtyMB)],
+            limitBytes: nil
+        )
+        XCTAssertNotNil(try? ultra.get())
+
+        let svip = FileValidator.validate(
+            [pickedFile(name: "site.zip", size: sixtyMB)],
+            limitBytes: 10 * 1024 * 1024
+        )
+        XCTAssertEqual(svip.failure, .tooLargeForTier(bytes: sixtyMB, limit: 10 * 1024 * 1024))
+    }
 }
 
 extension Result where Success == [PickedFile], Failure == FileValidationError {
