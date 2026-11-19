@@ -34,6 +34,9 @@ for (const source of SOURCES) {
     if (!Array.isArray(data.keys) || data.keys.length === 0) throw new Error('JWKS 响应为空');
 
     const nextKeys = canonicalKeys(data.keys);
+    // 规范化会过滤掉非对象项：端点/网关有时返回 200 + {"keys":["err"]} 这类内容，
+    // 若只校验原始长度就会把种子写成空数组（境内 Google 验签全靠种子），必须再拦一次。
+    if (nextKeys.length === 0) throw new Error('JWKS 规范化后为空');
     const prevKeys = canonicalKeys(await readKeys(file));
 
     if (JSON.stringify(nextKeys) === JSON.stringify(prevKeys)) {
@@ -61,16 +64,27 @@ if (failed) {
 
 // 规范化公钥集合：数组按 kid 排序、每个 key 的字段名按字母序输出。
 // Google / Apple 每次响应的字段与数组顺序并不稳定，不规范化会让“没轮换”也产生 diff。
+// 注意：**只归一对象字段顺序与 key 的顺序，不动数组值**——x5c 之类是证书链，
+// 顺序有语义，排序会损坏验签。
 function canonicalKeys(keys) {
   if (!Array.isArray(keys)) return [];
   return keys
-    .filter((key) => key && typeof key === 'object')
+    .filter((key) => key && typeof key === 'object' && !Array.isArray(key))
     .map((key) => {
       const sorted = {};
       for (const name of Object.keys(key).sort()) sorted[name] = key[name];
       return sorted;
     })
-    .sort((a, b) => String(a.kid || '').localeCompare(String(b.kid || '')));
+    .sort((a, b) => {
+      // 主键 kid；kid 缺失/重复时用整条密钥的规范化 JSON 兜底，
+      // 避免服务端调换顺序就误判为“有更新”。
+      const ak = String(a.kid ?? '');
+      const bk = String(b.kid ?? '');
+      if (ak !== bk) return ak < bk ? -1 : 1;
+      const aj = JSON.stringify(a);
+      const bj = JSON.stringify(b);
+      return aj === bj ? 0 : aj < bj ? -1 : 1;
+    });
 }
 
 async function readKeys(file) {

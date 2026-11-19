@@ -406,10 +406,11 @@ E:/Page-make/
 | debug.yaml | push/PR to **debug**、tag v* | 三 job：backend-test（Node22 跑 173 项 + 本地化/死键/重复声明扫描 + Docker 构建）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天） |
 | page-make.yaml | push to **main** | 两个 job 并行：`deploy`（scripts/deploy-modelscope.sh）+ `ipa`（正式未签名安装包，与线上同源）。测试仍在 debug，见 §0.1 |
 | keepalive.yaml | 每 10 分钟 | 探 `${PAGEMAKE_URL}/healthz`，**必须带 UA**（`-A "PageMake-Keepalive/1.0"`），并回显 /api/config 的 jwks 诊断 |
-| jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子，**检出 debug 并推回 debug**（境内容器拉不到 Google，只能靠 runner）。`scripts/refresh-jwks.mjs` 只在公钥集合真变化时写盘，没有轮换则不产生提交、job 直接绿 |
+| jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子：**检出 debug → 推 debug → 再从 debug 只搬 `backend/data/` 两个文件提交推 main**（境内容器拉不到 Google，只能靠 runner）。`scripts/refresh-jwks.mjs` 只在公钥集合真变化时写盘，没有轮换则不产生提交、job 直接绿 |
 
-> 注意：deploy job 依赖 ios-build 通过；`if:` 表达式必须**单引号**（双引号导致整个
-> workflow 校验失败、0s 失败无 job）；GitHub 无 macos-27 标签，正确标签是 **xcode-27**。
+> 注意：page-make.yaml 的 deploy 与 ipa 是**两个并行 job**，没有 ios-build 依赖；
+> 质量门禁全在 debug。`if:` 表达式必须**单引号**（双引号导致整个 workflow 校验失败、
+> 0s 失败无 job）；GitHub 无 macos-27 标签，正确标签是 **xcode-27**。
 
 ### 6.2 部署链路（用户负责最后一步）
 

@@ -53,16 +53,17 @@ jobs:
         with:
           node-version: "22"
 
+      # 部分源失败时不阻断：任一源写盘成功都值得提交上线，
+      # 失败的那一侧保留旧种子（step 会被标成失败，UI 上仍可见）
       - name: 刷新种子（失败保留旧种子）
+        continue-on-error: true
         run: node scripts/refresh-jwks.mjs
 
       # 第一步：先落到 debug（开发/验证分支）
       - name: 提交推送到 debug
-        id: to_debug
         run: |
           if git diff --quiet -- backend/data/; then
             echo "种子无变化，无需提交"
-            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git config user.name "github-actions[bot]"
@@ -73,16 +74,18 @@ jobs:
           for attempt in 1 2 3; do
             if git push origin HEAD:debug; then
               echo "✓ 种子已推送到 debug"
-              echo "changed=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            # 推送被拒说明 debug 在本次运行期间又前进了：同步后把种子提交重放到最新 debug 上
             echo "::warning::第 ${attempt} 次推送失败，同步 origin/debug 后重试"
             sleep 5
             git fetch origin debug
-            if ! git rebase origin/debug; then
-              echo "::error::种子提交与 debug 冲突，需人工处理（git rebase --abort 后手动提交）"
-              exit 1
+            # 只有 debug 真的前进了（非快进）才需要重放；否则多半是权限/网络问题
+            if ! git merge-base --is-ancestor origin/debug HEAD; then
+              echo "debug 分支已前进，把种子提交重放到最新 debug 上"
+              if ! git rebase origin/debug; then
+                echo "::error::种子提交与 debug 冲突，需人工处理（git rebase --abort 后手动提交）"
+                exit 1
+              fi
             fi
           done
           echo "::error::连续 3 次推送失败，请检查 debug 分支保护或并发推送"
@@ -91,15 +94,16 @@ jobs:
       # 第二步：再同步到 main（生产分支）
       # 只从 debug 搬 backend/data/ 两个种子文件，**不 merge debug**——
       # debug 上可能还有未验证的代码提交，整分支合并等于把它们直接推上线。
+      # 不加 `if:` 门控：即使第一步没提交（例如上次 main 推送失败后 debug 已是最新），
+      # 这里也要跑一遍把 main 补齐，否则 main 的种子会一直旧到下次轮换。
       - name: 同步种子到 main
-        if: steps.to_debug.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           for attempt in 1 2 3; do
             git fetch origin main debug
             git checkout -B main origin/main
-            git checkout origin/debug -- backend/data/
+            git checkout origin/debug -- backend/data/google-jwks.json backend/data/apple-jwks.json
             if git diff --cached --quiet; then
               echo "main 已是最新种子，无需提交"
               exit 0

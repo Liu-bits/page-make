@@ -10,6 +10,9 @@
 # 规则（必须遵守）：
 #   - 不允许直接向 main 推代码，只允许从 debug 合并（见 AGENTS.md §0.1）
 #   - 合并前 debug 上 backend-test / ios-build / ipa 三个 job 必须全绿
+#   - **唯一例外**：jwks-refresh.yaml 会把 backend/data/*-jwks.json 两个公钥种子文件
+#     直接提交到 main（只搬文件、不 merge debug），因此 main 上会出现
+#     “chore: 刷新 JWKS 种子（自动）”提交并触发一次部署，这是设计行为，不是绕流程
 #
 # 需要的 GitHub 配置：
 #   Variables: MODELSCOPE_SPACE   创空间标识（格式 用户名/空间名）
