@@ -650,6 +650,10 @@ push debug → debug CI 三 job 全绿 → 合并 main → main 的 deploy job �
 - SwiftUI `Section("标题"){ } footer:{ }`（头部字符串参数 + 双尾随闭包）**无匹配重载**
   → xcodebuild exit 65；改为 Section 内 Text 行
 - Swift 计算属性块内不能有以 `get` 开头的方法调用（get 是访问器关键字）
+- **`Result<Success, Failure>` 的 Failure 必须 `: Error`**：自定义错误枚举忘了写
+  `: Error` 时 `swiftc -parse` 全绿、Xcode 报 exit 65
+  `type 'X' does not conform to protocol 'Error'`（2026-11-19 PickError 踩到）。
+  同属「`-parse` 查不出的语义错误」家族，只能靠 CI 抓。
 - 本地验语法：`swiftc -parse`，**先删大写 HTTPS_PROXY/HTTP_PROXY/ALL_PROXY**
   （大小写重复键导致 Swift runtime 崩溃）
 - **本地校验必须覆盖 `ios/PageMakeTests`，不能只扫 `ios/PageMake`**：
