@@ -73,8 +73,10 @@
 - 分支名固定 `debug`，不要改成 dev/test/staging（workflow 的 `on.branches` 写死了）。
 - 热修复也要走 debug（哪怕只改一行），否则 main 会失去"只接收已验证提交"的性质。
 - 本地 `git branch -a` 里 debug 是本地分支；首次推送用 `git push -u origin debug`。
-- **唯一例外**：`jwks-refresh.yaml` 每日自动提交 `backend/data/*.json` 到默认分支
-  （只改公钥种子，不碰代码），会顺带触发一次部署，属预期行为。
+- **唯一例外**：`jwks-refresh.yaml` 只改 `backend/data/*-jwks.json`（公钥种子，不碰代码）：
+  先提交到 debug，再把这两个文件同步到 main（**只搬文件，不 merge debug**，否则会把
+  未验证的代码推上线）。同步 main 会触发一次生产部署，属该类任务的预期行为。
+  该提交只在**公钥真的轮换**时产生；没有轮换的日子 job 直接「种子无变化」退出。
 
 ---
 
@@ -404,7 +406,7 @@ E:/Page-make/
 | debug.yaml | push/PR to **debug**、tag v* | 三 job：backend-test（Node22 跑 173 项 + 本地化/死键/重复声明扫描 + Docker 构建）→ ios-build（**xcode-27 runner**：macOS 27.0.1 + Xcode 27.0.0，编译+单测）→ ipa（归档不签名 → ad-hoc codesign → artifact `PageMake-unsigned-ipa`，保留 14 天） |
 | page-make.yaml | push to **main** | 两个 job 并行：`deploy`（scripts/deploy-modelscope.sh）+ `ipa`（正式未签名安装包，与线上同源）。测试仍在 debug，见 §0.1 |
 | keepalive.yaml | 每 10 分钟 | 探 `${PAGEMAKE_URL}/healthz`，**必须带 UA**（`-A "PageMake-Keepalive/1.0"`），并回显 /api/config 的 jwks 诊断 |
-| jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子并提交（境内拉不到 Google，只能靠 runner） |
+| jwks-refresh.yaml | 每日 02:37 | runner 拉官方 JWKS 写种子，**检出 debug 并推回 debug**（境内容器拉不到 Google，只能靠 runner）。`scripts/refresh-jwks.mjs` 只在公钥集合真变化时写盘，没有轮换则不产生提交、job 直接绿 |
 
 > 注意：deploy job 依赖 ios-build 通过；`if:` 表达式必须**单引号**（双引号导致整个
 > workflow 校验失败、0s 失败无 job）；GitHub 无 macos-27 标签，正确标签是 **xcode-27**。

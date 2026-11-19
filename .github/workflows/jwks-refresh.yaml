@@ -2,10 +2,22 @@
 # JWKS 种子每日刷新（Google / Apple 登录验签公钥）
 # -----------------------------------------------------------------------------
 # 背景：自托管容器在境内网络无法访问 googleapis.com，登录验签依赖内置种子
-#       （backend/data/*-jwks.json，由 CI 部署时刷新）。Google 会轮换签名密钥，
-#       本 workflow 每日从官方 JWKS 地址拉取并自动提交，保证种子不过期。
-# 推送到哪里：**debug**，不是 main。main 的 push 会直接触发生产部署且不跑测试，
-#       自动提交推 main 等于让机器绕过整条验证链。种子改动由人工合并到 main。
+#       （backend/data/*-jwks.json）。Google / Apple 会轮换签名密钥，本 workflow
+#       每日从官方 JWKS 地址拉取并自动提交，保证种子不过期。
+#
+# 推送到哪里：**两个分支都要**
+#       ① 先提交到 debug（验证分支，唯一例外允许机器人直接提交的种子数据）；
+#       ② 再把 backend/data/ 两个文件同步到 main，让生产镜像拿到新种子。
+#       注意第二步只搬种子文件、**不 merge debug**：debug 上可能压着尚未验证的代码，
+#       整分支合并会把它们直接推上线（main 的 push 会立刻触发生产部署且不跑测试）。
+#
+# 检出必须是 debug（2026-11-19 修复）：此前 checkout 默认落在 main、却 push 到 debug，
+#       一旦 debug 上已有种子提交，后续 rebase 必然在 backend/data/*.json 上冲突 →
+#       定时任务从 11-17 起连续 Failed。检出与推送目标现在一致。
+#
+# 提交频率：scripts/refresh-jwks.mjs 只在公钥集合真的变化时才写文件，所以
+#       “没有轮换的日子”这里会直接走「种子无变化」退出，不会天天产生提交。
+#
 # 手动触发：Actions → JWKS 种子刷新 → Run workflow
 # =============================================================================
 
@@ -19,15 +31,21 @@ on:
 permissions:
   contents: write
 
+# 同一时刻只允许一个刷新任务，避免两次提交互相踩（手动触发撞上定时任务）
+concurrency:
+  group: jwks-refresh
+  cancel-in-progress: false
+
 jobs:
   refresh:
     name: 刷新 JWKS 种子
     runs-on: ubuntu-latest
     steps:
-      - name: 检出代码
+      - name: 检出 debug
         uses: actions/checkout@v4
         with:
-          # 需要完整历史才能判断 debug 与当前 HEAD 的祖先关系（见下方推送步骤）
+          # 必须显式检出 debug：默认是默认分支 main，与下方推送目标不一致
+          ref: debug
           fetch-depth: 0
 
       - name: 安装 Node.js 22
@@ -38,10 +56,13 @@ jobs:
       - name: 刷新种子（失败保留旧种子）
         run: node scripts/refresh-jwks.mjs
 
-      - name: 有变化则提交推送到 debug
+      # 第一步：先落到 debug（开发/验证分支）
+      - name: 提交推送到 debug
+        id: to_debug
         run: |
           if git diff --quiet -- backend/data/; then
             echo "种子无变化，无需提交"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git config user.name "github-actions[bot]"
@@ -49,15 +70,47 @@ jobs:
           git add backend/data/
           git commit -m "chore: 刷新 JWKS 种子（自动）"
 
-          # 绝不直接推 main：main 的 push 会立刻触发 page-make.yaml 的生产部署，
-          # 而 main 上不跑任何测试，等于把未经 CI 验证的提交直接上线。
-          # 改推 debug（验证分支），由人工确认三个 job 全绿后再合并到 main。
-          git fetch origin debug || true
-          if git rev-parse --verify origin/debug >/dev/null 2>&1 \
-             && ! git merge-base --is-ancestor origin/debug HEAD; then
-            # debug 上有未合并的提交：先把种子提交 rebase 到 debug 之上，
-            # 避免非快进推送失败。冲突会让本 job 明确失败，而不是静默丢种子。
-            git rebase origin/debug
-          fi
-          git push origin HEAD:debug
-          echo "✓ 种子已更新并推送到 debug（需人工合并到 main 后才会部署）"
+          for attempt in 1 2 3; do
+            if git push origin HEAD:debug; then
+              echo "✓ 种子已推送到 debug"
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            # 推送被拒说明 debug 在本次运行期间又前进了：同步后把种子提交重放到最新 debug 上
+            echo "::warning::第 ${attempt} 次推送失败，同步 origin/debug 后重试"
+            sleep 5
+            git fetch origin debug
+            if ! git rebase origin/debug; then
+              echo "::error::种子提交与 debug 冲突，需人工处理（git rebase --abort 后手动提交）"
+              exit 1
+            fi
+          done
+          echo "::error::连续 3 次推送失败，请检查 debug 分支保护或并发推送"
+          exit 1
+
+      # 第二步：再同步到 main（生产分支）
+      # 只从 debug 搬 backend/data/ 两个种子文件，**不 merge debug**——
+      # debug 上可能还有未验证的代码提交，整分支合并等于把它们直接推上线。
+      - name: 同步种子到 main
+        if: steps.to_debug.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            git fetch origin main debug
+            git checkout -B main origin/main
+            git checkout origin/debug -- backend/data/
+            if git diff --cached --quiet; then
+              echo "main 已是最新种子，无需提交"
+              exit 0
+            fi
+            git commit -m "chore: 刷新 JWKS 种子（自动）"
+            if git push origin HEAD:main; then
+              echo "✓ 种子已同步到 main（触发一次生产部署，属于本任务的预期行为）"
+              exit 0
+            fi
+            echo "::warning::第 ${attempt} 次推送 main 失败，重试"
+            sleep 5
+          done
+          echo "::error::连续 3 次推送 main 失败，请检查分支保护设置"
+          exit 1
