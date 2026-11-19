@@ -131,10 +131,16 @@ export async function unzip(buffer, options = {}) {
     const extraLen = view.getUint16(offset + 30, true);
     const commentLen = view.getUint16(offset + 32, true);
     const localOffset = view.getUint32(offset + 42, true);
-    const name = normalizePath(decodeName(u8.subarray(offset + 46, offset + 46 + nameLen), flags));
+    // 必须在归一**之前**判断目录条目：normalizeRelPath 会剥掉尾斜杠
+    // （"assets/" → "assets"），归一后再判 endsWith('/') 永远 false，
+    // 导致目录条目被当成一个空文件落库。随后 "assets/x" 要建 assets 目录时
+    // 该路径已被空文件占据 → Windows 上 mkdir 抛 EEXIST，整个项目 failed。
+    const rawName = decodeName(u8.subarray(offset + 46, offset + 46 + nameLen), flags);
+    const isDirectoryEntry = rawName.endsWith('/') || rawName.endsWith('\\');
+    const name = normalizePath(rawName);
     offset += 46 + nameLen + extraLen + commentLen;
 
-    if (name.endsWith('/') || shouldSkip(name)) continue;
+    if (isDirectoryEntry || !name || shouldSkip(name)) continue;
 
     // 解压前先按中央目录声明的原始大小拦截：避免为单个超大条目分配内存
     if (declaredSize > maxTotalBytes) {

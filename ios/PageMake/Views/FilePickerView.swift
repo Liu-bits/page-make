@@ -40,6 +40,14 @@ struct FilePickerView: View {
 
     private static let ordinaryPasteLimitBytes: Int64 = 300 * 1024
 
+    init(canUseBackend: Bool, canUseExplorer: Bool, maxUploadBytes: Int64?, onPick: @escaping (CreateSource) -> Void) {
+        self.canUseBackend = canUseBackend
+        self.canUseExplorer = canUseExplorer
+        self.maxUploadBytes = maxUploadBytes
+        self.onPick = onPick
+        self.allowedTypes = canUseBackend ? Self.backendTypes : Self.staticTypes
+    }
+
     /// 为什么需要用户确认
     private enum PendingUploadReason {
         /// 检测到后端项目（根目录 package.json），但当前账号没有 VIP 权限
@@ -84,14 +92,20 @@ struct FilePickerView: View {
         canUseBackend ? .npm : .staticSite
     }
 
-    /// 排序保证每次一致（Set 遍历顺序不定）。两套白名单都含 zip，
-    /// 所以无论账号等级，ZIP 一定在可选类型里。
-    private var supportedTypes: [UTType] {
-        let extensions: [String] = canUseBackend
-            ? FileValidator.backendAllowedExtensions.sorted()
-            : FileValidator.staticAllowedExtensions.sorted()
-        return extensions.compactMap { UTType(filenameExtension: $0) }
-    }
+    /// 文件选择器可选类型必须是**稳定的静态常量**：
+    /// 1) computed property 每次 body 重算都生成新数组，SwiftUI 可能据此重建正在
+    ///    显示的 importer，导致点「打开」无反应（与能正常工作的 AddFileSheet 不同）；
+    /// 2) 白名单里 jpg/jpeg、html/htm、yml/yaml 映射到同一个 UTType，必须去重，
+    ///    重复类型 + 多选落在 iOS picker「Open 按钮不响应」的已知脆弱区。
+    /// init 时按账号等级选定其中一套，之后 body 只读 stored let，永不重算。
+    private static let staticTypes: [UTType] = Array(Set(
+        FileValidator.staticAllowedExtensions.compactMap { UTType(filenameExtension: $0) }
+    )).sorted { $0.identifier < $1.identifier }
+    private static let backendTypes: [UTType] = Array(Set(
+        FileValidator.backendAllowedExtensions.compactMap { UTType(filenameExtension: $0) }
+    )).sorted { $0.identifier < $1.identifier }
+    private let allowedTypes: [UTType]
+
 
     private var pasteContent: PasteContent {
         PasteContent(html: html, css: css)
@@ -181,14 +195,13 @@ struct FilePickerView: View {
             // present/dismiss 生命周期和 Result 回调，从根上消除这类状态脱节。
             .fileImporter(
                 isPresented: $showPicker,
-                allowedContentTypes: supportedTypes,
+                allowedContentTypes: allowedTypes,
                 allowsMultipleSelection: true
             ) { result in
-                // onCompletion 由系统回调，切回主线程再改 @State。
+                // onCompletion 由系统回调；切回主线程再改 @State（picker 此时已关闭）。
+                // 延后 50ms 确保 dismiss 完成，避免后续 alert 与 presentation 同帧竞争
+                // （RootView 踩过同款坑，保留真机验证过的写法）。
                 Task { @MainActor in
-                    // 系统回调时 fileImporter 的 dismiss 与这里的 @State 更新可能同帧。
-                    // 延后一帧，确保 importer 完全关闭后再处理结果/弹 alert，
-                    // 避免两个 presentation 竞争导致 alert 被吞（RootView 里踩过同款坑）。
                     try? await Task.sleep(nanoseconds: 50_000_000)
                     switch result {
                     case .success(let urls):

@@ -368,7 +368,11 @@ async function resolveStartCommand(kind, srcDir, pkg) {
       if (!isValidRelPath(pkg.main) || pkg.main.includes(':')) return null;
       return { command: bin.command, args: [quoteArg(pkg.main)], shell: bin.shell };
     }
-    for (const candidate of ['server.ts', 'index.ts', 'app.ts', 'main.ts', 'server.js', 'index.js', 'app.js', 'main.js']) {
+    for (const candidate of [
+      'server.ts', 'index.ts', 'app.ts', 'main.ts',
+      'server.js', 'index.js', 'app.js', 'main.js',
+      'server.cjs', 'index.cjs', 'app.cjs', 'main.cjs',
+    ]) {
       try {
         await nodeFs.access(path.join(srcDir, candidate));
         return { command: bin.command, args: [quoteArg(candidate)], shell: bin.shell };
@@ -380,7 +384,13 @@ async function resolveStartCommand(kind, srcDir, pkg) {
     if (!isValidRelPath(pkg.main) || pkg.main.includes(':')) return null;
     return { command: process.execPath, args: [pkg.main], shell: false };
   }
-  for (const candidate of ['server.js', 'index.js', 'app.js', 'main.js']) {
+  // .cjs 是 CommonJS 显式扩展名，Node 可直接执行。纯 js 后端项目常以
+  // server.cjs 作为入口（无 package.json 时 URL/构建工具也能跑），必须一并识别，
+  // 否则选 js 形态的项目报 NO_START_SCRIPT、公开页永久无法连接。
+  for (const candidate of [
+    'server.js', 'index.js', 'app.js', 'main.js',
+    'server.cjs', 'index.cjs', 'app.cjs', 'main.cjs',
+  ]) {
     try {
       await nodeFs.access(path.join(srcDir, candidate));
       return { command: process.execPath, args: [candidate], shell: false };

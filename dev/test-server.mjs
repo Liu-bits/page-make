@@ -349,6 +349,54 @@ await test('ZIP 上传：.php 文件被跳过，不会落库或公开下载', as
   assertEqual((await fetch(`${BASE}/p/${finish.projectId}/nested/admin.php`)).status, 404, '嵌套 .php 不得公开下载');
 });
 
+await test('ZIP 目录条目不落库为文件 + js 形态 server.cjs 入口可启动（大项目 EEXIST/NO_START_SCRIPT 回归）', async () => {
+  // 真实用户场景：大型 Eaglercraft 包含目录条目（assets/ 等）与 server.cjs 入口。
+  // 旧 bug 1：normalizeRelPath 剥掉尾斜杠 → 目录条目被当空文件落库 → 后续
+  //   assets/x 要建 assets 目录时 Windows mkdir EEXIST → 项目 failed。
+  // 旧 bug 2：js 形态入口只认 server.js 等，不认 server.cjs → NO_START_SCRIPT。
+  seedUser(dataDir, 'zipdir-js-user', 'vip');
+  const authVip = { 'X-Test-User': 'zipdir-js-user', 'Content-Type': 'application/json' };
+  const zip = buildZip([
+    ['assets/', ''],                       // 目录条目（尾斜杠）——关键回归点
+    ['assets/data.epk', 'ASSET_DATA'],
+    ['css/', ''],
+    ['css/base.css', 'body{}'],
+    ['index.html', '<html><body><h1>game</h1></body></html>'],
+    ['server.cjs', `const http=require('http');http.createServer((q,s)=>{s.writeHead(200,{'content-type':'text/html'});s.end('<h1>backend ok</h1>')}).listen(process.env.PORT||8080);`],
+  ]);
+  const init = await (await fetch(`${BASE}/api/upload/init`, {
+    method: 'POST', headers: authVip,
+    body: JSON.stringify({ provider: 'local', kind: 'js', files: [{ name: 'game.zip', size: zip.length }], name: 'dir-entry-js' }),
+  })).json();
+  assert(init.ok && init.uploadId, `init 应成功：${JSON.stringify(init)}`);
+  const putRes = await fetch(`${BASE}/api/upload/chunk`, {
+    method: 'POST', headers: authVip,
+    body: JSON.stringify({ uploadId: init.uploadId, fileIndex: 0, chunkIndex: 0, data: zip.toString('base64') }),
+  });
+  assert(putRes.ok, 'chunk 应成功');
+  const finish = await (await fetch(`${BASE}/api/upload/finish`, {
+    method: 'POST', headers: authVip,
+    body: JSON.stringify({ uploadId: init.uploadId }),
+  })).json();
+  assert(finish.ok && finish.projectId, `finish 应成功：${JSON.stringify(finish)}`);
+
+  let st;
+  for (let i = 0; i < 120; i++) {
+    await sleep(250);
+    st = await (await fetch(`${BASE}/api/projects/${finish.projectId}/status`, { headers: authVip })).json();
+    if (st.status === 'ready' || st.status === 'failed') break;
+  }
+  assertEqual(st?.status, 'ready', `含目录条目的 js 项目应处理成功（不得 EEXIST/NO_START_SCRIPT）：${JSON.stringify(st)}`);
+  const page = await fetch(`${BASE}/p/${finish.projectId}`);
+  assertEqual(page.status, 200, 'js 项目公开页应可连接');
+  assert((await page.text()).includes('backend ok'), 'server.cjs 应已启动并响应');
+  // 删除项目回收常驻进程，避免占用端口影响后续「进程回收」断言
+  await fetch(`${BASE}/api/projects/${finish.projectId}`, {
+    method: 'POST', headers: authVip,
+    body: JSON.stringify({ action: 'delete' }),
+  });
+});
+
 await test('历史项目：.php 入口不公开，重新发布后修复为 HTML 入口', async () => {
   seedUser(dataDir, 'svip-history', 'svip');
   const svipAuthH = { 'X-Test-User': 'svip-history' };
