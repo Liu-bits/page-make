@@ -1,26 +1,11 @@
 import Foundation
 
-/// 选中的文件。ZIP 保留安全作用域原路径，避免整包复制；散文件已拷贝到临时目录。
+/// 选中的文件（本地普通文件：fileImporter / UIDocumentPicker asCopy 已拷贝好）
 struct PickedFile: Identifiable, Equatable {
     let id = UUID()
     let url: URL
     let name: String
     let size: Int64
-    /// fileImporter 返回的 URL 需要持有安全访问直到上传结束，不能读完目录就 stop。
-    var requiresSecurityScope = false
-
-    func startAccessing() -> Bool {
-        requiresSecurityScope ? url.startAccessingSecurityScopedResource() : false
-    }
-
-    func stopAccessing(_ started: Bool) {
-        if started { url.stopAccessingSecurityScopedResource() }
-    }
-
-    /// ZIP 的选择阶段已调用 start；交给上传队列或放弃时统一平衡释放。
-    func releaseSecurityScope() {
-        if requiresSecurityScope { url.stopAccessingSecurityScopedResource() }
-    }
 }
 
 /// 本地校验错误（文案走本地化）

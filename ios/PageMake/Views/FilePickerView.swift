@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 /// 创建入口：上传文件 / 粘贴代码 / 项目模式
@@ -19,7 +20,6 @@ struct FilePickerView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var mode: Mode = .files
-    @State private var showPicker = false
     /// 正在把选中的文件（可能是 60MB 的 ZIP）从安全作用域拷贝到临时目录。
     /// 完成后才切入上传页；期间用遮罩防重复点击。
     @State private var isPreparingFiles = false
@@ -186,31 +186,6 @@ struct FilePickerView: View {
                 }
             } message: {
                 Text(L10n.string(pendingDialogMessageKey))
-            }
-            // 用 SwiftUI 原生 .fileImporter，不再用 .sheet 包 UIDocumentPickerViewController。
-            // 旧实现的致命问题：UIDocumentPicker 自己 dismiss 后 showPicker 仍是 true，
-            // SwiftUI 的 sheet 容器不关；若 handlePicked 因校验失败提前 return，
-            // picker 永远卡在屏幕上，用户再点“打开”只是把已是 true 的 showPicker
-            // 再设一次 true（幂等），表现就是“完全没反应”。.fileImporter 自带正确的
-            // present/dismiss 生命周期和 Result 回调，从根上消除这类状态脱节。
-            .fileImporter(
-                isPresented: $showPicker,
-                allowedContentTypes: allowedTypes,
-                allowsMultipleSelection: true
-            ) { result in
-                // onCompletion 由系统回调；切回主线程再改 @State（picker 此时已关闭）。
-                // 延后 50ms 确保 dismiss 完成，避免后续 alert 与 presentation 同帧竞争
-                // （RootView 踩过同款坑，保留真机验证过的写法）。
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 50_000_000)
-                    switch result {
-                    case .success(let urls):
-                        await handlePicked(urls)
-                    case .failure:
-                        // 用户取消或系统错误：文件选择器已由系统关闭，无需额外处理。
-                        break
-                    }
-                }
             }
             .alert(item: $alertItem) { item in
                 Alert(
@@ -381,8 +356,15 @@ struct FilePickerView: View {
                             .fixedSize(horizontal: false, vertical: true)
 
                         Button {
-                            if validatedProjectName() != nil {
-                                showPicker = true
+                            // 不走 SwiftUI 的 .fileImporter / .sheet：本页本身已在
+                            // RootView 的 sheet 里，叠层 presentation 会导致系统
+                            // picker 选完文件点「打开」完全无响应（与文件大小无关）。
+                            // 直接用 UIKit present 到最顶层 VC。
+                            guard validatedProjectName() != nil else { return }
+                            FileDocumentPicker.shared.present(types: allowedTypes) { urls in
+                                Task { @MainActor in
+                                    await handlePicked(urls)
+                                }
                             }
                         } label: {
                             // 大文件处理慢时，把按钮本身换成转圈指示器 + 文案，
@@ -651,14 +633,11 @@ struct FilePickerView: View {
     /// 拷贝到临时目录（脱离安全作用域资源）+ 本地校验。
     /// 判定 ZIP 形态要读中央目录，因此是 async（读取本身在后台线程）。
     private func handlePicked(_ urls: [URL]) async {
-        // 重入守卫：遮罩靠 overlay 拦截触摸，但 hit-test 未必 100% 可靠；
-        // 若用户在 copy 窗口内二次触发选择，这里直接挡掉，避免并发两次 onPick
-        // 产生重复上传项。状态在主线程（onCompletion 的 Task @MainActor）读写。
         guard !isPreparingFiles else { return }
         guard let name = validatedProjectName() else { return }
 
-        // ZIP 不整包复制：65MB 在 iPhone 13 上既慢又会额外占用存储，还可能触发内存峰值。
-        // 保留安全作用域直到上传结束，FileHandle 每次只读 600KB。散文件仍复制为临时文件。
+        // asCopy: true 已由系统把文件拷贝到 App 沙盒，这里拿到的就是普通本地文件：
+        // 不需要安全作用域、不需要再复制一遍。只做扩展名 + 配额校验。
         isPreparingFiles = true
         defer { isPreparingFiles = false }
 
@@ -667,46 +646,23 @@ struct FilePickerView: View {
         let prepared = await Task.detached(priority: .userInitiated) { () -> Result<[PickedFile], PickError> in
             var picked: [PickedFile] = []
             var totalBytes: Int64 = 0
-            func discard() {
-                for file in picked {
-                    if file.requiresSecurityScope { file.releaseSecurityScope() }
-                    else { try? FileManager.default.removeItem(at: file.url) }
-                }
-            }
             for url in urls {
                 let fileName = url.lastPathComponent
                 let ext = fileName.lowercased().components(separatedBy: ".").last ?? ""
                 guard allowed.contains(ext) else {
-                    discard()
                     return .failure(.unsupportedExtension(ext))
                 }
-                let isZip = ext == "zip"
-                let didStart = url.startAccessingSecurityScopedResource()
-                // ZIP 的作用域由 UploadService 结束上传后释放；散文件复制完立即释放。
-                defer { if didStart && !isZip { url.stopAccessingSecurityScopedResource() } }
+                // Xcode 27 SDK 中 fileSize 的整型宽度与旧 SDK 不同，
+                // 不依赖 int64Value：直接把 NSNumber 转成 Int64。
                 let values = try? url.resourceValues(forKeys: [.fileSizeKey])
                 let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
                 let size = values?.fileSize.map { Int64($0) }
                     ?? (attributes?[.size] as? NSNumber).map { Int64(truncating: $0) } ?? 0
                 totalBytes += size
                 if let limit, totalBytes > limit {
-                    if didStart { url.stopAccessingSecurityScopedResource() }
-                    discard()
                     return .failure(.tooLarge(bytes: totalBytes, limit: limit))
                 }
-                if isZip {
-                    picked.append(PickedFile(url: url, name: fileName, size: size, requiresSecurityScope: true))
-                    continue
-                }
-                let destination = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("\(UUID().uuidString)_\(fileName)")
-                do {
-                    try FileManager.default.copyItem(at: url, to: destination)
-                    picked.append(PickedFile(url: destination, name: fileName, size: size))
-                } catch {
-                    discard()
-                    return .failure(.copyFailed)
-                }
+                picked.append(PickedFile(url: url, name: fileName, size: size))
             }
             return .success(picked)
         }.value
@@ -721,8 +677,7 @@ struct FilePickerView: View {
         }
         func discardPicked() {
             for file in picked {
-                if file.requiresSecurityScope { file.releaseSecurityScope() }
-                else { try? FileManager.default.removeItem(at: file.url) }
+                try? FileManager.default.removeItem(at: file.url)
             }
         }
 
@@ -732,10 +687,7 @@ struct FilePickerView: View {
             let detected = await DeployKindDetector.detect(files: files)
             guard let detected else {
                 // ZIP 中央目录读不出条目名（zip64 / 加密 / 条目名非 UTF-8）：
-                // 无法判定是纯前端还是后端，必须让用户知情后再决定，
-                // 不能静默按纯前端上传（后端项目会缺 Node 运行时）。
-                // 注意：文件还要交给后续流程（降级上传或取消回收），
-                // 这里绝不能 discard——ZIP 的安全作用域一旦释放就读不了了。
+                // 无法判定是纯前端还是后端，必须让用户知情后再决定。
                 pendingBackendUpload = PendingBackendUpload(
                     files: files,
                     name: name,
@@ -744,8 +696,7 @@ struct FilePickerView: View {
                 return
             }
             if detected.isBackend && !canUseBackend {
-                // 非 VIP 选了含 package.json 的项目：不能静默按纯前端上传，
-                // 让用户明确选择「降级纯前端」或取消去升级。同上，不 discard。
+                // 非 VIP 选了含 package.json 的项目：不能静默按纯前端上传。
                 pendingBackendUpload = PendingBackendUpload(
                     files: files,
                     name: name,
@@ -770,11 +721,7 @@ struct FilePickerView: View {
     /// 绝不能 removeItem——只释放安全作用域；散文件是临时副本，直接删除。
     private func recycleLeftoverPendingFiles() {
         for file in pendingRecycleFiles {
-            if file.requiresSecurityScope {
-                file.releaseSecurityScope()
-            } else {
-                try? FileManager.default.removeItem(at: file.url)
-            }
+            try? FileManager.default.removeItem(at: file.url)
         }
         pendingRecycleFiles.removeAll()
     }
@@ -796,5 +743,51 @@ struct FilePickerView: View {
     private func formatLimit(_ bytes: Int64) -> String {
         let mb = Double(bytes) / 1_048_576.0
         return mb >= 1 ? String(format: "%.0f MB", mb) : String(format: "%.0f KB", Double(bytes) / 1024.0)
+    }
+}
+
+/// 文件选择器：UIKit 直接 present，绕开 SwiftUI 的 presentation 叠层。
+///
+/// 背景（2026-11-19 用户实测）：创建页本身是 RootView 的 `.sheet`，页内再用
+/// `.sheet + UIDocumentPicker` 或 `.fileImporter` 弹系统选择器时，选完文件点
+/// 「打开」完全没有响应——与文件大小无关（小文件同样失败），也不是后端问题。
+/// 这是 SwiftUI 在「sheet 内再叠 presentation」场景下吃掉系统 picker 完成回调
+/// 的已知坑。改为在 UIKit 层直接 present 到最顶层 VC，生命周期完全由 UIKit 管。
+final class FileDocumentPicker: NSObject, UIDocumentPickerDelegate {
+    static let shared = FileDocumentPicker()
+    private var onPick: (([URL]) -> Void)?
+
+    /// asCopy: true → 系统先把选中文件拷到 App 沙盒再回调，返回的是普通本地文件：
+    /// 不需要 security-scoped 访问，App 也不必自己做整包复制。
+    func present(
+        types: [UTType],
+        allowsMultipleSelection: Bool = true,
+        onPick: @escaping ([URL]) -> Void
+    ) {
+        guard let host = Self.topViewController() else { return }
+        self.onPick = onPick
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
+        picker.delegate = self
+        picker.allowsMultipleSelection = allowsMultipleSelection
+        host.present(picker, animated: true)
+    }
+
+    /// 最顶层 VC：创建页在 sheet 里，presentedViewController 链能拿到它的宿主。
+    private static func topViewController() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let window = scenes.flatMap(\.windows).first { $0.isKeyWindow } ?? scenes.first?.windows.first
+        var top = window?.rootViewController
+        while let presented = top?.presentedViewController { top = presented }
+        return top
+    }
+
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        let handler = onPick
+        onPick = nil
+        handler?(urls)
+    }
+
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        onPick = nil
     }
 }

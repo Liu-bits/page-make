@@ -354,7 +354,6 @@ struct AddFileSheet: View {
     let onAdded: (Project) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var showPicker = false
     @State private var alertItem: AlertItem?
     @State private var isUploading = false
 
@@ -378,7 +377,16 @@ struct AddFileSheet: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
                 Button {
-                    showPicker = true
+                    // 同样绕开 SwiftUI presentation（本页也在 sheet 里），
+                    // 直接用 UIKit present 系统选择器，asCopy 返回本地副本。
+                    FileDocumentPicker.shared.present(
+                        types: Self.supportedTypes,
+                        allowsMultipleSelection: false
+                    ) { urls in
+                        Task { @MainActor in
+                            if let url = urls.first { await uploadFile(url) }
+                        }
+                    }
                 } label: {
                     Text(L10n.string("pick_file"))
                         .frame(maxWidth: .infinity)
@@ -391,21 +399,6 @@ struct AddFileSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string("cancel")) { dismiss() }
-                }
-            }
-            // 原生 .fileImporter：旧版 .sheet 包 UIDocumentPicker 会在选完文件后
-            // 因 showPicker 不复位而卡住，再点“选择文件”毫无反应。
-            .fileImporter(
-                isPresented: $showPicker,
-                allowedContentTypes: Self.supportedTypes,
-                allowsMultipleSelection: false
-            ) { result in
-                Task { @MainActor in
-                    // 延后一帧，等 fileImporter 完全 dismiss 再处理，避免 alert 与之同帧被吞
-                    try? await Task.sleep(nanoseconds: 50_000_000)
-                    if case .success(let urls) = result, let url = urls.first {
-                        await uploadFile(url)
-                    }
                 }
             }
             .alert(item: $alertItem) { item in
@@ -425,9 +418,7 @@ struct AddFileSheet: View {
         isUploading = true
         defer { isUploading = false }
 
-        let didStart = url.startAccessingSecurityScopedResource()
-        defer { if didStart { url.stopAccessingSecurityScopedResource() } }
-
+        // asCopy 已把文件拷到沙盒，本地普通文件，无需 security-scoped 访问。
         guard let data = try? Data(contentsOf: url) else {
             alertItem = AlertItem(message: L10n.string("error_generic"))
             return

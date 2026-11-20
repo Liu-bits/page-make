@@ -635,18 +635,19 @@ push debug → debug CI 三 job 全绿 → 合并 main → main 的 deploy job �
   `__form` 等保留路径要显式决定放行还是同样要求解锁，不要靠"没命中就走 401"蒙。
 
 **iOS/Swift 坑**（本地无 Xcode，只能靠 CI 验证）：
-- **文件选择绝不能用 `.sheet` 包 `UIDocumentPickerViewController`**（2026-11-19）：
-  系统 picker 自己 dismiss 后 `showPicker` 仍是 true、SwiftUI sheet 容器不关；
-  若校验失败提前 return，picker 永久卡屏，用户再点「打开」只是把已是 true 的
-  showPicker 再设 true（幂等）→ 表现「完全没反应」。统一用 SwiftUI 原生
-  `.fileImporter(isPresented:allowedContentTypes:allowsMultipleSelection:onCompletion:)`，
-  它自带正确 present/dismiss 生命周期 + `Result`。onCompletion 里延后一帧
-  （`Task.sleep 50ms`）再处理结果，避免 alert / confirmationDialog 与 importer
-  dismiss 同帧被吞。FilePickerView / AddFileSheet 已按此改；新增文件选择入口照抄。
-- 大文件（Ultra 60MB+ ZIP）的 copyItem 必须放 `Task.detached` 后台执行，
-  不能在主线程做（否则 UI 冻结同样表现为「点了没反应」）；copy 期间加遮罩防重复点。
-  Security-scoped 的 `startAccessingSecurityScopedResource()` 要在后台闭包内、
-  copy 之后才 stop（defer 放循环体内每次迭代结束执行是对的）。
+- **文件选择不要用 SwiftUI 的 `.sheet + UIDocumentPicker` 或 `.fileImporter`**（2026-11-19 实测定性）：
+  创建页本身是 `RootView` 的 `.sheet`，页内再叠任何 SwiftUI presentation 弹系统选择器，
+  在 iOS 27 上会**选完文件点「打开」完全无响应**（小文件同样失败，与配额/后端无关；
+  `.sheet` 版还会因 showPicker 不复位永久卡屏）。四种配置全都复现，确认是
+  「sheet 内再叠 presentation」这类 SwiftUI 协调问题，不是参数写错。
+  **正确做法：UIKit 直接 present**——`FileDocumentPicker.shared.present(types:onPick:)`
+  （见 `FilePickerView.swift` 末尾）：从 keyWindow 的 rootVC 沿 presentedViewController
+  链取最顶层 VC，`UIDocumentPickerViewController(forOpeningContentTypes:asCopy:true)`
+  直接 present。`asCopy: true` 让系统先把文件拷到 App 沙盒再回调，返回普通本地文件，
+  **不需要 security-scoped 访问、App 也不必自己复制**。创建页与「添加文件」都已切换；
+  新增文件选择入口必须照抄，不要再用 SwiftUI 的 fileImporter。
+- 上传/读取文件用 FileHandle 逐片（`Config.chunkSize`），禁止 `Data(contentsOf:)` 整包载入；
+  `uploadChunk` 按 chunkIndex 覆盖写、天然幂等，可安全重试（当前 maxAttempts 3 / 45s）。
 - SwiftUI `Section("标题"){ } footer:{ }`（头部字符串参数 + 双尾随闭包）**无匹配重载**
   → xcodebuild exit 65；改为 Section 内 Text 行
 - Swift 计算属性块内不能有以 `get` 开头的方法调用（get 是访问器关键字）
